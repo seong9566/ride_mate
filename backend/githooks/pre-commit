@@ -2,8 +2,13 @@
 # backend/ 변경이 스테이징된 커밋만 검사한다.
 # 1) main 브랜치에서는 커밋을 막는다.
 # 2) 솔루션을 경고=오류로 다시 빌드해 실패하면 커밋을 막는다.
-# 설치(레포 루트에서 한 번): ln -s ../../backend/githooks/pre-commit .git/hooks/pre-commit
+# 설치(한 번): sh backend/scripts/install-hooks.sh
 # 테스트: sh backend/githooks/tests/test-pre-commit.sh
+
+if [ $# -gt 0 ]; then
+  echo "사용법: git이 커밋 전에 부르는 훅이다. 인자는 없다. 손으로 확인하려면 sh backend/githooks/tests/test-pre-commit.sh 를 실행한다." >&2
+  exit 64
+fi
 
 # 발동 기록: 통과·차단을 "<시각>\t<훅>\t<allow|block>\t<경로>" 한 줄로 남긴다(하네스 검사 E7·L1).
 # 로그 폴더가 없으면 남기지 않고, 로그 실패는 훅 결과를 바꾸지 않는다. 경로는 HARNESS_HOOK_LOG로 바꾼다.

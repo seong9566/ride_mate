@@ -45,6 +45,14 @@ reset() { git reset --quiet --hard HEAD && git clean --quiet -fd; }
 
 program=backend/RideMateService/RideMateService/Program.cs
 
+# 0. 인자를 주면 사용법을 내고 64로 끝난다
+out="$(sh .git/hooks/pre-commit --bogus 2>&1)"; rc=$?
+if [ "$rc" = 64 ] && printf '%s' "$out" | grep -q "사용법"; then
+  echo "통과: 인자를 주면 사용법 출력"
+else
+  echo "실패: 인자를 주면 사용법 출력 (종료 코드 $rc)"; fail=$((fail + 1))
+fi
+
 # 1. backend 밖 변경만 있으면 빌드 없이 통과한다 (허용)
 git checkout --quiet -B main
 echo "x" >> README.md && git add README.md
