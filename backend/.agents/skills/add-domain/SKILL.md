@@ -68,6 +68,6 @@ description: RideMate 백엔드에 새 도메인(DTO·Repository·Service·Contr
       `grep -rnE '\{(도메인|엔티티|테이블|한글|PK\})' RideMateService --include='*.cs' --include='*.csproj'`
 - [ ] `dotnet build RideMateService.sln -warnaserror`가 경고 0, 오류 0이다.
 - [ ] 새 API의 응답이 `{ message, data, code }` 형태이고, `code`와 HTTP 상태가 `api.md` 표와 맞다.
-- [ ] 새로 만든 파일이 git에 보인다. `git status --short`에 전부 나오고 `git check-ignore -v <파일>`에 걸리지 않는다(도메인 이름이 `Log`·`Debug`·`Release`·`Publish`처럼 `backend/.gitignore`가 무시하는 폴더 이름이면 통째로 빠진다).
+- [ ] 새로 만든 파일이 커밋에 들어 있다. `git show --stat --format= HEAD`에 전부 나오고 `git check-ignore -v <파일>`에 걸리지 않는다(도메인 이름이 `Log`·`Debug`·`Release`·`Publish`처럼 `backend/.gitignore`가 무시하는 폴더 이름이면 통째로 빠진다).
 - [ ] `docs/api/openapi.json`에 새 라우트가 들어 있다.
 - [ ] 변경이 커밋되어 `git status --short`가 비어 있다.

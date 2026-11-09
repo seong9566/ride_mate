@@ -22,6 +22,6 @@ description: RideMate 백엔드의 라우트·DTO를 바꾼 뒤 앱↔서버 API
 ## 완료 조건
 
 - [ ] `sh scripts/update-api-spec.sh`가 종료 코드 0으로 끝났다.
-- [ ] `git status --short -- ../docs/api/`에 `openapi.json`이 보이고, `git diff -- ../docs/api/`에 의도한 라우트·DTO 변경만 있다(처음 생긴 파일은 diff에 나오지 않으니 내용을 직접 본다).
+- [ ] 커밋하기 전에 `git status --short -- ../docs/api/`에 `openapi.json`이 보이고, `git diff -- ../docs/api/`에 의도한 라우트·DTO 변경만 있다(처음 생긴 파일은 diff에 나오지 않으니 내용을 직접 본다).
 - [ ] `lsof -ti :5168`의 출력이 없다(임시 서버가 종료됐다).
 - [ ] 명세가 코드 변경과 같은 커밋 또는 같은 PR에 들어 있다.

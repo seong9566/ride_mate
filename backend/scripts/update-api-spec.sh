@@ -75,7 +75,7 @@ if [ "$saved" != 1 ]; then
   else
     echo "[update-api-spec] ${WAIT_SECONDS}초 안에 명세를 받지 못했다. 서버 로그 마지막 줄:" >&2
   fi
-  tail -5 "$tmp.log" >&2
+  tail -20 "$tmp.log" >&2
   exit 1
 fi
 

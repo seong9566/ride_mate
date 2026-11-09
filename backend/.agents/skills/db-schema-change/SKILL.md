@@ -47,7 +47,7 @@ description: RideMate 백엔드의 MySQL 테이블을 만들거나 바꿀 때 �
 docker compose exec -T mysql sh -c 'mysql -uridemate -p"$MYSQL_PASSWORD" ridemate' < sql/{파일}.sql
 ```
 
-4. `RideMateService/`에서 `dotnet-ef`를 준비한다. `.config/dotnet-tools.json`이 없으면 `dotnet new tool-manifest` 후 `dotnet tool install dotnet-ef --version 10.0.14`, 있으면 `dotnet tool restore`.
+4. `RideMateService/`에서 `dotnet-ef`를 준비한다. `dotnet-tools.json`이 없으면 `dotnet new tool-manifest` 후 `dotnet tool install dotnet-ef --version 10.0.14`, 있으면 `dotnet tool restore`.
 5. `RideMateService/RideMateService/`에서 스캐폴드한다. 명령을 바꾸지 않는다.
 
 ```bash
@@ -62,7 +62,7 @@ dotnet ef dbcontext scaffold Name=ConnectionStrings:DefaultConnection MySql.Enti
 6. 처음 스캐폴드했다면 `templates/DbContextRegistration.cs`의 내용을 `Program.cs`에 넣고, `Commons/DBModels/`와 `Commons/Repository/`의 `.gitkeep`을 지운다.
 7. `git diff`로 산출물을 본다. 이번 DDL과 관계없는 엔티티가 바뀌었으면 멈추고 사용자에게 알린다.
 8. `RideMateService/`에서 `dotnet build RideMateService.sln -warnaserror`를 실행한다.
-9. DDL 파일과 스캐폴드 산출물을 스테이징한다. 처음 실행했다면 `docker-compose.yml`·`.env.example`·`RideMateService/.config/dotnet-tools.json`·`Program.cs`와 지운 `.gitkeep`도 함께 스테이징한다. 커밋하기 전에 아래 둘을 확인한다.
+9. DDL 파일과 스캐폴드 산출물을 스테이징한다. 처음 실행했다면 `docker-compose.yml`·`.env.example`·`RideMateService/dotnet-tools.json`·`Program.cs`와 지운 `.gitkeep`도 함께 스테이징한다. 커밋하기 전에 아래 둘을 확인한다.
    - `git diff --cached --name-only`에 `.env`와 `appsettings.Development.json`이 없다.
    - 스테이징된 내용에 값이 채워진 비밀번호가 없다. 아래 명령이 `0`을 출력해야 한다(줄 수만 세고 내용은 출력하지 않는다).
      `git diff --cached | grep -ciE '(password|pwd)=[^;"<]'`

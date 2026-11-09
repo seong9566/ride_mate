@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Text.RegularExpressions;
 using Dapper;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.OpenApi;
@@ -104,13 +105,20 @@ app.MapControllers();
 
 app.Run();
 
-// Swagger 스키마 이름. 제네릭은 인자를 풀어 OpenAPI가 허용하는 문자(영문·숫자·_)만 남긴다.
+// Swagger 스키마 이름. 제네릭은 인자를 풀고, OpenAPI가 허용하지 않는 문자는 모두 _로 바꾼다.
 // 예: ResponseModel<CursorResult<GetPickupList>> → RideMateService_Comm_ResponseModel_RideMateService_Comm_CursorResult_…
 static string SchemaId(Type type)
 {
-    if (!type.IsGenericType)
-        return (type.FullName ?? type.Name).Replace(".", "_").Replace("+", "_");
+    if (type.IsArray)
+        return SchemaId(type.GetElementType()!) + "_Array";
 
-    var name = (type.GetGenericTypeDefinition().FullName ?? type.Name).Split('`')[0].Replace(".", "_").Replace("+", "_");
-    return name + "_" + string.Join("_", type.GetGenericArguments().Select(SchemaId));
+    var name = type.FullName ?? type.Name;
+    if (type.IsGenericType)
+    {
+        // 제네릭 정의 이름에서 `1 같은 인자 개수 표기를 지우고 인자 이름을 이어 붙인다
+        var definition = Regex.Replace(type.GetGenericTypeDefinition().FullName ?? type.Name, @"`\d+", "");
+        name = definition + "_" + string.Join("_", type.GetGenericArguments().Select(SchemaId));
+    }
+
+    return Regex.Replace(name, "[^A-Za-z0-9_]", "_");
 }
