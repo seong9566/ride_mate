@@ -1,0 +1,7 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# 레포 루트에서 연 IDE 설정 (모듈별 설정은 각 폴더의 .gitignore에서 관리)
+/.idea/
+/.vscode/
