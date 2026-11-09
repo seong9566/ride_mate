@@ -1,7 +1,7 @@
 # RideMate 백엔드 — 에이전트 작업 지침
 
 - Claude Code와 Codex 세션은 `backend/`에서 시작한다. 레포 루트에서 시작한 Codex는 `backend/.agents/skills/`의 스킬을 찾지 못한다.
-- `backend/` 작업은 이 문서를 따른다. `~/AGENTS.md` 등 상위 지침과 충돌하면 이 문서가 우선한다.
+- `backend/` 작업은 이 문서를 따른다. `~/AGENTS.md` 등 상위 지침과 충돌하면 이 문서가 우선한다. [ADR-0001]
 - `backend/` 밖의 파일은 수정하지 않는다. 예외는 앱↔서버 API 명세인 루트 `docs/api/`뿐이다. 그 밖이 필요하면 수정하지 말고 사용자에게 알린다.
 - 기획 판단이 필요하면 PM vault의 PRD를 먼저 읽는다:
   `/Users/stecdev/Desktop/obsidian-workspace/personal_dev/wiki/projects/ride-mate/prd.md`
@@ -19,6 +19,7 @@
 | 라우트·응답 code·커서 페이징·API 명세 | `docs/api.md` |
 | 설정·비밀값·로그·입력 처리·인증 | `docs/security.md` |
 | 네이밍·코드 스타일 | `docs/coding-style.md` |
+| 규칙을 그렇게 정한 이유(결정 기록) | `docs/adr/README.md` |
 
 ## 스킬
 
@@ -30,17 +31,17 @@
 | `update-api-spec` | 라우트·DTO를 바꾼 뒤 `docs/api/openapi.json`을 갱신할 때 |
 
 - 스킬 정본은 `.agents/skills/<이름>/SKILL.md`다. `.claude/skills/<이름>`은 정본을 가리키는 심볼릭 링크이므로 스킬은 `.agents/skills/`에서만 고친다.
-- 코드 템플릿은 스킬 폴더의 `templates/`에만 둔다. 문서에는 규칙과 템플릿 경로만 쓴다. 레이어 규칙의 정본은 `docs/`다.
+- 코드 템플릿은 스킬 폴더의 `templates/`에만 둔다. 문서에는 규칙과 템플릿 경로만 쓴다. 레이어 규칙의 정본은 `docs/`다. [ADR-0007]
 - 스킬을 추가하면 `backend/`에서 같은 이름으로 링크를 만든다: `ln -s ../../.agents/skills/<이름> .claude/skills/<이름>`
 
 ## 핵심 규칙
 
 - 솔루션은 `RideMateService/RideMateService.sln`, 앱 프로젝트는 `RideMateService/RideMateService/`다.
-- 의존 방향은 Controller → Service → Repository 하나뿐이다. 역참조·레이어 건너뛰기를 하지 않는다.
-- Service는 항상 `ResponseModel<T>`를 반환한다. 예외를 던지지 않고 `code = 500`으로 바꾼다(요청 취소만 그대로 올려보낸다).
+- 의존 방향은 Controller → Service → Repository 하나뿐이다. 역참조·레이어 건너뛰기를 하지 않는다. [ADR-0001]
+- Service는 항상 `ResponseModel<T>`를 반환한다. 예외를 던지지 않고 `code = 500`으로 바꾼다(요청 취소만 그대로 올려보낸다). [ADR-0004]
 - Repository는 DTO를 받지 않는다. Dapper 조회 결과를 응답 DTO로 바로 매핑하는 것만 허용한다.
-- GET API의 조회에는 EF Core를 쓰지 않고 Dapper로 SQL을 직접 쓴다(쿼리 튜닝과 속도). EF Core는 등록·수정·삭제에만 쓴다.
-- 스키마는 DB-first다. EF Migration을 쓰지 않고, 스캐폴드 산출물(`Commons/DBModels`, `RideMateContext.cs`)을 직접 고치지 않는다.
+- GET API의 조회에는 EF Core를 쓰지 않고 Dapper로 SQL을 직접 쓴다(쿼리 튜닝과 속도). EF Core는 등록·수정·삭제에만 쓴다. [ADR-0003]
+- 스키마는 DB-first다. EF Migration을 쓰지 않고, 스캐폴드 산출물(`Commons/DBModels`, `RideMateContext.cs`)을 직접 고치지 않는다. [ADR-0002]
 - 비밀값을 코드나 `appsettings.json`에 쓰지 않는다.
 
 ## 빌드·실행·검증
@@ -53,7 +54,7 @@
 - 엔드포인트·DTO를 바꿨으면 서버를 띄워 Swagger에서 그 API를 호출해 응답을 확인하고, `update-api-spec` 스킬로 명세를 같은 PR에 넣는다.
 - 확인 호출은 로컬 서버(`localhost`)와 로컬 Docker DB를 대상으로 할 때만 POST·PATCH·DELETE를 승인 없이 쓴다. 이 경우에 한해 전역 규칙 "검증 호출은 GET만"보다 이 문서가 우선한다. 배포된 서버나 원격 DB에는 GET만 쓰고, 쓰기가 필요하면 사용자 승인을 받는다.
 - 띄운 서버는 PID로 종료한다(`lsof -ti :5167` → `kill <PID>`). `pkill`처럼 이름으로 종료하지 않는다.
-- 테스트 프로젝트는 두지 않는다(STSP 표준).
+- 테스트 프로젝트는 두지 않는다(STSP 표준). [ADR-0006]
 
 ## 작업 흐름
 

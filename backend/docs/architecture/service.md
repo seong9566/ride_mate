@@ -6,7 +6,7 @@
 
 - 인증 확인·입력 검증·엔티티 매핑·분기·트랜잭션은 모두 Service에 둔다.
 - 반환은 항상 `ResponseModel<T>`다. 예외를 Controller로 던지지 않고 `code = 500`으로 바꿔 돌려준다. `code` 값과 `message` 문구는 `../api.md`의 표만 쓴다.
-- 메서드마다 try/catch를 둔다. 전역 예외 필터로 바꾸지 않는다.
+- 메서드마다 try/catch를 둔다. 전역 예외 필터로 바꾸지 않는다. [ADR-0004]
 - 모든 메서드는 마지막 파라미터로 `CancellationToken cancellationToken = default`를 받아 Repository에 넘긴다. 요청이 취소된 경우에만 예외를 500으로 바꾸지 않고 그대로 올려보낸다(템플릿 catch의 `when` 조건).
 - DTO → 엔티티 변환은 Service에서 한다. Repository에 DTO를 넘기지 않는다.
 - 감사 컬럼(`CreateDt`·`CreateUser`·`UpdateDt`·`UpdateUser`·`DeleteYn`)은 Service가 채운다. Repository나 DB 트리거에 맡기지 않는다.

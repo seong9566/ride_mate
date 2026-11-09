@@ -12,7 +12,7 @@ DB는 MySQL, EF Core 공급자는 `MySql.EntityFrameworkCore`, 스키마는 DB-f
 
 ## DB-first
 
-- 스키마는 DB에서 먼저 만든다. EF Migration을 쓰지 않는다.
+- 스키마는 DB에서 먼저 만든다. EF Migration을 쓰지 않는다. [ADR-0002]
 - DDL은 `backend/sql/{yyyyMMdd}_{설명}.sql`로 남긴다. 새 테이블은 `.agents/skills/db-schema-change/templates/table.sql`에서 시작한다. 스키마 변경 이력은 이 폴더에만 남긴다.
 - `Commons/DBModels/*.cs`와 `Commons/Repository/RideMateContext.cs`는 직접 고치지 않는다. 재스캐폴드하면 덮어쓰인다.
 - 손으로 추가하는 코드(쿼리 헬퍼·확장)는 `Commons/Repository/RideMateContext.Extensions.cs`에 partial로 쓴다.
