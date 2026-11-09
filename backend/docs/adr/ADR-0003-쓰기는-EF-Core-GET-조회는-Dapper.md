@@ -8,7 +8,7 @@ GET API의 조회(목록·상세·검색·집계)에는 ORM을 쓰지 않고 Dap
 
 ## 근거
 
-쿼리를 직접 튜닝할 수 있고 더 빠르다. STSP 표준은 "PK 단건 조회는 EF Core, JOIN이 2개 이상인 읽기만 Dapper"였는데, 조회를 전부 Dapper로 넓혔다.
+쿼리를 직접 튜닝할 수 있고 더 빠르다. 처음에는 "PK 단건 조회는 EF Core, JOIN이 2개 이상인 읽기만 Dapper"로 정했다가 조회 전부를 Dapper로 넓혔다.
 
 ## 결과
 

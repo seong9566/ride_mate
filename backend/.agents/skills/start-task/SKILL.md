@@ -5,15 +5,18 @@ description: RideMate 백엔드에서 작업을 시작할 때 쓴다. 기능·�
 
 # start-task
 
+PM vault(`personal_dev`)의 위치는 환경변수 `TASK_VAULT`가 가리킨다. 절대 경로를 직접 쓰지 않는다. 카드 스크립트는 아래 형태로 부른다.
+
 ```
-VAULT=/Users/stecdev/Desktop/obsidian-workspace/personal_dev
-TASK=$VAULT/.claude/scripts/task.sh
+TASK=$TASK_VAULT/.claude/scripts/task.sh
+bash "$TASK" <명령>
 ```
 
-변수는 셸 호출마다 다시 정의한다. 스크립트는 `bash "$TASK" <명령>` 형태로 부른다. `TASK`에 `bash`까지 넣어 `$TASK ls`로 부르면 zsh에서 실패한다.
+`TASK`는 셸 호출마다 다시 정의한다. `TASK`에 `bash`까지 넣어 `$TASK ls`로 부르면 zsh에서 실패한다.
 
 ## 하지 말 것
 
+- `TASK_VAULT`가 비어 있거나 그 안에 `wiki/projects/ride-mate/`가 없으면 진행하지 않는다. 멈추고 사용자에게 vault 위치를 묻는다.
 - 커밋 안 된 변경이 있으면 진행하지 않는다. 멈추고 사용자에게 알린다.
 - 이미 쓰인 카드 번호를 재사용하지 않는다.
 - 맞는 카드 후보가 여럿이거나 애매하면 고르지 않고 사용자에게 묻는다.
@@ -29,7 +32,7 @@ TASK=$VAULT/.claude/scripts/task.sh
 | 설정 | 없음 | `chore/<영문-kebab-설명>` |
 | 문서 | 없음 | `docs/<영문-kebab-설명>` |
 
-새 카드 ID는 `ls $VAULT/wiki/projects/ride-mate/tasks/`에서 가장 큰 `T` 번호 + 1이다. 두 자리로 쓰고 첫 카드는 `T01`이다.
+새 카드 ID는 `ls "$TASK_VAULT/wiki/projects/ride-mate/tasks/"`에서 가장 큰 `T` 번호 + 1이다. 두 자리로 쓰고 첫 카드는 `T01`이다.
 
 ## 절차
 

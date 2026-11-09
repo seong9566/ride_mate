@@ -3,8 +3,8 @@
 - Claude Code와 Codex 세션은 `backend/`에서 시작한다. 레포 루트에서 시작한 Codex는 `backend/.agents/skills/`의 스킬을 찾지 못한다.
 - `backend/` 작업은 이 문서를 따른다. `~/AGENTS.md` 등 상위 지침과 충돌하면 이 문서가 우선한다. [ADR-0001]
 - `backend/` 밖의 파일은 수정하지 않는다. 예외는 앱↔서버 API 명세인 루트 `docs/api/`뿐이다. 그 밖이 필요하면 수정하지 말고 사용자에게 알린다.
-- 기획 판단이 필요하면 PM vault의 PRD를 먼저 읽는다:
-  `/Users/stecdev/Desktop/obsidian-workspace/personal_dev/wiki/projects/ride-mate/prd.md`
+- 기획 판단이 필요하면 PM vault의 PRD를 먼저 읽는다: `personal_dev/wiki/projects/ride-mate/prd.md`
+- PM vault 경로는 vault 폴더(`personal_dev`)부터 적는다. vault가 놓인 위치는 컴퓨터마다 다르므로 절대 경로를 문서에 쓰지 않는다. 실제 위치는 환경변수 `TASK_VAULT`가 가리킨다(`personal_dev/…` = `$TASK_VAULT/…`). `TASK_VAULT`가 비어 있으면 멈추고 사용자에게 vault 위치를 묻는다.
 
 ## 작업 전에 읽을 문서
 
@@ -54,22 +54,21 @@
 - 엔드포인트·DTO를 바꿨으면 서버를 띄워 Swagger에서 그 API를 호출해 응답을 확인하고, `update-api-spec` 스킬로 명세를 같은 PR에 넣는다.
 - 확인 호출은 로컬 서버(`localhost`)와 로컬 Docker DB를 대상으로 할 때만 POST·PATCH·DELETE를 승인 없이 쓴다. 이 경우에 한해 전역 규칙 "검증 호출은 GET만"보다 이 문서가 우선한다. 배포된 서버나 원격 DB에는 GET만 쓰고, 쓰기가 필요하면 사용자 승인을 받는다.
 - 띄운 서버는 PID로 종료한다(`lsof -ti :5167` → `kill <PID>`). `pkill`처럼 이름으로 종료하지 않는다.
-- 테스트 프로젝트는 두지 않는다(STSP 표준). [ADR-0006]
+- 테스트 프로젝트는 두지 않는다. [ADR-0006]
 
 ## 작업 흐름
 
 - `main`에 직접 커밋하지 않는다. 작업마다 `main`에서 브랜치를 만들고 PR로 머지한다. 시작은 `start-task` 스킬로 한다.
-- 기능(feat)·버그(fix) 작업은 PM vault 작업 카드 단위로 한다. 카드 위치: `/Users/stecdev/Desktop/obsidian-workspace/personal_dev/wiki/projects/ride-mate/tasks/`
+- 기능(feat)·버그(fix) 작업은 PM vault 작업 카드 단위로 한다. 카드 위치: `personal_dev/wiki/projects/ride-mate/tasks/`
   - 카드가 없으면 먼저 만든다. 빈 번호를 `ls`로 확인한다. 쓰인 번호를 재사용하지 않는다.
   - 브랜치 이름에 카드 ID를 넣는다: `feat/T01-<설명>`, `fix/T02-<설명>`.
   - 착수할 때 `wip`, 머지한 뒤 `done`으로 바꾼다.
 - 설정·문서 같은 잡일은 카드 없이 `chore/<설명>`·`docs/<설명>` 브랜치로 한다.
 
 ```
-VAULT=/Users/stecdev/Desktop/obsidian-workspace/personal_dev
-bash "$VAULT/.claude/scripts/task.sh" new  T0x "<제목>" --project ride-mate --section code
-bash "$VAULT/.claude/scripts/task.sh" wip  T0x --project ride-mate --section code
-bash "$VAULT/.claude/scripts/task.sh" done T0x --project ride-mate
+bash "$TASK_VAULT/.claude/scripts/task.sh" new  T0x "<제목>" --project ride-mate --section code
+bash "$TASK_VAULT/.claude/scripts/task.sh" wip  T0x --project ride-mate --section code
+bash "$TASK_VAULT/.claude/scripts/task.sh" done T0x --project ride-mate
 ```
 
 - 커밋 메시지는 `<type>: <한국어 요약>` 형식이다. type은 feat·fix·refactor·docs·chore 중 하나다.
@@ -77,6 +76,6 @@ bash "$VAULT/.claude/scripts/task.sh" done T0x --project ride-mate
 
 ## 커밋 훅
 
-- 클론한 뒤 레포 루트에서 한 번 설치한다: `ln -s ../../backend/githooks/pre-commit .git/hooks/pre-commit`
+- 클론한 뒤 한 번 설치한다: `sh scripts/install-hooks.sh` (`backend/`에서 실행)
 - `git config core.hooksPath`는 바꾸지 않는다.
 - 훅을 고치면 `sh githooks/tests/test-pre-commit.sh`가 `실패: 0`으로 끝나는지 확인한다. 테스트는 임시 복제본에서만 돈다.
