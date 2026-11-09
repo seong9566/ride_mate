@@ -5,3 +5,7 @@ Thumbs.db
 # 레포 루트에서 연 IDE 설정 (모듈별 설정은 각 폴더의 .gitignore에서 관리)
 /.idea/
 /.vscode/
+
+# superpowers 플러그인 산출물 (설계·계획 문서, 브레인스토밍 임시 파일)
+**/docs/superpowers/
+.superpowers/
