@@ -38,7 +38,7 @@ builder.Services.Configure<GzipCompressionProviderOptions>(options =>
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.CustomSchemaIds(type => (type.FullName ?? type.Name).Replace(".", "_"));
+    c.CustomSchemaIds(SchemaId);
     c.SwaggerDoc("v1", new OpenApiInfo
     {
         Title = "RideMate API",
@@ -99,7 +99,18 @@ app.UseSwaggerUI(c =>
 
 app.UseAuthorization();
 
-app.MapGet("/", () => Results.Redirect("/swagger"));
+app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
 app.MapControllers();
 
 app.Run();
+
+// Swagger 스키마 이름. 제네릭은 인자를 풀어 OpenAPI가 허용하는 문자(영문·숫자·_)만 남긴다.
+// 예: ResponseModel<CursorResult<GetPickupList>> → RideMateService_Comm_ResponseModel_RideMateService_Comm_CursorResult_…
+static string SchemaId(Type type)
+{
+    if (!type.IsGenericType)
+        return (type.FullName ?? type.Name).Replace(".", "_").Replace("+", "_");
+
+    var name = (type.GetGenericTypeDefinition().FullName ?? type.Name).Split('`')[0].Replace(".", "_").Replace("+", "_");
+    return name + "_" + string.Join("_", type.GetGenericArguments().Select(SchemaId));
+}

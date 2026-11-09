@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
+using RideMateService.Comm;
 using RideMateService.Comm.Dto.v1.{도메인}.Request;
+using RideMateService.Comm.Dto.v1.{도메인}.Response;
 using RideMateService.Comm.Logger;
 using RideMateService.Service.v1.{도메인};
 using Swashbuckle.AspNetCore.Annotations;
@@ -19,10 +21,14 @@ public class {도메인}Controller : ApiControllerBase
         this._{도메인소문자}Service = {도메인소문자}Service;
     }
 
+    /// <summary>
+    /// {한글 설명}
+    /// </summary>
     [Produces("application/json")]
     [HttpPost]
     [Route("v1/{도메인}/M/sign/Add{도메인}")]
     [SwaggerOperation(Summary = "{한글 설명}")]
+    [ProducesResponseType(typeof(ResponseModel<bool>), StatusCodes.Status200OK)]
     public async Task<IActionResult> Add{도메인}([FromBody] Add{도메인}Dto dto, CancellationToken cancellationToken)
     {
         try
@@ -45,10 +51,14 @@ public class {도메인}Controller : ApiControllerBase
         }
     }
 
+    /// <summary>
+    /// {한글 설명}
+    /// </summary>
     [Produces("application/json")]
     [HttpGet]
     [Route("v1/{도메인}/M/sign/Get{도메인}List")]
     [SwaggerOperation(Summary = "{한글 설명}")]
+    [ProducesResponseType(typeof(ResponseModel<CursorResult<Get{도메인}List>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> Get{도메인}List([FromQuery] int? last{도메인}Seq, [FromQuery] int pageSize, [FromQuery] string? searchKey, CancellationToken cancellationToken)
     {
         try

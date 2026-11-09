@@ -3,8 +3,7 @@ using Microsoft.Extensions.Logging;
 namespace RideMateService.Comm.Logger;
 
 /// <summary>
-/// 기존 파일/콘솔 로그를 그대로 남기면서 같은 내용을 Serilog(ILogger) 로도 보낸다.
-/// 나중에 Serilog 로 완전히 넘어가면 기존 파일/콘솔 쓰기 부분만 지우면 된다.
+/// 파일·콘솔 로그를 남기면서 같은 내용을 ILogger로도 보낸다.
 /// </summary>
 public class LogService : ILogService
 {

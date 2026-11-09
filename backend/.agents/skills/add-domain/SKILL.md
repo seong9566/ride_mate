@@ -12,7 +12,7 @@ description: RideMate 백엔드에 새 도메인(DTO·Repository·Service·Contr
 - `main` 브랜치에서 시작하지 않는다. `main`이면 멈추고 `start-task` 스킬로 카드와 브랜치부터 만든다.
 - 엔티티를 손으로 만들지 않는다. 필요한 엔티티가 `Commons/DBModels/`에 없으면 멈추고 `db-schema-change` 스킬로 테이블부터 만든다.
 - 엔티티 클래스 이름과 `{도메인}`이 같으면 진행하지 않는다(예: 둘 다 `Pickup`). 도메인 네임스페이스가 엔티티 이름을 가려 빌드가 실패한다(CS0118). 멈추고 사용자에게 알린다.
-- 템플릿의 구조(try/catch, 반환 타입, 응답 문구, `[Produces]`·`[SwaggerOperation]`)를 바꾸지 않는다. 바꾸는 것은 자리표시자, 업무 필드, 쿼리, 메서드 목록, 그리고 동작에 따른 HTTP 메서드 어트리뷰트와 라우트(`api.md`의 표)뿐이다.
+- 템플릿의 구조(try/catch, 반환 타입, 응답 문구, `[Produces]`·`[SwaggerOperation]`·`[ProducesResponseType]`)를 바꾸지 않는다. 바꾸는 것은 자리표시자, 업무 필드, 쿼리, 메서드 목록, 동작에 따른 HTTP 메서드 어트리뷰트와 라우트(`api.md`의 표), 그리고 `[ProducesResponseType]`의 응답 타입뿐이다.
 - 아래 표와 다른 위치나 이름으로 파일을 만들지 않는다.
 
 ## 만들 파일
@@ -55,7 +55,7 @@ description: RideMate 백엔드에 새 도메인(DTO·Repository·Service·Contr
    - 이미 있으면 `Add{도메인}Module()`을 더하고 `AddDomainModules()`에 한 줄 추가한다.
 4. `RideMateService.csproj`에 11번 항목을 추가한다.
 5. `dotnet build RideMateService.sln -warnaserror`가 경고 0으로 통과하도록 고친다. 세 번 고쳐도 통과하지 못하면 멈추고 남은 오류를 사용자에게 알린다.
-6. 서버를 띄워 Swagger에서 새 API를 호출하고 응답을 확인한다. 로컬 서버와 로컬 DB가 대상일 때만 쓰기 API도 호출한다(`backend/AGENTS.md` §빌드·실행·검증). 확인 후 서버를 PID로 종료한다.
+6. 서버를 띄워 Swagger에서 새 API를 호출하고 응답을 확인한다. 로컬 서버와 로컬 DB가 대상일 때만 쓰기 API도 호출한다. 서버를 띄우고 끄는 방법은 `backend/AGENTS.md` §빌드·실행·검증을 따른다. 인증 방식을 정하기 전에는 `sign` 구간 API가 401을 돌려주므로 401 응답의 형태까지만 확인한다.
 7. `update-api-spec` 스킬로 `docs/api/openapi.json`을 갱신한다.
 8. `feat: <한국어 요약>`으로 커밋한다.
 
@@ -68,5 +68,6 @@ description: RideMate 백엔드에 새 도메인(DTO·Repository·Service·Contr
       `grep -rnE '\{(도메인|엔티티|테이블|한글|PK\})' RideMateService --include='*.cs' --include='*.csproj'`
 - [ ] `dotnet build RideMateService.sln -warnaserror`가 경고 0, 오류 0이다.
 - [ ] 새 API의 응답이 `{ message, data, code }` 형태이고, `code`와 HTTP 상태가 `api.md` 표와 맞다.
+- [ ] 새로 만든 파일이 git에 보인다. `git status --short`에 전부 나오고 `git check-ignore -v <파일>`에 걸리지 않는다(도메인 이름이 `Log`·`Debug`·`Release`·`Publish`처럼 `backend/.gitignore`가 무시하는 폴더 이름이면 통째로 빠진다).
 - [ ] `docs/api/openapi.json`에 새 라우트가 들어 있다.
 - [ ] 변경이 커밋되어 `git status --short`가 비어 있다.

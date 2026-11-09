@@ -59,10 +59,10 @@ Controller ──▶ Service ──▶ Repository ──▶ DbContext / IDbConne
 5. Swagger (Bearer 보안 정의 포함)
 6. 도메인 DI (`AddDomainModules()`)
 7. 백그라운드 워커 (HostedService)
-8. 공용 서비스 (`AddCommonInfrastructure()`)
-9. HttpContextAccessor + Dapper `IDbConnection` + 타입 핸들러
+8. 공용 서비스 (`AddCommonInfrastructure()` — `ILogService`, HttpContextAccessor)
+9. Dapper 타입 핸들러
 10. 인증
-11. DbContext (연결 문자열이 없으면 기동 실패)
+11. DbContext + Dapper `IDbConnection` (연결 문자열이 없으면 기동 실패)
 12. CORS (허용 오리진이 없으면 기동 실패)
 13. `AddControllers` + `RunActionFilter` + `AddNewtonsoftJson`
 14. `AddAuthorization`

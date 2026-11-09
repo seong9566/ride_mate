@@ -64,6 +64,11 @@ echo "// test" >> "$program" && git add "$program"
 check "main에서 backend 변경 차단" 1 "main 브랜치에는 backend/ 변경을 커밋하지 않는다" block
 reset
 
+# 2-1. 한글 이름 파일만 바꿔도 backend 변경으로 본다 (차단)
+echo "x" > "backend/docs/한글-파일.md" && git add "backend/docs/한글-파일.md"
+check "main에서 한글 이름 backend 파일 차단" 1 "main 브랜치에는 backend/ 변경을 커밋하지 않는다" block
+reset
+
 # 3. dotnet이 없으면 막는다 (차단)
 git checkout --quiet -B test/hook
 echo "// test" >> "$program" && git add "$program"

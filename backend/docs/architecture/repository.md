@@ -16,7 +16,7 @@
 | GET API의 조회 전부(목록·상세·검색·집계·JOIN) | Dapper | `.SQL.cs` |
 | 등록·수정·삭제 | EF Core | `.EF.cs` |
 | 수정·삭제할 대상 엔티티 불러오기(PK 기준) | EF Core | `.EF.cs` |
-| 트랜잭션 | EF Core (`BeginTransactionAsync`) | `.EF.cs` |
+| 트랜잭션 | EF Core (`BeginTransactionAsync`) | Service에서 시작한다(`service.md`) |
 
 - GET API의 조회에는 ORM(EF Core)을 쓰지 않는다. Dapper로 SQL을 직접 쓴다. 쿼리를 튜닝할 수 있고 더 빠르기 때문이다. 단건 상세 조회도 Dapper로 쓴다. [ADR-0003]
 - EF Core는 쓰기(등록·수정·삭제)에만 쓴다. 수정·삭제할 대상 엔티티를 PK로 불러오는 것은 쓰기의 일부이므로 EF Core로 한다.

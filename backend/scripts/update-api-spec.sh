@@ -44,11 +44,17 @@ cleanup() {
   rm -f "$tmp" "$tmp.log"
 }
 trap cleanup EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
+trap 'exit 129' HUP
 
-ASPNETCORE_ENVIRONMENT=Development dotnet RideMateService/bin/Debug/net10.0/RideMateService.dll --urls "http://127.0.0.1:$PORT" > "$tmp.log" 2>&1 &
+# 프로젝트 폴더에서 띄운다. 그래야 그 폴더의 appsettings*.json(연결 문자열 등)이 읽힌다.
+cd RideMateService || { echo "[update-api-spec] 프로젝트 폴더를 찾을 수 없다." >&2; exit 1; }
+ASPNETCORE_ENVIRONMENT=Development dotnet bin/Debug/net10.0/RideMateService.dll --urls "http://127.0.0.1:$PORT" > "$tmp.log" 2>&1 &
 pid=$!
 
 saved=0
+died=0
 i=0
 while [ "$i" -lt "$WAIT_SECONDS" ]; do
   if curl -sf "http://127.0.0.1:$PORT/swagger/v1/swagger.json" -o "$tmp"; then
@@ -56,14 +62,19 @@ while [ "$i" -lt "$WAIT_SECONDS" ]; do
     break
   fi
   if ! kill -0 "$pid" 2>/dev/null; then
-    break   # 서버가 기동 중에 죽었다
+    died=1   # 서버가 기동 중에 죽었다
+    break
   fi
   i=$((i + 1))
   sleep 1
 done
 
 if [ "$saved" != 1 ]; then
-  echo "[update-api-spec] ${WAIT_SECONDS}초 안에 명세를 받지 못했다. 서버 로그 마지막 줄:" >&2
+  if [ "$died" = 1 ]; then
+    echo "[update-api-spec] 서버가 기동 중에 종료됐다. 설정(연결 문자열 등)을 확인한다. 서버 로그 마지막 줄:" >&2
+  else
+    echo "[update-api-spec] ${WAIT_SECONDS}초 안에 명세를 받지 못했다. 서버 로그 마지막 줄:" >&2
+  fi
   tail -5 "$tmp.log" >&2
   exit 1
 fi
@@ -73,9 +84,11 @@ if ! python3 -m json.tool "$tmp" > /dev/null 2>&1; then
   exit 1
 fi
 
-mkdir -p "$(dirname "$spec")"
-cp "$tmp" "$spec"
+if ! mkdir -p "$(dirname "$spec")" || ! cp "$tmp" "$spec"; then
+  echo "[update-api-spec] 명세를 저장하지 못했다: docs/api/openapi.json" >&2
+  exit 1
+fi
 rm -f "$(dirname "$spec")/.gitkeep"
 echo "[update-api-spec] 저장: docs/api/openapi.json"
-git -C "$(dirname "$spec")" diff --stat -- . 2>/dev/null
+git -C "$(dirname "$spec")" status --short -- . 2>/dev/null
 exit 0
