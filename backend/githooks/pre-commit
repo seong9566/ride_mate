@@ -1,0 +1,31 @@
+#!/bin/sh
+# backend/ 변경이 스테이징된 커밋만 검사한다.
+# 1) main 브랜치에서는 커밋을 막는다.
+# 2) 솔루션을 경고=오류로 다시 빌드해 실패하면 커밋을 막는다.
+# 설치(레포 루트에서 한 번): ln -s ../../backend/githooks/pre-commit .git/hooks/pre-commit
+
+if ! git diff --cached --name-only | grep -q '^backend/'; then
+  exit 0
+fi
+
+branch="$(git symbolic-ref --short -q HEAD)"
+if [ "$branch" = "main" ]; then
+  echo "[pre-commit] main 브랜치에는 backend/ 변경을 커밋하지 않는다. 브랜치를 만든 뒤 커밋한다(backend/AGENTS.md §작업 흐름)." >&2
+  exit 1
+fi
+
+if ! command -v dotnet >/dev/null 2>&1; then
+  echo "[pre-commit] dotnet을 찾을 수 없다. .NET 10 SDK를 설치한 뒤 커밋한다." >&2
+  exit 1
+fi
+
+sln="$(git rev-parse --show-toplevel)/backend/RideMateService/RideMateService.sln"
+echo "[pre-commit] backend 빌드 확인 중 (경고도 실패로 본다)…"
+# 증분 빌드는 컴파일을 건너뛰어 경고를 놓치므로 --no-incremental로 다시 빌드한다.
+if ! out="$(dotnet build "$sln" --no-incremental -warnaserror -nologo -v q 2>&1)"; then
+  echo "$out" | grep -E "error|warning" >&2
+  echo "[pre-commit] 빌드 실패. 고친 뒤 다시 커밋한다." >&2
+  exit 1
+fi
+echo "[pre-commit] 빌드 통과"
+exit 0

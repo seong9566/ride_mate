@@ -1,0 +1,8 @@
+<ItemGroup>
+  <Compile Update="Repository\v1\{도메인}\{도메인}Repository.EF.cs">
+    <DependentUpon>{도메인}Repository.cs</DependentUpon>
+  </Compile>
+  <Compile Update="Repository\v1\{도메인}\{도메인}Repository.SQL.cs">
+    <DependentUpon>{도메인}Repository.cs</DependentUpon>
+  </Compile>
+</ItemGroup>
