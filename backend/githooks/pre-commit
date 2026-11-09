@@ -3,6 +3,18 @@
 # 1) main 브랜치에서는 커밋을 막는다.
 # 2) 솔루션을 경고=오류로 다시 빌드해 실패하면 커밋을 막는다.
 # 설치(레포 루트에서 한 번): ln -s ../../backend/githooks/pre-commit .git/hooks/pre-commit
+# 테스트: sh backend/githooks/tests/test-pre-commit.sh
+
+# 발동 기록: 통과·차단을 "<시각>\t<훅>\t<allow|block>\t<경로>" 한 줄로 남긴다(하네스 검사 E7·L1).
+# 로그 폴더가 없으면 남기지 않고, 로그 실패는 훅 결과를 바꾸지 않는다. 경로는 HARNESS_HOOK_LOG로 바꾼다.
+log_result() {
+  rc=$?
+  log="${HARNESS_HOOK_LOG:-$HOME/.claude/harness-audit/hooks.log}"
+  if [ "$rc" = 0 ]; then decision=allow; else decision=block; fi
+  { [ -d "${log%/*}" ] && printf '%s\t%s\t%s\t%s\n' "$(date +%Y-%m-%dT%H:%M:%S%z)" repo-pre-commit "$decision" "$PWD" >> "$log"; } 2>/dev/null
+  exit "$rc"
+}
+trap log_result EXIT
 
 if ! git diff --cached --name-only | grep -q '^backend/'; then
   exit 0

@@ -77,3 +77,4 @@ bash "$VAULT/.claude/scripts/task.sh" done T0x --project ride-mate
 
 - 클론한 뒤 레포 루트에서 한 번 설치한다: `ln -s ../../backend/githooks/pre-commit .git/hooks/pre-commit`
 - `git config core.hooksPath`는 바꾸지 않는다.
+- 훅을 고치면 `sh githooks/tests/test-pre-commit.sh`가 `실패: 0`으로 끝나는지 확인한다. 테스트는 임시 복제본에서만 돈다.
