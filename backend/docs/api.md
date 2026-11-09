@@ -59,5 +59,5 @@
 
 ## API 명세
 
-- 앱↔서버 계약은 루트 `docs/api/openapi.json`이다. 모빌리티 앱은 이 파일을 보고 개발한다.
+- 앱↔서버 계약은 루트 `docs/api/openapi.json`이다. 모빌리티 앱은 이 파일을 보고 개발한다. 이 파일은 아직 없고, 첫 API를 추가하면서 `update-api-spec` 스킬을 실행할 때 생긴다.
 - 라우트·DTO를 바꾼 작업은 같은 PR에서 명세를 갱신한다. 절차는 `update-api-spec` 스킬을 따른다.

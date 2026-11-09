@@ -54,8 +54,8 @@ description: RideMate 백엔드에 새 도메인(DTO·Repository·Service·Contr
    - `Extensions/ServiceCollectionExtensions.cs`가 없으면 템플릿으로 만든다. `Program.cs`에 `using RideMateService.Extensions;`를 더하고, `ILogService` 등록을 지운 자리에서 `builder.Services.AddDomainModules();`와 `builder.Services.AddCommonInfrastructure();`를 호출한다.
    - 이미 있으면 `Add{도메인}Module()`을 더하고 `AddDomainModules()`에 한 줄 추가한다.
 4. `RideMateService.csproj`에 11번 항목을 추가한다.
-5. `dotnet build RideMateService.sln -warnaserror`가 경고 0으로 통과할 때까지 고친다.
-6. 서버를 띄워 Swagger에서 새 API를 호출하고 응답을 확인한다. 확인 후 서버를 PID로 종료한다.
+5. `dotnet build RideMateService.sln -warnaserror`가 경고 0으로 통과하도록 고친다. 세 번 고쳐도 통과하지 못하면 멈추고 남은 오류를 사용자에게 알린다.
+6. 서버를 띄워 Swagger에서 새 API를 호출하고 응답을 확인한다. 로컬 서버와 로컬 DB가 대상일 때만 쓰기 API도 호출한다(`backend/AGENTS.md` §빌드·실행·검증). 확인 후 서버를 PID로 종료한다.
 7. `update-api-spec` 스킬로 `docs/api/openapi.json`을 갱신한다.
 8. `feat: <한국어 요약>`으로 커밋한다.
 
