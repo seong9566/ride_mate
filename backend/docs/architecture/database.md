@@ -20,7 +20,7 @@ DB는 MySQL, EF Core 공급자는 `MySql.EntityFrameworkCore`, 스키마는 DB-f
 - 손으로 추가하는 코드(쿼리 헬퍼·확장)는 `Commons/Repository/RideMateContext.Extensions.cs`에 partial로 쓴다.
 - 재스캐폴드 전 백업 파일(`.bak`)을 만들지 않는다. 변화는 `git diff`로 확인한다.
 - `dotnet-ef`는 EF Core와 같은 10.x 버전을 `RideMateService/`의 로컬 도구 매니페스트로 쓴다.
-- 스캐폴드는 `POLYGON`·`LINESTRING` 컬럼을 건너뛴다. 공급자가 이 타입을 지원하지 않는다. 엔티티에 없는 공간 컬럼은 Dapper로만 읽고 쓴다. [ADR-0011]
+- 스캐폴드는 `POLYGON`·`LINESTRING` 컬럼을 건너뛴다. 공급자가 이 타입을 지원하지 않는다. 엔티티에 없는 공간 컬럼은 Dapper로만 읽고 쓴다. `GEOMETRY` 컬럼은 엔티티에 있지만 점만 담는 타입으로 잡히므로 마찬가지로 Dapper로 쓴다. 공간 컬럼이 있는 `AREA`·`LOOP_ROUTE`·`RESTRICTED_ZONE`은 등록·수정·삭제 표시를 모두 Dapper로 한다. [ADR-0011]
 - 생성 컬럼 `ACTIVE_FLAG`는 `RideMateContext.Extensions.cs`에서 저장 대상에서 뺀다. 이름이 `ActiveFlag`인 속성에 모두 적용되므로 테이블을 추가해도 고칠 필요가 없다. [ADR-0010]
 - 로컬 MySQL은 Docker로 띄운다. compose 파일은 `backend/docker-compose.yml`(템플릿 `.agents/skills/db-schema-change/templates/docker-compose.yml`), 비밀번호는 git에서 제외된 `backend/.env`에 둔다.
 
