@@ -96,7 +96,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 |---|---|---|---|
 | `LOGIN_SESSION_ID` | INT | N | PK |
 | `USER_ID` | INT | N | FK → USER_INFO |
-| `SESSION_TYPE` | VARCHAR(20) | N | `CAR`(차량 refresh 토큰), `WEB`(휴대폰 웹 쿠키). 처음 값 `CAR` |
+| `SESSION_TYPE` | VARCHAR(20) | N | `CAR`(차량 refresh 토큰), `WEB`(휴대폰 웹 쿠키). DB 기본값이 없다. 행을 넣을 때마다 Service가 정한다 |
 | `TOKEN_HASH` | CHAR(64) | N | 로그인 토큰의 HMAC. UNIQUE |
 | `PREV_TOKEN_HASH` | CHAR(64) | Y | 바꾸기 직전 refresh 토큰의 HMAC |
 | `ROTATE_DT` | DATETIME | Y | 토큰을 마지막으로 바꾼 시각 |

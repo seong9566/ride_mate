@@ -442,7 +442,6 @@ public partial class RideMateContext : DbContext
                 .HasColumnName("ROTATE_DT");
             entity.Property(e => e.SessionType)
                 .HasMaxLength(20)
-                .HasDefaultValueSql("'CAR'")
                 .HasComment("세션 종류 (CAR, WEB)")
                 .HasColumnName("SESSION_TYPE");
             entity.Property(e => e.TokenHash)

@@ -26,5 +26,5 @@
 - 로그아웃해도 이미 발급된 access는 만료(최대 1시간)까지 통과한다. 즉시 막는 장치는 두지 않았다. 로그아웃은 refresh만 거절시킨다.
 - `sign` 구간 API에는 `[AllowAnonymous]`를 쓸 수 없다. 붙이면 서버가 기동할 때 `InvalidOperationException`으로 실패한다.
 - `Token`은 `{ message, data, code }`가 아니라 OAuth 본문을 돌려주는 예외다. `api.md`·`controller.md`·`dto.md`에 예외로 적는다.
-- `LOGIN_SESSION`에 `SESSION_TYPE`·`PREV_TOKEN_HASH`·`ROTATE_DT`가 더해졌다(`sql/20261110_login_session_type.sql`). 조회마다 `SESSION_TYPE` 조건을 빠뜨리면 차량 세션과 웹 세션이 섞인다.
+- `LOGIN_SESSION`에 `SESSION_TYPE`·`PREV_TOKEN_HASH`·`ROTATE_DT`가 더해졌다(`sql/20261110_user_session_type.sql`). 조회마다 `SESSION_TYPE` 조건을 빠뜨리면 차량 세션과 웹 세션이 섞인다.
 - 키가 셋(JWT 서명, 전화번호 암호화, 해시)이라 배포 환경마다 값을 주입해야 한다. 서명 키를 바꾸면 발급된 access가 모두 무효가 되고, 해시 키를 바꾸면 저장된 토큰·번호 해시를 모두 못 찾는다.
