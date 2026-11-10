@@ -2,7 +2,6 @@ using System.Data;
 using System.IO.Compression;
 using System.Text.RegularExpressions;
 using Dapper;
-using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
@@ -10,8 +9,8 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using Newtonsoft.Json;
 using RideMateService.Comm;
-using RideMateService.Commons.Repository;
 using RideMateService.Comm.Security;
+using RideMateService.Commons.Repository;
 using RideMateService.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -113,6 +112,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             OnChallenge = async context =>
             {
                 // 기본 응답을 막고 항상 같은 401 본문을 쓴다
+                if (context.Response.HasStarted)
+                    return;
+
                 context.HandleResponse();
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 context.Response.ContentType = "application/json; charset=utf-8";
@@ -152,7 +154,6 @@ builder.Services.AddTransient<IDbConnection>(sp =>
 builder.Services.AddControllers(options =>
     {
         options.Filters.Add<RunActionFilter>();
-        options.Conventions.Add(new SignRouteConvention());
     })
     .AddNewtonsoftJson();
 
@@ -178,7 +179,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
-app.MapControllers();
+app.MapControllers().RequireAuthForSignRoutes();
 
 app.Run();
 

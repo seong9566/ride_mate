@@ -1,31 +1,47 @@
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc.ApplicationModels;
-using Microsoft.AspNetCore.Mvc.Authorization;
+using Microsoft.AspNetCore.Builder;
 
 namespace RideMateService.Comm;
 
 /// <summary>
-/// 라우트 템플릿에 /sign/ 구간이 있는 액션에 기본 인증 정책(AuthorizeFilter)을 붙인다.
-/// 액션이나 컨트롤러에 [Authorize]·[AllowAnonymous]가 직접 붙어 있으면 건드리지 않는다.
+/// 최종 경로에 /sign/ 구간이 있는 엔드포인트에 기본 인증 정책을 붙이는 규약.
+/// 액션이나 컨트롤러에 [Authorize] 계열이 직접 붙어 있으면 건드리지 않고,
+/// [AllowAnonymous]가 붙어 있으면 기동을 실패시킨다.
 /// </summary>
-public class SignRouteConvention : IActionModelConvention
+public static class SignRouteConvention
 {
     /// <summary>
-    /// 액션 모델을 검사해 sign 구간이면 AuthorizeFilter를 더한다.
+    /// 컨트롤러 엔드포인트의 최종 경로를 보고 sign 구간이면 [Authorize]를 더한다.
     /// </summary>
-    public void Apply(ActionModel action)
+    public static ControllerActionEndpointConventionBuilder RequireAuthForSignRoutes(
+        this ControllerActionEndpointConventionBuilder builder)
     {
-        var hasAuthAttribute = action.Attributes.Concat(action.Controller.Attributes)
-            .Any(a => a is IAuthorizeData || a is IAllowAnonymous);
-        if (hasAuthAttribute)
-            return;
+        builder.Add(endpointBuilder =>
+        {
+            if (endpointBuilder is not RouteEndpointBuilder routeBuilder)
+                return;
 
-        var isSignRoute = action.Selectors
-            .Select(s => s.AttributeRouteModel?.Template)
-            .Any(t => t != null && ("/" + t.Trim('/') + "/").Contains("/sign/", StringComparison.OrdinalIgnoreCase));
-        if (!isSignRoute)
-            return;
+            var route = routeBuilder.RoutePattern.RawText ?? string.Empty;
+            if (!IsSignRoute(route))
+                return;
 
-        action.Filters.Add(new AuthorizeFilter());
+            if (routeBuilder.Metadata.OfType<IAllowAnonymous>().Any())
+                throw new InvalidOperationException($"sign 구간 라우트에는 [AllowAnonymous]를 쓸 수 없습니다: {route}");
+
+            if (routeBuilder.Metadata.OfType<IAuthorizeData>().Any())
+                return;
+
+            routeBuilder.Metadata.Add(new AuthorizeAttribute());
+        });
+
+        return builder;
+    }
+
+    /// <summary>
+    /// 경로에 sign 구간(/sign/, 대소문자 무시)이 있는지 본다. signature 같은 구간은 해당하지 않는다.
+    /// </summary>
+    public static bool IsSignRoute(string? route)
+    {
+        return ("/" + (route ?? string.Empty).Trim('/') + "/").Contains("/sign/", StringComparison.OrdinalIgnoreCase);
     }
 }

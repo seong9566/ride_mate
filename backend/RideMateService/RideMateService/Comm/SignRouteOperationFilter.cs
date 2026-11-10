@@ -13,8 +13,7 @@ public class SignRouteOperationFilter : IOperationFilter
     /// </summary>
     public void Apply(OpenApiOperation operation, OperationFilterContext context)
     {
-        var path = "/" + (context.ApiDescription.RelativePath ?? string.Empty).Trim('/') + "/";
-        if (!path.Contains("/sign/", StringComparison.OrdinalIgnoreCase))
+        if (!SignRouteConvention.IsSignRoute(context.ApiDescription.RelativePath))
             return;
 
         operation.Security ??= new List<OpenApiSecurityRequirement>();
