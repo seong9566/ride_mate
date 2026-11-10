@@ -29,4 +29,13 @@
       <PackageReference Include="Swashbuckle.AspNetCore.Filters" Version="10.0.1" />
     </ItemGroup>
 
+    <ItemGroup>
+      <Compile Update="Repository\v1\Auth\AuthRepository.EF.cs">
+        <DependentUpon>AuthRepository.cs</DependentUpon>
+      </Compile>
+      <Compile Update="Repository\v1\Auth\AuthRepository.SQL.cs">
+        <DependentUpon>AuthRepository.cs</DependentUpon>
+      </Compile>
+    </ItemGroup>
+
 </Project>

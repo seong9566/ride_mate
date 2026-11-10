@@ -1,5 +1,7 @@
 using RideMateService.Comm.Logger;
 using RideMateService.Comm.Security;
+using RideMateService.Repository.v1.Auth;
+using RideMateService.Service.v1.Auth;
 
 namespace RideMateService.Extensions;
 
@@ -10,7 +12,15 @@ public static class ServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddDomainModules(this IServiceCollection services)
     {
+        services.AddAuthModule();
         // 도메인을 추가하면 여기에 한 줄
+        return services;
+    }
+
+    private static IServiceCollection AddAuthModule(this IServiceCollection services)
+    {
+        services.AddTransient<IAuthRepository, AuthRepository>();
+        services.AddTransient<IAuthService, AuthService>();
         return services;
     }
 }
