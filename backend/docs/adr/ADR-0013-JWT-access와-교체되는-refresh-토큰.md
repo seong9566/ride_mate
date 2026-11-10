@@ -7,7 +7,7 @@
 
 - 차량 로그인 토큰은 둘이다. access는 JWT(HS256, 수명 1시간, `Authorization: Bearer`)이고 클레임은 `sub`(USER_ID)·`sid`(LOGIN_SESSION_ID)·`did`(DEVICE_ID)다. refresh는 base64url 값이고 수명은 90일이다. 처음 발급할 때는 서버가 만든 256비트 난수다.
 - refresh는 쓸 때마다 새 값으로 바꾼다(rotation). 같은 `LOGIN_SESSION` 행의 `TOKEN_HASH`를 바꾸므로 `session_id`는 그대로다. 바꾸기 직전 값 하나는 24시간 동안 받아 준다.
-- 교체는 멱등이다. 새 값은 base64url(HMAC-SHA256(`Crypto:HashKey`, `"refresh-next:" + LOGIN_SESSION_ID + ":" + 낸 refresh 값`))로 계산한다. 직전 값을 내면 지금 값과 같은 새 값을 다시 주고 행은 바꾸지 않는다.
+- 교체는 멱등이다. 새 값은 base64url(HMAC-SHA256(`Crypto:HashKey`, `"refresh-next:" + LOGIN_SESSION_ID + ":" + 낸 refresh 값`))로 계산한다. 직전 값을 내면 지금 값과 같은 새 값을 다시 주고 `TOKEN_HASH`·`PREV_TOKEN_HASH`·`ROTATE_DT`는 바꾸지 않는다(만료와 마지막 사용 시각만 갱신한다).
 - 토큰 발급은 OAuth 2.0 형식의 `POST /api/v1/Auth/M/Token` 하나로 한다. 방식은 `grant_type`으로 나눈다(`refresh_token`, 이후 `otp`, `urn:ietf:params:oauth:grant-type:device_code`).
 - 휴대폰 웹 세션도 `LOGIN_SESSION`에 두고 종류 칸 `SESSION_TYPE`(`CAR`, `WEB`)으로 가른다. 이 테이블을 읽는 모든 조회에 `SESSION_TYPE` 조건을 붙인다.
 - `sign` 구간은 JWT의 서명·만료·발급자·수신자만 검사하고 DB를 조회하지 않는다. 경로에 `/sign/`이 있는 API는 규약(`SignRouteConvention`)이 인증을 요구하며, 빠뜨리면 열리는 것이 아니라 닫힌다.
@@ -31,5 +31,5 @@
 - `Token`은 `{ message, data, code }`가 아니라 OAuth 본문을 돌려주는 예외다. `api.md`·`controller.md`·`dto.md`에 예외로 적는다.
 - `LOGIN_SESSION`에 `SESSION_TYPE`·`PREV_TOKEN_HASH`·`ROTATE_DT`가 더해졌다(`sql/20261110_user_session_type.sql`). 조회마다 `SESSION_TYPE` 조건을 빠뜨리면 차량 세션과 웹 세션이 섞인다.
 - 키가 셋(JWT 서명, 전화번호 암호화, 해시)이라 배포 환경마다 값을 주입해야 한다. 서명 키를 바꾸면 발급된 access가 모두 무효가 되고, 해시 키를 바꾸면 저장된 토큰·번호 해시를 모두 못 찾는다.
-- 교체한 refresh 값은 난수가 아니라 해시 키로 계산한 값이다. `Crypto:HashKey`가 refresh 원문 하나와 함께 새면, 가진 쪽은 그 뒤의 값을 서버 없이 계산할 수 있다. 다만 그 원문만으로도 이미 그 세션을 쓸 수 있다.
+- 교체한 refresh 값은 난수가 아니라 해시 키로 계산한 값이다. `Crypto:HashKey`가 새면, 그 세션의 refresh 원문을 하나라도 가진 쪽은 그 뒤의 값을 서버 없이 차례로 계산할 수 있다. 이미 거절되는 옛 원문(백업이나 캡처된 통신에 남은 값)으로도 지금 값까지 계산된다. 해시 키가 새면 키를 바꿔 모든 세션을 끝내야 한다.
 - 이 교체에는 도난 감지와 세션 최대 수명이 없다. 훔친 값이 지금 값이거나 허용 시간(24시간) 안의 직전 값이면 훔친 쪽은 차량과 같은 지금 값을 받는다. 그 뒤로도 교체마다 24시간 안에 refresh하면 차량과 같은 값을 계속 따라갈 수 있고, 차량은 이를 알아채지 못한다(교체 값이 난수였을 때는 양쪽이 서로의 값을 무효로 만들었다). 쓸 때마다 세션이 90일씩 늘어난다. 이런 세션을 끝내는 방법은 셋이다. 같은 `DEVICE_ID`에서 같은 계정으로 다시 로그인한다(직전 세션을 끝낸다, T08에서 구현). 계정 주인이 access 토큰이 유효할 때 로그아웃한다. 계정을 삭제한다(삭제 절차가 세션을 끝낸다, `schema.md`).
