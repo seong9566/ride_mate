@@ -17,8 +17,10 @@ RideMate 백엔드의 테이블 설계다. 테이블 규칙(이름, 감사 컬�
 - FK 컬럼의 인덱스는 InnoDB가 자동으로 만들게 두지 않고 DDL에 이름을 붙여 적는다. FK 컬럼이 맨 앞인 복합 인덱스나 UNIQUE가 있으면 그것으로 충분하므로 단독 인덱스를 또 만들지 않는다. 아래 표의 "인덱스"에는 FK 인덱스 말고 따로 필요한 것만 적는다.
 - 제약과 인덱스 이름은 `FK_{테이블}_{nn}`, `UK_{테이블}_{nn}`, `IX_{테이블}_{nn}`, `CK_{테이블}_{nn}`으로 짓는다. `nn`은 테이블 안에서 01부터 붙인다.
 - `DEFAULT`는 `DELETE_YN`에만 둔다. 나머지 NOT NULL 컬럼은 Service가 값을 채운다. 처음 넣는 값이 정해진 컬럼은 표의 설명에 "처음 값"으로 적는다.
-- 구조 조건은 CHECK 제약으로 건다(범위, 함께 채워져야 하는 컬럼). 표에 `·`로 묶어 적은 위도·경도 쌍과 시각 쌍은 모두 `(A IS NULL) = (B IS NULL)`을 건다. 그 밖의 CHECK는 각 표 아래에 적는다.
+- 구조 조건은 CHECK 제약으로 건다(범위, 함께 채워져야 하는 컬럼). 표에 `·`로 묶어 한 줄에 적은 컬럼 쌍은 모두 `(A IS NULL) = (B IS NULL)`을 건다(위도·경도, 시작·종료 시각, 추가 시간·요금, 빈자리 수·조회 시각). 그 밖의 CHECK는 각 표 아래에 적는다.
 - 코드 값 목록과 코드 값에 따라 달라지는 조건은 CHECK로 걸지 않고 Service에서 확인한다. 코드가 늘 때마다 DDL을 바꾸지 않기 위해서다. 예외는 하나다. `TIMETABLE_EXCEPTION`의 `TIME_CHANGE` 조건은 CHECK로 건다.
+- 시작·종료 시각 쌍은 자정을 넘기지 않는다. 자정을 넘는 구간은 두 행으로 나눠 넣는다.
+- 트랜잭션 격리 수준은 MySQL 기본값인 REPEATABLE READ를 쓴다. 이 문서의 잠금 순서 설명은 이 수준을 전제로 한다.
 - `LAT`·`LNG`로 공간 값을 만들 때는 `ST_GeomFromText(CONCAT('POINT(', LAT, ' ', LNG, ')'), 4326)` 하나만 쓴다. SRID 4326의 WKT는 위도, 경도 순서다.
 - 비밀값(전화번호, 인증번호, 토큰)을 저장하는 방식은 셋이다.
   - `_ENC`: 암호화해서 저장한다. 원래 값을 다시 써야 할 때다(문자 발송).
@@ -113,8 +115,11 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 | `LOCK_UNTIL_DT` | DATETIME | Y | 잠금이 풀리는 시각. 5회 틀리면 채운다 |
 | `VERIFY_DT` | DATETIME | Y | 인증에 성공한 시각 |
 
-- 인증번호를 다시 받으면 새 행을 만든다. 확인할 때는 그 번호·용도의 가장 최근 행만 본다.
-- 잠금 중인지는 그 번호의 최근 행에서 `LOCK_UNTIL_DT`로 판단한다. 잠긴 동안에는 새 인증번호를 보내지 않는다.
+- 인증번호를 다시 받으면 새 행을 만든다. 확인할 때는 그 번호·용도의 가장 최근 행만 본다. `VERIFY_DT`가 채워진 행은 다시 통과시키지 않는다.
+- 틀린 횟수와 잠금은 용도와 관계없이 번호 단위다. 새 행을 만들 때 그 번호의 직전 행이 인증되지 않았고 만든 지 10분이 지나지 않았으면 `FAIL_CNT`를 이어받는다. 다시 받는다고 횟수가 0으로 돌아가지 않는다.
+- 잠금 중인지는 그 번호의 가장 최근 행에서 `LOCK_UNTIL_DT`로 판단한다. 잠긴 동안에는 새 인증번호를 보내지 않는다.
+- 같은 번호로는 1분에 한 번만 보낸다(가정값).
+- 인증에 성공했거나 만료된 지 24시간이 지난 행은 주기 작업이 `PHONE_HASH`·`CODE_HASH`를 빈 문자열로 바꾸고 `DELETE_YN`을 켠다. 동의 증빙에 필요한 시각과 방법은 `CONSENT`에 있다.
 - `GUARDIAN`은 로그인한 부모 계정의 번호로만 보낸다.
 - 틀린 횟수를 올릴 때는 그 행을 `FOR UPDATE`로 잠그고 읽는다. 동시에 여러 번 시도해도 횟수가 빠지지 않는다.
 - 인덱스: `(PHONE_HASH, PURPOSE, PHONE_VERIFICATION_ID)`
@@ -133,7 +138,8 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 | `EXPIRE_DT` | DATETIME | N | 만료 시각 |
 
 - `PENDING`일 때만 `PARENT_ID`가 비어 있다. 코드 값 조건이라 CHECK로 걸지 않고 Service에서 확인한다.
-- 차량이 `APPROVED`를 확인하면 `LOGIN_SESSION`을 만들고 `USED`로 바꾼다. 한 QR로 두 번 로그인할 수 없다.
+- 차량이 `APPROVED`를 확인하면 `LOGIN_SESSION`을 만들고 `USED`로 바꾼다. 이 트랜잭션은 첫 문장에서 그 행을 `FOR UPDATE`로 잠그고 상태를 다시 읽는다. 이미 `USED`면 거절하므로 한 QR로 두 번 로그인할 수 없다.
+- 토큰을 받아가는 요청의 `DEVICE_ID`가 행의 값과 같아야 한다. QR을 찍어 간 다른 기기는 로그인 토큰을 받을 수 없다.
 
 ### CONSENT — 동의 기록
 
@@ -150,7 +156,7 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 | `PHONE_VERIFICATION_ID` | INT | Y | FK → PHONE_VERIFICATION. 휴대폰 인증으로 확인한 경우 |
 | `CONSENT_DT` | DATETIME | N | 동의한 시각 |
 
-- 지금 동의 상태는 그 부모·종류의 가장 최근 행이다.
+- 지금 동의 상태는 그 부모·종류의 가장 최근 행이다. 이 테이블이 정본이다. `PARENT.ARRIVAL_LOG_YN`은 화면이 빨리 읽기 위한 사본이고 `ARRIVAL_LOG` 행을 넣는 트랜잭션에서 함께 바꾼다.
 - 인덱스: `(PARENT_ID, CONSENT_TYPE, CONSENT_ID)`
 
 ## 아이·시간표
@@ -187,7 +193,9 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 | `OPEN_STATUS` | VARCHAR(20) | Y | 원천 데이터의 등록 상태. `OPEN`(운영), `CLOSED`(휴원·폐원) |
 
 - 부모는 검색 결과에서만 학원 위치를 고른다. 고른 위치가 `AREA.BOUNDARY` 밖이면 등록을 거절한다.
-- 검색으로 고른 장소가 이미 있으면 그 행을 쓰고, 없으면 `PLACE`로 새 행을 만든다. 부모가 지은 학원 이름은 여기가 아니라 `TIMETABLE.DISPLAY_NAME`에 둔다.
+- 학원 검색은 서버가 먼저 이 테이블에서 찾고(운영팀·표준데이터 학원), 그 뒤에 장소 검색 API 결과를 붙여 돌려준다. 이 테이블의 학원은 `ACADEMY_ID`로 고른다.
+- 장소 검색 결과를 고르면 `PLACE_ID`가 같은 행이 있는지 먼저 본다. 없으면 이름이 같고 위치가 50m 안(가정값)인 행을 찾아 그 행에 `PLACE_ID`를 채워 쓴다. 그래도 없을 때만 `PLACE`로 새 행을 만든다. 운영팀이 검증한 학원이 검색 결과 때문에 둘로 갈리지 않게 한다.
+- 부모가 지은 학원 이름은 여기가 아니라 `TIMETABLE.DISPLAY_NAME`에 둔다.
 - 살아 있는 행 UNIQUE: `(PLACE_ID, ACTIVE_FLAG)`, `(SOURCE_REF, ACTIVE_FLAG)`. 값이 NULL인 행은 걸리지 않는다.
 
 ### TIMETABLE — 시간표
@@ -204,7 +212,9 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 
 - CHECK: `END_TIME BETWEEN '14:00:00' AND '23:30:00'`, `MINUTE(END_TIME) % 5 = 0 AND SECOND(END_TIME) = 0`
 - 등록 개수 제한(가정 10건)과 같은 요일 ±40분 겹침 경고는 Service에서 한다.
-- 진행 중인 픽업 계획이 있는 시간표는 삭제하지 않는다.
+- 진행 중인 픽업 계획이 있는 시간표는 삭제하지 않고, 학원·하원 시각을 바꾸거나 그 계획의 요일을 빼는 편집도 거절한다. 오늘 하원 시각만 바꾸는 것은 `TIMETABLE_EXCEPTION`으로 한다.
+- 편집으로 요일을 뺐다가 다시 넣으면 새 행을 만들지 않고 삭제 표시된 `TIMETABLE_DAY` 행을 되살린다. `LAST_PICKUP_DATE`가 이어진다.
+- 시간표를 지우고 같은 내용으로 다시 등록하면 새 시간표다. 그날 이미 탑승으로 끝났어도 계획이 다시 만들어질 수 있다. 감수한다.
 
 ### TIMETABLE_DAY — 시간표의 요일
 
@@ -239,17 +249,21 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 
 ### 아이·계정 삭제
 
-한 트랜잭션에서 아래 순서로 한다. 아이만 삭제할 때는 그 아이에 대해 1~5만 한다.
+한 트랜잭션에서 아래 순서로 한다. 아이만 삭제할 때는 그 아이에 대해 0~5만 한다. 시간표 한 건을 삭제할 때도 0번의 잠금부터 한다.
+
+비우는 값과 `DELETE_YN` 켜기는 한 행에 대해 한 UPDATE로 한다. 잠금은 Dapper로 먼저 잡는다. EF 저장 한 번에 여러 행을 맡기면 UPDATE 순서가 정해지지 않는다.
 
 | 순서 | 대상 | 처리 |
 |---|---|---|
-| 1 | 진행 중인 `PICKUP_PLAN` | 취소로 끝낸다(상태 바꾸기와 익명화 절차 그대로). 보낸 링크도 함께 끝난다 |
+| 0 | `AREA` 잠금 | 트랜잭션의 첫 문장으로, 그 아이들의 시간표가 가리키는 학원가의 `AREA` 행을 `AREA_ID` 순서로 `FOR UPDATE` 잠근다. 계획 생성이 같은 잠금을 기다리므로 삭제 도중에 새 계획이 끼어들지 못한다 |
+| 1 | 진행 중인 `PICKUP_PLAN` | 잠금 조회(`FOR UPDATE`)로 찾아 `PICKUP_PLAN_ID` 순서로 취소한다(상태 바꾸기와 익명화 절차 그대로). 보낸 링크도 함께 끝난다 |
 | 2 | `TIMETABLE_EXCEPTION` | `DELETE_YN`을 켠다 |
 | 3 | `TIMETABLE_DAY` | `DELETE_YN`을 켠다 |
 | 4 | `TIMETABLE` | `DELETE_YN`을 켜고 `DISPLAY_NAME`을 빈 문자열로 바꾼다 |
 | 5 | `CHILD` | `DELETE_YN`을 켜고 `CHILD_NAME`을 빈 문자열로, `PHONE_ENC`를 빈 값으로 바꾼다 |
-| 6 | `LOGIN_SESSION` | `DELETE_YN`을 켠다 |
-| 7 | `PARENT` | `DELETE_YN`을 켜고 `PHONE_ENC`를 빈 값으로, `PHONE_HASH`를 빈 문자열로, 호칭·차 정보·목적지를 NULL로 바꾼다 |
+| 6 | `LOGIN_SESSION`, `QR_LOGIN` | `DELETE_YN`을 켠다. `QR_LOGIN`은 `PARENT_ID`를 NULL로 바꾼다 |
+| 7 | `PHONE_VERIFICATION` | 그 번호의 행에서 `PHONE_HASH`·`CODE_HASH`를 빈 문자열로 바꾸고 `DELETE_YN`을 켠다. 남겨 두면 `CONSENT`를 거쳐 삭제된 계정의 번호 해시로 이어진다 |
+| 8 | `PARENT` | `DELETE_YN`을 켜고 `PHONE_ENC`를 빈 값으로, `PHONE_HASH`를 빈 문자열로, 호칭·차 정보·목적지를 NULL로 바꾼다 |
 
 - `CONSENT`는 지우지 않는다. 동의를 받았다는 증빙이다. 보관 기간은 정해지지 않았다.
 - 로그아웃은 삭제가 아니다. 그 차량의 `LOGIN_SESSION`만 끝내고 서버의 시간표와 아이 정보는 남는다.
@@ -298,6 +312,7 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 | `SOURCE_REF` | VARCHAR(100) | Y | 원천 데이터의 관리번호. 현장 조사면 NULL |
 
 - 오늘이 어느 `DAY_TYPE`인지는 요일과 `HOLIDAY` 테이블로 정한다.
+- 원천 데이터를 지점별로 가공한 결과라 다시 적재할 때는 그 지점의 `SOURCE_REF`가 있는 행을 모두 삭제 표시하고 새로 넣는다.
 - 인덱스: `(PICKUP_SPOT_ID, DAY_TYPE)`
 
 ### ACADEMY_PICKUP_SPOT — 학원별 픽업 지점 후보
@@ -334,6 +349,7 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 | 컬럼 | 타입 | NULL | 설명 |
 |---|---|---|---|
 | `RESTRICTED_ZONE_ID` | INT | N | PK |
+| `AREA_ID` | INT | N | FK → AREA. 이 구역이 속한 학원가. 차량에는 학원가 단위로 내려준다 |
 | `ZONE_TYPE` | VARCHAR(20) | N | 아래 코드 |
 | `GEOM` | GEOMETRY SRID 4326 | N | 점·선·면. SPATIAL INDEX |
 | `BUFFER_M` | SMALLINT | N | `GEOM`에서 이 거리(m) 안까지 제외한다 |
@@ -362,6 +378,7 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 - "이 위치가 제외 구역인가"는 두 단계로 조회한다. 먼저 위치 둘레의 사각형과 `MBRIntersects`로 후보를 추리고, 그 후보에만 `ST_Distance(GEOM, 점) <= BUFFER_M`을 적용한다. 거리 조건만 쓰면 공간 인덱스를 타지 않고 모든 행을 계산한다.
 - 사각형도 SRID 4326으로 만든다. SRID가 다르면 오류가 난다. 가장 큰 `BUFFER_M`(m)을 도 단위로 바꿔 넓힌다. 위도는 `m / 111320`, 경도는 `m / (111320 × cos(위도))`다.
 - 지원 학원가 둘레의 데이터만 넣는다. 전국 데이터를 넣지 않는다.
+- 살아 있는 행 UNIQUE: `(SOURCE_NAME, SOURCE_REF, ACTIVE_FLAG)`. 공공데이터를 다시 적재할 때 이 값으로 같은 구역을 찾아 덮어쓴다. 현장 조사로 넣은 행은 `SOURCE_REF`가 NULL이라 걸리지 않는다.
 
 ### PARKING_LOT — 대기 장소(주차장)
 
@@ -370,6 +387,7 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 | 컬럼 | 타입 | NULL | 설명 |
 |---|---|---|---|
 | `PARKING_LOT_ID` | INT | N | PK |
+| `AREA_ID` | INT | N | FK → AREA. 이 주차장을 추천하는 학원가 |
 | `LOT_NAME` | VARCHAR(100) | N | 이름 |
 | `ADDRESS` | VARCHAR(200) | Y | 주소 |
 | `LAT`·`LNG` | DECIMAL(10,7) | N | 위치 |
@@ -388,7 +406,7 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 - 추천할 때 저장된 빈자리가 5분 안의 값이면 그대로 쓰고, 아니면 실시간 API를 조회해 덮어쓴다. API가 실패하면 저장된 값을 쓴다.
 - 빈자리 갱신은 조회 시각이 저장된 `AVAILABLE_UPDATE_DT`보다 나중일 때만 한다. 늦게 도착한 응답이 최신 값을 덮지 않게 한다.
 - 빈자리 갱신은 `UPDATE_DT`·`UPDATE_USER`를 바꾸지 않는다. 감사 컬럼은 기준 데이터(요금, 운영 시간)를 고친 기록으로만 쓴다.
-- 인덱스: `(LAT)`. 근처 주차장을 위도 범위로 먼저 추린다.
+- 살아 있는 행 UNIQUE: `(SOURCE_REF, ACTIVE_FLAG)`. 공공데이터를 다시 적재할 때 이 값으로 같은 주차장을 찾아 덮어쓴다.
 
 ### HOLIDAY — 공휴일
 
@@ -455,7 +473,7 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 **배정.** 같은 지점에서 배정 시각 앞뒤로 설정값(기본 2분) 안에 있는 진행 중 계획의 수가 `PICKUP_SPOT.CAPACITY`를 넘지 않게 한다. 배정과 재배정은 아래 순서를 한 트랜잭션에서 지킨다. [ADR-0009]
 
 1. 트랜잭션의 첫 문장으로 그 학원가의 `AREA` 행을 잠근다: `SELECT AREA_ID FROM AREA WHERE AREA_ID = ? FOR UPDATE`. 이 문장보다 먼저 다른 조회를 하지 않는다. 먼저 조회하면 그 시점의 스냅샷이 고정되어, 잠금을 얻고도 직전에 커밋된 계획을 보지 못한다.
-2. 새 계획을 만들 때는 `TIMETABLE_DAY` 행을 `FOR UPDATE`로 읽어 `LAST_PICKUP_DATE`를 확인한다. 잠그지 않고 읽으면 탑승 처리와 겹칠 때 끝난 픽업이 다시 만들어진다.
+2. 새 계획을 만들 때는 `TIMETABLE_DAY` 행을 `FOR UPDATE`로 읽어 삭제되지 않았는지, `PICKUP_YN`이 켜져 있는지, `LAST_PICKUP_DATE`가 그날이 아닌지 확인한다. 잠그지 않고 읽으면 탑승 처리나 삭제와 겹칠 때 계획이 잘못 만들어진다.
 3. `ACADEMY_PICKUP_SPOT.PRIORITY` 순으로 후보 지점을 본다. `USE_YN`이 꺼졌거나 그 시각이 `PICKUP_SPOT_BLOCK`에 걸리는 지점은 건너뛴다.
 4. 후보 지점에서 `SLOT_DT`가 배정 시각의 앞뒤 간격 안에 있는 진행 중 계획을 세어 정원과 비교한다. 꽉 찼으면 배정 시각을 1분씩 늦춰 다시 보고(설정값까지, 가정 2분), 그래도 없으면 다음 지점으로 넘긴다.
 5. 모든 후보가 안 되면 `PICKUP_SPOT_ID`와 `SLOT_DT`를 비운 채 계획을 만든다. 화면은 "가까운 픽업 장소를 찾지 못했어요"를 보여준다.
@@ -467,7 +485,7 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 - 출발하지 않은 `PLANNED` 계획도 정원을 잡고 있다. `EXPIRE_DT`가 지나면 만료 처리로 풀린다.
 - 추천 출발 시각이 지나 늦게 출발하면 배정 시각을 뒤로 옮겨 재배정한다. 하원 시각을 오늘만 바꿔도 재배정한다.
 
-**상태 바꾸기와 이벤트 넣기.** 계획의 상태를 바꾸거나 `PICKUP_EVENT`를 넣는 트랜잭션은 첫 문장에서 계획 행을 잠그고 현재 상태를 다시 읽는다: `SELECT … WHERE PICKUP_PLAN_ID = ? FOR UPDATE`. 이 조회에는 `DELETE_YN` 조건을 붙이지 않는다. 이미 끝난 계획이면 아무것도 하지 않는다. 계획을 만드는 트랜잭션(`PLANNED` 이벤트)만 예외다. 잠글 계획 행이 아직 없고 배정 절차의 `AREA` 잠금 안에서 한다.
+**상태 바꾸기와 이벤트 넣기.** 계획의 상태를 바꾸거나 `PICKUP_EVENT`를 넣는 트랜잭션은 첫 문장에서 계획 행을 잠그고 현재 상태를 다시 읽는다: `SELECT … WHERE PICKUP_PLAN_ID = ? FOR UPDATE`. 이 조회에는 `DELETE_YN` 조건을 붙이지 않는다. 이미 끝난 계획이면 아무것도 하지 않는다. 예외는 둘이다. 계획을 만드는 트랜잭션(`PLANNED` 이벤트)은 잠글 계획 행이 아직 없어 배정 절차의 `AREA` 잠금 안에서 한다. 아이·계정·시간표 삭제는 `AREA` 행을 먼저 잠근 뒤 계획 행들을 잠근다.
 
 - 만료·탑승·취소가 겹쳐도 먼저 잠근 쪽만 적용된다.
 - 한 계획의 이벤트가 번호 순서대로 커밋된다. 잠그지 않으면 번호가 작은 이벤트가 늦게 커밋되어 화면이 놓칠 수 있다.
@@ -491,7 +509,7 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 - 학원 참조와 하원 시각을 남기면 작은 학원은 날짜와 하원 시각만으로 아이가 좁혀진다. 그래서 비운다.
 - 남는 픽업 지점과 배정 시각으로 그 지점을 쓰는 학원들까지는 좁힐 수 있다. 지점 하나를 여러 학원이 함께 쓰므로 아이 한 명으로 이어지지는 않는다고 보고 남긴다. [ADR-0008]
 
-**픽업 계열 세 테이블의 `DELETE_YN`.** `PICKUP_PLAN`·`PICKUP_SESSION`·`PICKUP_EVENT`에서 `DELETE_YN`은 "끝나서 익명화됨"을 뜻한다. 이 세 테이블의 조회에는 `DELETE_YN = FALSE` 조건을 붙이지 않고, 진행 중인지는 계획의 `STATUS`로 가린다(세션은 `CLOSE_DT`와 계획의 `EXPIRE_DT`). 끝난 계획의 마지막 이벤트(탑승, 만료, 취소)를 화면이 읽어야 하고, 끝난 링크를 다시 열었을 때 안내해야 하고, 통계가 끝난 행을 읽어야 하기 때문이다. 끝난 계획은 차량에는 계획 번호로, 아이에게는 링크 토큰으로만 열리고 상태와 이벤트만 돌려준다.
+**픽업 계열 세 테이블의 `DELETE_YN`.** `PICKUP_PLAN`·`PICKUP_SESSION`·`PICKUP_EVENT`에서 `DELETE_YN`은 "끝나서 익명화됨"을 뜻한다. 이 세 테이블의 조회에는 `DELETE_YN = FALSE` 조건을 붙이지 않고, 진행 중인지는 계획의 `STATUS`로 가린다(세션은 `CLOSE_DT`와 계획의 `EXPIRE_DT`). 끝난 계획의 마지막 이벤트(탑승, 만료, 취소)를 화면이 읽어야 하고, 끝난 링크를 다시 열었을 때 안내해야 하고, 통계가 끝난 행을 읽어야 하기 때문이다. 끝난 계획은 차량에 다시 열어 주지 않는다. 부모 참조가 비워져 누구의 계획인지 확인할 수 없기 때문이다. 차량은 계획을 끝낸 요청의 응답으로 결과를 받고, 서버가 만료시킨 경우는 진행 중 계획이 없다는 것과 `TIMETABLE_DAY.LAST_PICKUP_DATE`로 안다. 아이에게는 링크 토큰으로만 열리고 끝났다는 상태만 돌려준다.
 
 ### PICKUP_SESSION — 픽업 세션(아이에게 보낸 링크)
 
@@ -502,7 +520,7 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 | `PICKUP_SESSION_ID` | INT | N | PK |
 | `PICKUP_PLAN_ID` | INT | N | FK → PICKUP_PLAN. UNIQUE |
 | `TOKEN_NONCE` | CHAR(32) | N | 토큰을 만들 때 쓰는 난수(16바이트 hex) |
-| `TOKEN_HASH` | CHAR(64) | N | 링크 토큰의 SHA-256. UNIQUE |
+| `TOKEN_HASH` | CHAR(64) | N | 링크 토큰의 HMAC. UNIQUE |
 | `SEND_CHANNEL` | VARCHAR(20) | N | 보낸 채널. `SMS`, `ALIMTALK` |
 | `CLOSE_DT` | DATETIME | Y | 링크가 끝난 시각 |
 
@@ -547,7 +565,7 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 - 횟수 제한(다시 알림 1회, "지금 나가요" 1회)은 이 이력을 세어 Service에서 확인한다.
 - `DETAIL`에는 위 표에 적힌 값만 넣는다. 발송 업체 응답을 그대로 넣지 않는다. 수신 번호가 들어 있을 수 있다.
 - 이벤트의 순서와 "여기부터 새 이벤트" 기준은 `PICKUP_EVENT_ID`다. `EVENT_DT`는 차량 시각이고 늦게 도착할 수 있어 순서 기준으로 쓰지 않는다. 화면은 `PICKUP_PLAN_ID = ? AND PICKUP_EVENT_ID > ?`로 새 이벤트를 읽는다. 이벤트를 넣을 때 계획 행을 잠그므로 번호 순서와 커밋 순서가 같다.
-- 인덱스는 위 UNIQUE 하나로 충분하다. `PICKUP_PLAN_ID`가 맨 앞이라 FK 인덱스를 겸하고, 보조 인덱스에는 PK가 붙어 있어 위 조회를 그대로 처리한다.
+- 인덱스는 위 UNIQUE 하나로 충분하다. `PICKUP_PLAN_ID`가 맨 앞이라 FK 인덱스를 겸한다. 새 이벤트 조회는 그 계획의 이벤트를 훑어 번호로 거른다. 계획 하나의 이벤트는 수십 건이라 따로 인덱스를 두지 않는다.
 
 ## 아직 정하지 않은 것
 
@@ -567,6 +585,7 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 | 만료된 링크의 화면 | 명세서 P-05는 "404와 같은 화면", 입력 검증과 상태 정의는 "이 링크는 끝났어요"다. 스키마는 뒤쪽을 지원한다 |
 | 끝난 계획의 보관 | 명세서는 "세션은 종료 후 삭제"로 고지한다. 익명화한 행을 남기는 것을 고지 문구에 넣어야 한다 |
 | 정리 시간, 앞뒤 간격, 늦추는 한도 | 가정값 1분, 2분, 2분 |
+| 인증번호 재발송 간격, 같은 학원으로 보는 거리 | 가정값 1분, 50m |
 | 제외 반경 | `NO_PARKING`·`YELLOW_*`·`CCTV`·`RESIDENT_PARKING`의 `BUFFER_M`. 단속 카메라가 비추는 구간은 데이터에 없다 |
 | 어린이보호구역 데이터의 모양 | 경계가 없고 시설 위치만 있으면 반경 300m로 넣는다 |
 | 실시간 주차대수의 범위 | 시영 주차장만 제공한다. 강남구 운영 공영주차장이 포함되는지 |
