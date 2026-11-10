@@ -6,8 +6,8 @@ using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
 using RideMateService.Comm;
-using RideMateService.Comm.Logger;
 using RideMateService.Commons.Repository;
+using RideMateService.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -67,14 +67,24 @@ builder.Services.AddSwaggerGen(c =>
 });
 #endregion
 
+#region 도메인 DI
+
+builder.Services.AddDomainModules();
+#endregion
+
 #region 공용 서비스
 
-builder.Services.AddTransient<ILogService, LogService>();
+builder.Services.AddCommonInfrastructure();
 #endregion
 
 #region Dapper 타입 핸들러
 
 SqlMapper.AddTypeHandler(typeof(DateOnly), new DateOnlyHandler());
+#endregion
+
+#region 인증
+
+builder.Services.AddAuthInfrastructure(builder.Configuration);
 #endregion
 
 #region DbContext
