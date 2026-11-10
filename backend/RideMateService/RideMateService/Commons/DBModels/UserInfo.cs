@@ -4,14 +4,14 @@ using System.Collections.Generic;
 namespace RideMateService.Commons.DBModels;
 
 /// <summary>
-/// 부모 계정
+/// 운전자 계정
 /// </summary>
-public partial class Parent
+public partial class UserInfo
 {
     /// <summary>
-    /// 부모 계정 ID
+    /// 운전자 계정 ID
     /// </summary>
-    public int ParentId { get; set; }
+    public int UserId { get; set; }
 
     /// <summary>
     /// 암호화한 휴대폰 번호
@@ -22,6 +22,11 @@ public partial class Parent
     /// 휴대폰 번호 HMAC
     /// </summary>
     public string PhoneHash { get; set; } = null!;
+
+    /// <summary>
+    /// 운전자 실명
+    /// </summary>
+    public string UserName { get; set; } = null!;
 
     /// <summary>
     /// 아이에게 보이는 보호자 호칭
