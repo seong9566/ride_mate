@@ -16,6 +16,7 @@
 | Repository·쿼리(EF Core / Dapper) | `docs/architecture/repository.md` |
 | DTO | `docs/architecture/dto.md` |
 | 테이블·스키마·DbContext·로컬 DB | `docs/architecture/database.md` |
+| 테이블 목록·컬럼·코드 값 | `docs/architecture/schema.md` |
 | 라우트·응답 code·커서 페이징·API 명세 | `docs/api.md` |
 | 설정·비밀값·로그·입력 처리·인증 | `docs/security.md` |
 | 네이밍·코드 스타일 | `docs/coding-style.md` |
