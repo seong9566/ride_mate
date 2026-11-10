@@ -43,7 +43,7 @@
 - `LIKE` 검색어는 `\`·`%`·`_`를 이스케이프하고 `ESCAPE '\\'`를 붙인다.
 - 모든 메서드는 마지막 파라미터로 `CancellationToken cancellationToken = default`를 받아 EF Core와 Dapper 호출에 넘긴다.
 - SELECT 컬럼 별칭은 DTO 프로퍼티 이름(camelCase)에 맞춘다: `SELECT t.PICKUP_ID AS pickupSeq`.
-- 모든 조회에 `DELETE_YN = FALSE` 조건을 넣는다(`database.md`).
+- 모든 조회에 `DELETE_YN = FALSE` 조건을 넣는다. 예외는 `database.md`에 있다.
 
 ## csproj 등록
 

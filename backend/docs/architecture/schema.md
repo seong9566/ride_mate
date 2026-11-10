@@ -3,7 +3,7 @@
 RideMate 백엔드의 테이블 설계다. 테이블 규칙(이름, 감사 컬럼, 삭제 방식)은 `database.md`가 정본이고, 이 문서는 그 규칙 위에서 어떤 테이블과 컬럼을 두는지를 적는다. 실제 DDL은 `backend/sql/`에 쌓는다.
 
 - 범위: 화면 V1~V10, M1~M5 전부(후순위 화면 포함).
-- 결정 이유는 [ADR-0008](개인정보·익명화), [ADR-0009](정원 배정), [ADR-0010](중복 방지 UNIQUE), [ADR-0011](공간 타입)에 있다.
+- 결정 이유는 [ADR-0008] 개인정보·익명화, [ADR-0009] 정원 배정, [ADR-0010] 중복 방지 UNIQUE, [ADR-0011] 공간 타입에 있다.
 - MySQL 8.4 이상을 전제로 한다. 로컬 Docker 이미지와 같은 버전이다.
 
 ## 공통
@@ -18,7 +18,7 @@ RideMate 백엔드의 테이블 설계다. 테이블 규칙(이름, 감사 컬�
 - 제약과 인덱스 이름은 `FK_{테이블}_{nn}`, `UK_{테이블}_{nn}`, `IX_{테이블}_{nn}`, `CK_{테이블}_{nn}`으로 짓는다. `nn`은 테이블 안에서 01부터 붙인다.
 - `DEFAULT`는 `DELETE_YN`에만 둔다. 나머지 NOT NULL 컬럼은 Service가 값을 채운다. 처음 넣는 값이 정해진 컬럼은 표의 설명에 "처음 값"으로 적는다.
 - 구조 조건은 CHECK 제약으로 건다(범위, 함께 채워져야 하는 컬럼). 표에 `·`로 묶어 적은 위도·경도 쌍과 시각 쌍은 모두 `(A IS NULL) = (B IS NULL)`을 건다. 그 밖의 CHECK는 각 표 아래에 적는다.
-- 코드 값 목록과 코드 값에 따라 달라지는 조건(예: `SOURCE_TYPE`별로 채워야 하는 컬럼)은 CHECK로 걸지 않고 Service에서 확인한다. 코드가 늘 때마다 DDL을 바꾸지 않기 위해서다.
+- 코드 값 목록과 코드 값에 따라 달라지는 조건(예: `SOURCE_TYPE`별로 채워야 하는 컬럼)은 CHECK로 걸지 않고 Service에서 확인한다. 코드가 늘 때마다 DDL을 바꾸지 않기 위해서다. 예외는 둘이다. `TIMETABLE_EXCEPTION`의 `TIME_CHANGE` 조건과 `RESTRICTED_ZONE`의 `SCHOOL_ZONE` 조건은 Service를 거치지 않는 SQL 입력이나 잘못된 판정을 막아야 해서 CHECK로 건다.
 - `LAT`·`LNG`로 공간 값을 만들 때는 `ST_GeomFromText(CONCAT('POINT(', LAT, ' ', LNG, ')'), 4326)` 하나만 쓴다. SRID 4326의 WKT는 위도, 경도 순서다.
 
 ### 살아 있는 행에만 거는 UNIQUE
@@ -52,7 +52,7 @@ PARENT ──< CHILD ──< TIMETABLE >── ACADEMY >── AREA
                         └──< TIMETABLE_EXCEPTION
 
 PICKUP_SESSION ──< PICKUP_EVENT
-       └──────── PICKUP_LINK (1:1)
+       └──────── PICKUP_LINK (세션당 0 또는 1개)
 
 PICKUP_SESSION ──> PARENT, CHILD, TIMETABLE, ACADEMY   (끝나면 비운다)
 PICKUP_SESSION ──> AREA, PICKUP_SPOT, PARKING_LOT      (끝나도 남긴다)
@@ -132,7 +132,7 @@ RESTRICTED_ZONE   (참조 관계가 없는 기준 데이터)
 
 - 요일을 여러 개 골라 추가하면 요일마다 한 행씩 만든다.
 - 스위치가 켜진 행마다 그날 픽업이 하나씩 생긴다. 하루에 여러 건이 될 수 있다.
-- `LAST_PICKUP_DATE`가 오늘이면 그 시간표로 세션을 다시 만들지 않는다. 끝난 세션은 시간표 참조가 비워져 UNIQUE로는 막을 수 없기 때문이다. 취소로 끝난 세션은 이 값을 바꾸지 않으므로 다시 시작할 수 있다.
+- `LAST_PICKUP_DATE`가 만들려는 세션의 `PICKUP_DATE`와 같으면 그 시간표로 세션을 다시 만들지 않는다. 끝난 세션은 시간표 참조가 비워져 UNIQUE로는 막을 수 없기 때문이다. 취소로 끝난 세션은 이 값을 바꾸지 않으므로 다시 시작할 수 있다.
 - CHECK: `DAY_OF_WEEK BETWEEN 1 AND 7`
 - 인덱스: `(CHILD_ID, DAY_OF_WEEK)`
 
@@ -154,7 +154,7 @@ RESTRICTED_ZONE   (참조 관계가 없는 기준 데이터)
 
 ### 부모·아이 삭제
 
-한 트랜잭션에서 아래 순서로 한다. 아이만 삭제할 때는 2~4만 한다.
+한 트랜잭션에서 아래 순서로 한다. 아이만 삭제할 때는 그 아이의 세션·시간표에 대해 1~4만 한다.
 
 | 순서 | 대상 | 처리 |
 |---|---|---|
@@ -162,8 +162,9 @@ RESTRICTED_ZONE   (참조 관계가 없는 기준 데이터)
 | 2 | `TIMETABLE_EXCEPTION` | `DELETE_YN`을 켠다 |
 | 3 | `TIMETABLE` | `DELETE_YN`을 켠다 |
 | 4 | `CHILD` | `DELETE_YN`을 켜고 `CHILD_NAME`을 빈 문자열로, `PHONE_ENC`를 빈 값으로 바꾼다 |
-| 5 | 그 부모가 넣은 `MANUAL` 학원 | `DELETE_YN`을 켜고 `ACADEMY_NAME`을 빈 문자열로, `ADDRESS`·`OWNER_PARENT_ID`를 NULL로 바꾼다 |
-| 6 | `PARENT` | `DELETE_YN`을 켜고 `VIN_HASH`·`CALL_NAME`·차 정보·집·회사 위치를 NULL로 바꾼다 |
+| 5 | 그 부모가 넣은 `MANUAL` 학원의 `ACADEMY_PICKUP_SPOT` | `DELETE_YN`을 켠다 |
+| 6 | 그 부모가 넣은 `MANUAL` 학원 | `DELETE_YN`을 켜고 `ACADEMY_NAME`을 빈 문자열로, `ADDRESS`·`OWNER_PARENT_ID`를 NULL로 바꾼다 |
+| 7 | `PARENT` | `DELETE_YN`을 켜고 `VIN_HASH`·`CALL_NAME`·차 정보·집·회사 위치를 NULL로 바꾼다 |
 
 ## 기준 데이터
 
@@ -248,10 +249,10 @@ RESTRICTED_ZONE   (참조 관계가 없는 기준 데이터)
 | `YELLOW_SINGLE`(황색 실선) | 선 | 미정 | 안내판 시간대 |
 | `CCTV`(단속 카메라) | 점 | 미정 | 상시 |
 
-- `BUFFER_M`은 면(`SCHOOL_ZONE`)만 0을 쓴다. 면은 안쪽의 거리가 0이라 그대로 걸린다. 점과 선은 0이면 좌표가 정확히 겹칠 때만 걸리므로 반드시 양수로 넣는다. 선의 값은 차로 폭을 기준으로 정한다.
+- `BUFFER_M`은 `SCHOOL_ZONE`만 0을 쓴다. 면은 안쪽의 거리가 0이라 그대로 걸린다. 나머지 유형은 모양과 관계없이 양수로 넣는다. 점과 선은 0이면 좌표가 정확히 겹칠 때만 걸린다. 선의 값은 차로 폭을 기준으로 정한다.
 - CHECK: `(ACTIVE_START_TIME IS NULL) = (ACTIVE_END_TIME IS NULL)`, `BUFFER_M >= 0`, `ZONE_TYPE = 'SCHOOL_ZONE' OR BUFFER_M > 0`
 - "이 위치가 제외 구역인가"는 두 단계로 조회한다. 먼저 위치 둘레의 사각형과 `MBRIntersects`로 후보를 추리고, 그 후보에만 `ST_Distance(GEOM, 점) <= BUFFER_M`을 적용한다. 거리 조건만 쓰면 공간 인덱스를 타지 않고 모든 행을 계산한다.
-- 사각형은 가장 큰 `BUFFER_M`(m)을 도 단위로 바꿔 넓힌다. 위도는 `m / 111320`, 경도는 `m / (111320 × cos(위도))`다.
+- 사각형도 SRID 4326으로 만든다. SRID가 다르면 오류가 난다. 가장 큰 `BUFFER_M`(m)을 도 단위로 바꿔 넓힌다. 위도는 `m / 111320`, 경도는 `m / (111320 × cos(위도))`다.
 - 지원 학원가 둘레의 데이터만 넣는다. 전국 데이터를 넣지 않는다.
 
 ### PARKING_LOT — 대기 장소(주차장)
@@ -302,7 +303,7 @@ RESTRICTED_ZONE   (참조 관계가 없는 기준 데이터)
 | `PICKUP_SPOT_ID` | INT | Y | FK → PICKUP_SPOT. 배정 지점. 학원가 밖 학원이면 NULL |
 | `SLOT_DT` | DATETIME | Y | 배정된 도착 시각(2분 칸) |
 | `WALK_MIN` | TINYINT | Y | 배정 지점까지 아이 도보 시간(분). 끝나면 NULL |
-| `EXPIRE_DT` | DATETIME | N | 만료 시각. `SLOT_DT`(없으면 그날 하원 시각)에 설정값(기본 1시간)을 더한다. 재배정하면 다시 계산한다 |
+| `EXPIRE_DT` | DATETIME | N | 만료 시각. `SLOT_DT`(없으면 그날 하원 시각)에 설정값(기본 1시간)을 더한다. 재배정하거나 하원 시각이 바뀌면 다시 계산한다 |
 | `STATUS` | VARCHAR(20) | N | 아래 코드 |
 | `PARKING_LOT_ID` | INT | Y | FK → PARKING_LOT. 대기 장소를 골랐을 때 |
 | `WAIT_START_DT` | DATETIME | Y | 대기 장소 도착 시각 |
@@ -330,33 +331,35 @@ RESTRICTED_ZONE   (참조 관계가 없는 기준 데이터)
 
 1. 트랜잭션의 첫 문장으로 그 학원가의 `AREA` 행을 잠근다: `SELECT AREA_ID FROM AREA WHERE AREA_ID = ? FOR UPDATE`. 이 문장보다 먼저 다른 조회를 하지 않는다. 먼저 조회하면 그 시점의 스냅샷이 고정되어, 잠금을 얻고도 직전에 커밋된 세션을 보지 못한다.
 2. 같은 부모의 진행 중 세션 가운데 같은 날짜이고, 같은 지점 후보를 쓰고, 하원 시각 차이가 설정값(기본 10분) 이내인 것이 있으면 그 지점과 칸을 그대로 쓴다. 형제를 한 차로 태우는 경우다.
-3. 없으면 후보 지점·칸마다 진행 중인 세션을 `COUNT(DISTINCT PARENT_ID)`로 세어 정원과 비교한다. 꽉 찼으면 다음 칸 또는 `ACADEMY_PICKUP_SPOT.PRIORITY`가 다음인 지점으로 넘긴다.
-4. 세션을 넣거나 고치고 커밋한다.
+3. 같은 트랜잭션에서 `TIMETABLE` 행을 `FOR UPDATE`로 읽어 `LAST_PICKUP_DATE`를 확인한다(새 세션을 만들 때만). 잠그지 않고 읽으면 탑승 처리와 겹칠 때 끝난 픽업이 다시 만들어진다.
+4. 형제 세션이 없으면 후보 지점·칸마다 진행 중인 세션을 `COUNT(DISTINCT PARENT_ID)`로 세어 정원과 비교한다. 꽉 찼으면 다음 칸 또는 `ACADEMY_PICKUP_SPOT.PRIORITY`가 다음인 지점으로 넘긴다.
+5. 세션을 넣거나 고치고 커밋한다.
 
 - 일반 조회로 세고 넣으면 동시에 들어온 두 요청이 서로의 삽입을 보지 못해 정원을 넘는다. 그래서 `AREA` 행 잠금으로 한 학원가의 배정을 순서대로 처리한다.
 - 잠금을 쥔 동안 문자 발송이나 경로 조회 같은 외부 호출을 하지 않는다.
 - 잠금 조회는 Dapper로 쓴다.
 - 칸 길이는 설정값이다. 진행 중인 세션이 없을 때만 바꾼다. 도중에 바꾸면 길이가 다른 칸이 시간상 겹쳐도 다른 칸으로 세어진다.
 
-**상태 바꾸기와 이벤트 넣기.** 세션의 상태를 바꾸거나 `PICKUP_EVENT`를 넣는 트랜잭션은 모두 첫 문장에서 세션 행을 잠그고 현재 상태를 다시 읽는다: `SELECT … WHERE PICKUP_SESSION_ID = ? FOR UPDATE`. 이 조회에는 `DELETE_YN` 조건을 붙이지 않는다. 이미 끝난 세션이면 아무것도 하지 않는다.
+**상태 바꾸기와 이벤트 넣기.** 세션의 상태를 바꾸거나 `PICKUP_EVENT`를 넣는 트랜잭션은 첫 문장에서 세션 행을 잠그고 현재 상태를 다시 읽는다: `SELECT … WHERE PICKUP_SESSION_ID = ? FOR UPDATE`. 이 조회에는 `DELETE_YN` 조건을 붙이지 않는다. 이미 끝난 세션이면 아무것도 하지 않는다. 세션을 만드는 트랜잭션(`STARTED` 이벤트)만 예외다. 잠글 세션 행이 아직 없고 배정 절차의 `AREA` 잠금 안에서 한다.
 
 - 만료·탑승·취소가 겹쳐도 먼저 잠근 쪽만 적용된다.
 - 한 세션의 이벤트가 번호 순서대로 커밋된다. 잠그지 않으면 번호가 작은 이벤트가 늦게 커밋되어 화면이 놓칠 수 있다.
 - 재배정은 `AREA` 행을 먼저 잠그고 그다음 세션 행을 잠근다. 순서를 바꾸지 않는다.
-- 세션을 끝낼 때 `PICKUP_LINK.CLOSE_DT`도 채운다. 탑승이나 만료로 끝나면 `TIMETABLE.LAST_PICKUP_DATE`를 그날로 바꾼다.
+- 세션을 끝낼 때 `PICKUP_LINK.CLOSE_DT`도 채운다. 탑승이나 만료로 끝나면 `TIMETABLE` 행을 잠그고 `LAST_PICKUP_DATE`를 그 세션의 `PICKUP_DATE`로 바꾼다. 잠금 순서는 세션 행, `TIMETABLE` 행이다.
 - `UPDATE_USER`에는 그 변경을 일으킨 쪽의 역할을 넣는다. 부모가 취소했으면 `PARENT`, 만료 처리면 `SYSTEM`이다.
 
 **익명화.** 세션이 `BOARDED`·`EXPIRED`·`CANCELED`가 되면 같은 트랜잭션에서 아래를 한다. [ADR-0008]
 
 1. `PARENT_ID`·`CHILD_ID`·`TIMETABLE_ID`·`ACADEMY_ID`·`END_TIME`·`WALK_MIN`을 NULL로 바꾼다.
-2. `DELETE_YN`을 켠다. `PICKUP_LINK`·`PICKUP_EVENT`도 함께 켠다.
+2. 그 세션의 `END_TIME_CHANGED` 이벤트는 `DETAIL`을 NULL로 바꾼다. 하원 시각이 들어 있기 때문이다.
+3. `DELETE_YN`을 켠다. `PICKUP_LINK`·`PICKUP_EVENT`도 함께 켠다.
 
 끝난 뒤 남는 값은 `AREA_ID`, `PICKUP_DATE`, `PICKUP_SPOT_ID`, `SLOT_DT`, `EXPIRE_DT`, `STATUS`, `PARKING_LOT_ID`, 시각 컬럼 넷, 그리고 이벤트 이력이다.
 
 - 학원 참조와 하원 시각을 남기면 직접 입력한 학원은 등록한 부모로 이어지고, 작은 학원은 날짜와 하원 시각만으로 아이가 좁혀진다. 그래서 학원 종류와 관계없이 비운다.
 - 남는 픽업 지점과 배정 시각으로 그 지점을 쓰는 학원들까지는 좁힐 수 있다. 지점 하나를 여러 학원이 함께 쓰므로 아이 한 명으로 이어지지는 않는다고 보고 남긴다. [ADR-0008]
 
-**세션 계열 세 테이블의 `DELETE_YN`.** `PICKUP_SESSION`·`PICKUP_LINK`·`PICKUP_EVENT`에서 `DELETE_YN`은 "끝나서 익명화됨"을 뜻한다. 이 세 테이블의 조회에는 `DELETE_YN = FALSE` 조건을 붙이지 않고, 진행 중인지는 `STATUS`로 가린다. 끝난 세션의 마지막 이벤트(탑승, 만료, 취소)를 화면이 읽어야 하고, 끝난 링크를 다시 열었을 때 안내해야 하고, 통계가 끝난 행을 읽어야 하기 때문이다. 끝난 세션은 차량에는 세션 번호로, 아이에게는 링크 토큰으로만 열리고 상태와 이벤트만 돌려준다.
+**세션 계열 세 테이블의 `DELETE_YN`.** `PICKUP_SESSION`·`PICKUP_LINK`·`PICKUP_EVENT`에서 `DELETE_YN`은 "끝나서 익명화됨"을 뜻한다. 이 세 테이블의 조회에는 `DELETE_YN = FALSE` 조건을 붙이지 않고, 진행 중인지는 세션의 `STATUS`로 가린다(링크는 `CLOSE_DT`와 세션의 `EXPIRE_DT`). 끝난 세션의 마지막 이벤트(탑승, 만료, 취소)를 화면이 읽어야 하고, 끝난 링크를 다시 열었을 때 안내해야 하고, 통계가 끝난 행을 읽어야 하기 때문이다. 끝난 세션은 차량에는 세션 번호로, 아이에게는 링크 토큰으로만 열리고 상태와 이벤트만 돌려준다.
 
 ### PICKUP_LINK — 픽업 링크
 
@@ -420,6 +423,8 @@ RESTRICTED_ZONE   (참조 관계가 없는 기준 데이터)
 | 차량 SDK의 차대번호 권한 승인 여부 | `VIN_HASH`를 채울 수 있는지 |
 | 실시간 빈자리 API 출처 | `REALTIME_REF`에 넣을 값 |
 | 횡단보도·단속 카메라 제외 반경 | `RESTRICTED_ZONE.BUFFER_M` 기본값 |
+| 내비 장소 ID의 대소문자 구분 | 기본 콜레이션은 대소문자를 구분하지 않는다. 구분하는 형식이면 `NAVI_PLACE_ID`에 구분하는 콜레이션을 지정한다 |
+| 생성 컬럼이 낀 UNIQUE를 FK 인덱스로 쓰는지 | 쓰지 않으면 InnoDB가 인덱스를 하나 더 만든다. DDL을 적용한 뒤 `SHOW CREATE TABLE`로 확인한다 |
 | EF Core 공급자의 공간 타입 스캐폴드 지원 | 지원하지 않으면 공간 컬럼은 Dapper로만 읽고 쓴다. 공간 컬럼이 있는 테이블 하나를 먼저 스캐폴드해 확인한다 |
 | 생성 컬럼(`ACTIVE_FLAG`)의 스캐폴드 결과 | 쓰기에서 빠지는 컬럼으로 잡히는지. 아니면 EF 저장이 실패한다 |
 | EF 트랜잭션 안에서 Dapper 쓰기 | 배정·상태 바꾸기의 잠금 조회가 EF 저장과 같은 트랜잭션에 들어가는 방법 |
