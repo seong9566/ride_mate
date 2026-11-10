@@ -60,7 +60,9 @@ def read_sheets(path):
                         val = text_of(c.find("m:is", NS))
                     else:
                         v = c.find("m:v", NS)
-                        if v is None and c.find("m:f", NS) is not None:
+                        # 결과가 빈 문자열인 문자열 수식(t="str")만 빈 <v/>를 허용한다.
+                        no_cache = v is None or (v.text is None and t != "str")
+                        if no_cache and c.find("m:f", NS) is not None:
                             sys.exit(f"수식 셀 {name}!{c.get('r')}에 계산 결과가 없다. "
                                      "엑셀에서 열어 저장한 뒤 다시 실행한다.")
                         if v is None:
