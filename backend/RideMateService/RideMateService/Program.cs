@@ -1,10 +1,13 @@
+using System.Data;
 using System.IO.Compression;
 using System.Text.RegularExpressions;
 using Dapper;
 using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
 using RideMateService.Comm;
 using RideMateService.Comm.Logger;
+using RideMateService.Commons.Repository;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -72,6 +75,27 @@ builder.Services.AddTransient<ILogService, LogService>();
 #region Dapper 타입 핸들러
 
 SqlMapper.AddTypeHandler(typeof(DateOnly), new DateOnlyHandler());
+#endregion
+
+#region DbContext
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+if (string.IsNullOrWhiteSpace(connectionString))
+    throw new InvalidOperationException("데이터베이스 연결 문자열이 잘못되었습니다.");
+
+builder.Services.AddDbContext<RideMateContext>(options =>
+{
+    options.UseMySQL(connectionString, mySqlOptions =>
+    {
+        mySqlOptions.CommandTimeout(60);
+        mySqlOptions.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
+    });
+    if (builder.Environment.IsDevelopment())
+        options.EnableSensitiveDataLogging();
+});
+
+// Dapper가 DbContext와 같은 커넥션을 쓰도록 DbContext에서 꺼내 등록한다
+builder.Services.AddTransient<IDbConnection>(sp =>
+    sp.GetRequiredService<RideMateContext>().Database.GetDbConnection());
 #endregion
 
 builder.Services.AddControllers(options =>

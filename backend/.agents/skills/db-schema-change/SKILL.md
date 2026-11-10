@@ -13,7 +13,7 @@ description: RideMate 백엔드의 MySQL 테이블을 만들거나 바꿀 때 �
 - 이미 적용된 DDL 파일을 고치지 않는다. 변경분은 새 파일로 쓴다.
 - EF Migration을 쓰지 않는다. 스캐폴드 산출물(`Commons/DBModels/*.cs`, `Commons/Repository/RideMateContext.cs`)을 손으로 고치지 않는다.
 - 비밀번호를 명령줄, 채팅, 로그에 쓰지 않는다. 스캐폴드가 설정을 못 읽어 실패해도 명령줄에 비밀번호를 넣어 우회하지 않고, 멈추고 사용자에게 알린다.
-- 3306 포트를 다른 MySQL이 쓰고 있으면 그 프로세스를 종료하지 않는다. 멈추고 사용자에게 알린다.
+- 3306 포트를 다른 MySQL이 쓰고 있으면 그 프로세스를 종료하지 않는다. 멈추고 사용자에게 알린다. 사용자가 다른 포트로 띄우라고 하면 `.env`의 `MYSQL_PORT`에 빈 포트를 적고 진행한다.
 - `.bak` 백업 파일을 만들지 않는다. 변화는 `git diff`로 본다.
 
 ## 만들 파일
@@ -39,14 +39,15 @@ description: RideMate 백엔드의 MySQL 테이블을 만들거나 바꿀 때 �
    - `docker-compose.yml`이 없으면 템플릿을 복사한다.
    - `.env`가 없으면 `.env.example`을 템플릿으로 만들고, `.env`에는 `MYSQL_ROOT_PASSWORD`와 `MYSQL_PASSWORD`를 무작위 값으로 채운다. `.env`는 git에서 제외되어 있고 `.env.example`은 커밋한다.
    - `.env`를 새로 만들 때는 같은 셸 호출에서 같은 변수로 아래 `appsettings.Development.json`도 쓴다. 만든 뒤 `.env`를 다시 읽어 값을 옮기지 않는다.
-   - `RideMateService/RideMateService/appsettings.Development.json`의 `ConnectionStrings:DefaultConnection`을 `Server=127.0.0.1;Port=3306;Database=ridemate;User=ridemate;Password=<.env의 MYSQL_PASSWORD>;`로 맞춘다. 이 파일도 git에서 제외되어 있다.
-   - `lsof -ti :3306`으로 포트를 확인한 뒤 `docker compose up -d --wait`로 띄운다. `--wait`는 compose의 healthcheck가 통과할 때까지, 곧 MySQL이 접속을 받을 때까지 기다린다.
+   - `RideMateService/RideMateService/appsettings.Development.json`의 `ConnectionStrings:DefaultConnection`을 `Server=127.0.0.1;Port=<.env의 MYSQL_PORT, 비어 있으면 3306>;Database=ridemate;User=ridemate;Password=<.env의 MYSQL_PASSWORD>;`로 맞춘다. 이 파일도 git에서 제외되어 있다.
+   - `lsof -ti :<포트>`로 쓸 포트가 비어 있는지 확인한 뒤 `docker compose up -d --wait`로 띄운다. `--wait`는 compose의 healthcheck가 통과할 때까지, 곧 MySQL이 접속을 받을 때까지 기다린다.
 3. DDL을 적용한다.
 
 ```bash
-docker compose exec -T mysql sh -c 'mysql -uridemate -p"$MYSQL_PASSWORD" ridemate' < sql/{파일}.sql
+docker compose exec -T mysql sh -c 'mysql --default-character-set=utf8mb4 -uridemate -p"$MYSQL_PASSWORD" ridemate' < sql/{파일}.sql
 ```
 
+   `--default-character-set=utf8mb4`를 빼지 않는다. 컨테이너의 `mysql` 클라이언트는 기본이 latin1이라, 빼면 한국어 COMMENT가 깨진 채 저장되고 스캐폴드한 엔티티의 주석도 깨진다.
 4. `RideMateService/`에서 `dotnet-ef`를 준비한다. `dotnet-tools.json`이 없으면 `dotnet new tool-manifest` 후 `dotnet tool install dotnet-ef --version 10.0.14`, 있으면 `dotnet tool restore`.
 5. `RideMateService/RideMateService/`에서 스캐폴드한다. 명령을 바꾸지 않는다.
 
