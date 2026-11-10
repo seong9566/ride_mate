@@ -60,6 +60,9 @@ def read_sheets(path):
                         val = text_of(c.find("m:is", NS))
                     else:
                         v = c.find("m:v", NS)
+                        if v is None and c.find("m:f", NS) is not None:
+                            sys.exit(f"수식 셀 {name}!{c.get('r')}에 계산 결과가 없다. "
+                                     "엑셀에서 열어 저장한 뒤 다시 실행한다.")
                         if v is None:
                             continue
                         val = shared[int(v.text)] if t == "s" else v.text
@@ -112,6 +115,11 @@ def main():
         print(__doc__.strip().split("\n\n")[-1], file=sys.stderr)
         sys.exit(64)
     src = sys.argv[1]
+    # 전부 변환에 성공한 뒤에만 기존 정본·생성물을 바꾼다. 실패하면 아무것도 건드리지 않는다.
+    pages = []
+    for i, (name, rows) in enumerate(read_sheets(src), 1):
+        slug = re.sub(r"[\s/·]+", "-", name).strip("-")
+        pages.append((f"{i:02d}-{slug}.md", to_markdown(name, rows, f"docs/spec/{XLSX_NAME}")))
     os.makedirs(SPEC_DIR, exist_ok=True)
     dest = os.path.join(SPEC_DIR, XLSX_NAME)
     if os.path.abspath(src) != os.path.abspath(dest):
@@ -119,11 +127,9 @@ def main():
     for f in os.listdir(SPEC_DIR):  # 시트가 줄거나 이름이 바뀐 경우를 위해 이전 생성물을 지운다
         if re.match(r"\d{2}-.*\.md$", f):
             os.remove(os.path.join(SPEC_DIR, f))
-    for i, (name, rows) in enumerate(read_sheets(dest), 1):
-        slug = re.sub(r"[\s/·]+", "-", name).strip("-")
-        fn = f"{i:02d}-{slug}.md"
+    for fn, text in pages:
         with open(os.path.join(SPEC_DIR, fn), "w", encoding="utf-8") as fh:
-            fh.write(to_markdown(name, rows, f"docs/spec/{XLSX_NAME}"))
+            fh.write(text)
         print(fn)
 
 
