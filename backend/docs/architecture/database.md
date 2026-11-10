@@ -9,6 +9,8 @@ DB는 MySQL, EF Core 공급자는 `MySql.EntityFrameworkCore`, 스키마는 DB-f
 - 모든 업무 테이블에 감사 컬럼 `CREATE_DT`·`CREATE_USER`·`UPDATE_DT`·`UPDATE_USER`·`DELETE_YN`을 둔다.
 - 물리 삭제하지 않는다. `DELETE_YN = TRUE`로 바꾸고 `UPDATE_DT`·`UPDATE_USER`도 갱신한다.
 - 모든 조회에 `DELETE_YN = FALSE` 조건을 넣는다. EF도 `.Where(m => m.DeleteYn == false)`를 붙인다.
+  - 예외는 `PICKUP_PLAN`·`PICKUP_SESSION`·`PICKUP_EVENT` 세 테이블이다. 여기서 `DELETE_YN`은 "끝나서 익명화됨"을 뜻하므로 조건을 붙이지 않고 계획의 `STATUS`로 가린다. [ADR-0008]
+- 어떤 테이블과 컬럼을 두는지는 `schema.md`에 있다.
 
 ## DB-first
 

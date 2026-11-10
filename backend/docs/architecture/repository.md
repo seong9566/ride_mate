@@ -16,11 +16,13 @@
 | GET API의 조회 전부(목록·상세·검색·집계·JOIN) | Dapper | `.SQL.cs` |
 | 등록·수정·삭제 | EF Core | `.EF.cs` |
 | 수정·삭제할 대상 엔티티 불러오기(PK 기준) | EF Core | `.EF.cs` |
+| 행을 잠그는 조회(`SELECT … FOR UPDATE`) | Dapper | `.SQL.cs` |
 | 트랜잭션 | EF Core (`BeginTransactionAsync`) | Service에서 시작한다(`service.md`) |
 
 - GET API의 조회에는 ORM(EF Core)을 쓰지 않는다. Dapper로 SQL을 직접 쓴다. 쿼리를 튜닝할 수 있고 더 빠르기 때문이다. 단건 상세 조회도 Dapper로 쓴다. [ADR-0003]
 - EF Core는 쓰기(등록·수정·삭제)에만 쓴다. 수정·삭제할 대상 엔티티를 PK로 불러오는 것은 쓰기의 일부이므로 EF Core로 한다.
 - 한 메서드 안에서 둘을 섞지 않는다.
+- 행을 잠그는 조회는 EF Core LINQ로 쓸 수 없어 Dapper로 쓴다. 트랜잭션의 첫 잠금 조회는 첫 문장으로 부르고, 이어지는 쓰기는 EF Core로 한다. 잠그는 순서는 `schema.md`를 따른다. 픽업 지점 배정과 픽업 계획의 상태 바꾸기가 여기에 해당한다. [ADR-0009]
 
 ## 템플릿
 
@@ -41,7 +43,7 @@
 - `LIKE` 검색어는 `\`·`%`·`_`를 이스케이프하고 `ESCAPE '\\'`를 붙인다.
 - 모든 메서드는 마지막 파라미터로 `CancellationToken cancellationToken = default`를 받아 EF Core와 Dapper 호출에 넘긴다.
 - SELECT 컬럼 별칭은 DTO 프로퍼티 이름(camelCase)에 맞춘다: `SELECT t.PICKUP_ID AS pickupSeq`.
-- 모든 조회에 `DELETE_YN = FALSE` 조건을 넣는다(`database.md`).
+- 모든 조회에 `DELETE_YN = FALSE` 조건을 넣는다. 예외는 `database.md`에 있다.
 
 ## csproj 등록
 
