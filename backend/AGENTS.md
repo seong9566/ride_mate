@@ -86,7 +86,7 @@ bash "$TASK_VAULT/.claude/scripts/task.sh" done T0x --project ride-mate
 - 하네스(AGENTS.md·hooks·skills 등) 개선점은 `todo ride-mate "[하네스] <개선점> — <파일/커밋>"`(아이디어면 `note`), 고칠 방법도 함께.
 - 해소한 작업 카드는 `--closes <ID>`로 인용한다. 카드를 닫는 시점과 명령은 "작업 흐름" 절대로(머지 뒤, `--project ride-mate`)다.
 - 작업일과 다른 날 남길 때만 설명 끝에 `(완료 YYYY-MM-DD)`를 붙인다. `(반영 …)`은 PM 전용이라 쓰지 않는다. 규약 정본: `personal_dev/inbox/HANDOFF_GUIDE.md`.
-- `/pr-finish`는 vault 경로가 다른 곳으로 고정돼 있다. 두 단계를 이 절의 명령으로 바꿔 한다.
+- `/pr-finish`를 돌릴 때 아래 두 단계는 스킬에 적힌 명령 대신 이 절의 명령으로 한다.
   - 2단계(handoff): 위 스크립트에 `--pr <번호> --status "머지 대기"`를 붙여 실행하고, 카드는 `wip`로 둔다.
   - 머지 뒤 카드 닫기: `bash "$TASK_VAULT/.claude/scripts/task.sh" done <ID> --project ride-mate`.
 
