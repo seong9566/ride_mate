@@ -20,6 +20,6 @@
 - 요청 DTO에 검증 특성을 붙인다. 필수 문자열은 `[Required]`, 길이는 DB 컬럼 길이에 맞춘 `[StringLength]`, 숫자 범위는 `[Range]`를 쓴다. 검증에 실패하면 `[ApiController]`가 액션에 들어가기 전에 400을 돌려준다(`../api.md`).
 - 값 타입(`int`·`bool`)은 요청에서 빠져도 기본값으로 들어온다. 빠진 것을 막아야 하는 필드는 nullable로 선언하고 `[Required]`를 붙인다.
 - 수정(PATCH) 요청 DTO는 PK를 뺀 필드를 모두 nullable로 선언한다. `null`이거나 빠진 필드는 "변경하지 않음"이다. Service는 `null`이 아닌 필드만 엔티티에 반영한다.
-- 예외: `Token` 요청 DTO(`TokenAuthDto`)는 OAuth 2.0 form 필드 이름 그대로 snake_case로 쓰고, 모든 필드를 nullable로 두며 검증 특성을 붙이지 않는다. 붙이면 값이 빠졌을 때 `[ApiController]`가 먼저 `ProblemDetails` 400을 돌려줘 `invalid_request`가 나가지 않는다. 검증은 Service에서 한다(`../api.md`).
+- 예외: `Token`의 요청 DTO(`TokenAuthDto`)와 응답 DTO(`TokenAuthSuccessDto`, `TokenAuthErrorDto`)는 OAuth 2.0 필드 이름 그대로 snake_case로 쓴다. 요청 DTO는 모든 필드를 nullable로 두며 검증 특성을 붙이지 않는다. 붙이면 값이 빠졌을 때 `[ApiController]`가 먼저 `ProblemDetails` 400을 돌려줘 `invalid_request`가 나가지 않는다. 검증은 Service에서 한다(`../api.md`).
 - 엔티티를 응답으로 그대로 내보내지 않는다. 항상 응답 DTO로 옮긴다.
 - 프로퍼티 이름을 바꾸면 앱 파싱이 깨진다. 이미 배포한 DTO의 이름을 바꿀 때는 API 명세 갱신과 함께 모빌리티 담당에게 알린다.

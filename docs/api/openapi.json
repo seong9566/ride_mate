@@ -162,10 +162,10 @@
     },
     "securitySchemes": {
       "Bearer": {
-        "type": "apiKey",
-        "description": "입력양식 - 'Bearer' [space] and then your token.\n        예: 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'",
-        "name": "Authorization",
-        "in": "header"
+        "type": "http",
+        "description": "access 토큰만 입력한다. 'Bearer ' 접두는 Swagger가 붙인다.\n        예: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
       }
     }
   },

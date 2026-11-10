@@ -56,12 +56,10 @@ builder.Services.AddSwaggerGen(c =>
     c.MapType<IFormFile>(() => new OpenApiSchema { Type = JsonSchemaType.String, Format = "binary" });
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
-        Description = @"입력양식 - 'Bearer' [space] and then your token.
-        예: 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'",
-        Name = "Authorization",
-        In = ParameterLocation.Header,
-        Type = SecuritySchemeType.ApiKey,
-        Scheme = "Bearer",
+        Description = @"access 토큰만 입력한다. 'Bearer ' 접두는 Swagger가 붙인다.
+        예: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
         BearerFormat = "JWT"
     });
     c.OperationFilter<SignRouteOperationFilter>();

@@ -76,7 +76,7 @@
 |---|---|
 | `invalid_request` | `grant_type`이나 그 방식에 필요한 값이 빠졌다 |
 | `unsupported_grant_type` | 지원하지 않는 `grant_type` |
-| `invalid_grant` | refresh 토큰이 틀렸거나 만료됐거나 로그아웃된 세션이다 |
+| `invalid_grant` | refresh 토큰이 틀렸거나(128자보다 길어도 같다) 만료됐거나 로그아웃된 세션이거나 계정이 삭제됐다 |
 
 - 서버 오류(500)는 다른 API와 같은 `ProblemDetails`다.
 - `Token`은 요청 DTO에 검증 특성을 붙이지 않아 값이 빠져도 `[ApiController]`의 `ProblemDetails` 400이 아니라 `invalid_request`가 나간다(`architecture/dto.md`).

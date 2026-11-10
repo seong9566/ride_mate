@@ -87,7 +87,7 @@ docker compose exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DR
   },
   "Jwt": {
     "Issuer": "ridemate-local",
-    "Audience": "ridemate-app",
+    "Audience": "ridemate-car",
     "SigningKey": "<base64 32바이트>"
   },
   "Crypto": {

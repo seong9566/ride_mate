@@ -99,13 +99,13 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `SESSION_TYPE` | VARCHAR(20) | N | `CAR`(차량 refresh 토큰), `WEB`(휴대폰 웹 쿠키). DB 기본값이 없다. 행을 넣을 때마다 Service가 정한다 |
 | `TOKEN_HASH` | CHAR(64) | N | 로그인 토큰의 HMAC. UNIQUE |
 | `PREV_TOKEN_HASH` | CHAR(64) | Y | 바꾸기 직전 refresh 토큰의 HMAC |
-| `ROTATE_DT` | DATETIME | Y | 토큰을 마지막으로 바꾼 시각 |
+| `ROTATE_DT` | DATETIME | Y | 지금 값을 `PREV_TOKEN_HASH`로 넘긴 시각. 직전 값 허용 시간(10분)의 기준이다 |
 | `DEVICE_ID` | VARCHAR(100) | N | 앱이 처음 실행할 때 만든 임의의 설치 번호. 차대번호가 아니다 |
 | `EXPIRE_DT` | DATETIME | N | 만료 시각 |
 | `LAST_USED_DT` | DATETIME | N | 마지막으로 쓰인 시각 |
 
 - 이 테이블을 읽는 모든 조회에 `SESSION_TYPE` 조건을 붙인다. refresh와 계정 목록은 `CAR`만, 쿠키 인증은 `WEB`만 본다. 종류를 가리지 않는 것은 계정 삭제뿐이다.
-- 로그아웃하면 `DELETE_YN`을 켠다. refresh 토큰은 `DELETE_YN = FALSE`이고 `EXPIRE_DT`가 지나지 않은 행만 통과시킨다.
+- 로그아웃하면 `DELETE_YN`을 켠다. refresh 토큰과 쿠키 인증은 `DELETE_YN = FALSE`이고 `EXPIRE_DT`가 지나지 않은 행만 통과시킨다.
 - refresh 토큰을 쓰면 같은 행을 고친다. 지금 값이면 `PREV_TOKEN_HASH`에 지금 값을, `TOKEN_HASH`에 새 값을, `ROTATE_DT`에 지금을 넣는다. `PREV_TOKEN_HASH`와 같고 `ROTATE_DT`가 10분 안이면 `TOKEN_HASH`만 새 값으로 바꾸고 `PREV_TOKEN_HASH`·`ROTATE_DT`는 그대로 둔다. 둘 다 아니면 거절한다. 어느 쪽이든 `EXPIRE_DT`는 지금 + 90일, `LAST_USED_DT`는 지금으로 고치고, 이 처리는 그 행을 `FOR UPDATE`로 잠그고 한다.
 - `WEB` 행은 `DEVICE_ID`가 빈 문자열이고 `PREV_TOKEN_HASH`·`ROTATE_DT`를 쓰지 않는다.
 - 인덱스: `(USER_ID, DEVICE_ID)`, `(PREV_TOKEN_HASH)`
