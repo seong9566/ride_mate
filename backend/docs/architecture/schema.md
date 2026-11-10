@@ -567,6 +567,23 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 - 이벤트의 순서와 "여기부터 새 이벤트" 기준은 `PICKUP_EVENT_ID`다. `EVENT_DT`는 차량 시각이고 늦게 도착할 수 있어 순서 기준으로 쓰지 않는다. 화면은 `PICKUP_PLAN_ID = ? AND PICKUP_EVENT_ID > ?`로 새 이벤트를 읽는다. 이벤트를 넣을 때 계획 행을 잠그므로 번호 순서와 커밋 순서가 같다.
 - 인덱스는 위 UNIQUE 하나로 충분하다. `PICKUP_PLAN_ID`가 맨 앞이라 FK 인덱스를 겸한다. 새 이벤트 조회는 그 계획의 이벤트를 훑어 번호로 거른다. 계획 하나의 이벤트는 수십 건이라 따로 인덱스를 두지 않는다.
 
+## DDL을 적용해 확인한 것
+
+`backend/sql/20261110_initial_schema.sql`을 로컬 MySQL 8.4.7에 적용하고 스캐폴드해 확인했다(2026-11-10).
+
+| 항목 | 결과 |
+|---|---|
+| 공간 타입 스캐폴드 | `POLYGON`·`LINESTRING` 컬럼은 건너뛴다. `AREA.BOUNDARY`, `LOOP_ROUTE.ROUTE_PATH`, `ACADEMY_PICKUP_SPOT.WALK_PATH`가 엔티티에 없다. `GEOMETRY`(`RESTRICTED_ZONE.GEOM`)는 점만 담는 타입으로 잡힌다 |
+| 공간 컬럼이 있는 테이블의 쓰기 | `AREA`·`LOOP_ROUTE`는 NOT NULL 공간 컬럼이 엔티티에 없어 EF Core로 넣을 수 없다. `RESTRICTED_ZONE`도 선·면을 EF Core로 넣을 수 없다. 이 세 테이블의 등록·수정과 `WALK_PATH` 쓰기는 Dapper로 한다. 읽기는 원래 Dapper다 |
+| 생성 컬럼 `ACTIVE_FLAG` | 스캐폴드는 일반 컬럼으로 잡는다. `RideMateContext.Extensions.cs`에서 저장 대상에서 빼면 EF Core 등록·수정이 되고 값도 읽혀 온다 |
+| 살아 있는 행 UNIQUE | 살아 있는 행끼리는 중복이 거부되고, 삭제 표시한 행은 같은 값으로 여러 개 있을 수 있다 |
+| 생성 컬럼이 낀 UNIQUE와 FK | FK 컬럼이 맨 앞인 UNIQUE가 있으면 InnoDB가 인덱스를 따로 만들지 않는다 |
+| EF 트랜잭션 안의 Dapper | `BeginTransaction()`으로 연 트랜잭션을 `GetDbTransaction()`으로 꺼내 Dapper 명령에 넘기면 잠금 조회와 EF 저장이 한 트랜잭션에 들어간다. 롤백하면 둘 다 취소된다 |
+| 공간 계산 | SRID 4326에서 선과 점, 면과 점 사이의 `ST_Distance`가 m 단위로 나온다. `ST_Contains`로 점이 구역 안인지 판정된다 |
+| CHECK | 위반하는 값은 거부된다 |
+
+잠금 순서(동시에 들어온 계획 생성과 탑승 처리)는 아직 실행해 보지 않았다.
+
 ## 아직 정하지 않은 것
 
 기능 명세서의 "결정 필요" 시트는 반영하지 않았다. 그 시트에서 정해지면 여기서 지운다.
@@ -592,9 +609,5 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 | 장소 검색 API | 어느 지도 사업자를 쓰는지. `PLACE_ID`의 형식과 대소문자 구분이 달라진다 |
 | 아이 도보 속도 | 보행자 경로 API가 실패했을 때 `WALK_MIN` 추정에 쓰는 설정값 |
 | 교통 소통 정보의 저장 | 서버 5분 캐시다. DB 테이블 없이 메모리 캐시로 둔다고 가정했다 |
-| 생성 컬럼(`ACTIVE_FLAG`)의 스캐폴드 결과 | 쓰기에서 빠지는 컬럼으로 잡히는지. 아니면 EF 저장이 실패한다 |
-| 생성 컬럼이 낀 UNIQUE를 FK 인덱스로 쓰는지 | 쓰지 않으면 InnoDB가 인덱스를 하나 더 만든다. DDL을 적용한 뒤 `SHOW CREATE TABLE`로 확인한다 |
-| EF Core 공급자의 공간 타입 스캐폴드 지원 | 지원하지 않으면 공간 컬럼은 Dapper로만 읽고 쓴다. 공간 컬럼이 있는 테이블 하나를 먼저 스캐폴드해 확인한다 |
-| EF 트랜잭션 안에서 Dapper 쓰기 | 배정·상태 바꾸기의 잠금 조회가 EF 저장과 같은 트랜잭션에 들어가는 방법 |
 | 잠금 순서의 실제 검증 | 이 문서의 잠금 순서는 실행해 보지 않았다. 구현할 때 같은 시간표로 계획 생성과 탑승 처리를 동시에 보내 교착과 정원 초과가 없는지 확인한다 |
 | DB 시간대 | 서버 코드와 DB의 현재 시각이 같은 시간대여야 한다. 배포처가 정해지면 맞춘다 |

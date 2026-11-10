@@ -14,6 +14,6 @@
 
 ## 결과
 
-- EF Core 공급자가 공간 타입 스캐폴드를 지원하지 않으면 공간 컬럼은 Dapper로만 다룬다.
+- EF Core 공급자는 `POLYGON`·`LINESTRING`을 스캐폴드하지 못하고 `GEOMETRY`는 점만 담는다. 공간 컬럼은 Dapper로만 다룬다. NOT NULL 공간 컬럼이 있는 `AREA`·`LOOP_ROUTE`와 선·면을 담는 `RESTRICTED_ZONE`은 등록·수정도 Dapper로 한다. "쓰기는 EF Core" 규칙의 예외다. [ADR-0003]
 - SRID 4326의 좌표 순서는 위도, 경도다. 숫자 컬럼으로 공간 값을 만드는 식을 `schema.md`에 하나로 고정한다.
 - MySQL 8.4 이상을 전제로 한다.
