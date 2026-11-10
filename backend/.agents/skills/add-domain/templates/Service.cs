@@ -34,9 +34,9 @@ public class {도메인}Service : I{도메인}Service
     {
         try
         {
-            // 1) 인증 확인 — 로그인 사용자는 HttpContext의 클레임에서 꺼낸다
-            var loginUser = _httpContextAccessor.HttpContext?.User.FindFirstValue("userName");
-            if (string.IsNullOrWhiteSpace(loginUser))
+            // 1) 인증 확인 — 로그인 사용자(USER_ID)는 HttpContext의 클레임 sub에서 꺼낸다.
+            //    업무 조회·수정은 이 userId로 본인 데이터만 다룬다
+            if (!int.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("sub"), out var userId))
                 return new ResponseModel<bool> { message = "잘못된 요청입니다.", data = false, code = 401 };
 
             // 2) 입력 검증
@@ -49,9 +49,9 @@ public class {도메인}Service : I{도메인}Service
             {
                 // 업무 필드 …
                 CreateDt = thisTime,
-                CreateUser = loginUser,
+                CreateUser = "PARENT",
                 UpdateDt = thisTime,
-                UpdateUser = loginUser,
+                UpdateUser = "PARENT",
                 DeleteYn = false
             };
 
@@ -81,8 +81,7 @@ public class {도메인}Service : I{도메인}Service
         try
         {
             // 1) 인증 확인
-            var loginUser = _httpContextAccessor.HttpContext?.User.FindFirstValue("userName");
-            if (string.IsNullOrWhiteSpace(loginUser))
+            if (!int.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("sub"), out var userId))
                 return new ResponseModel<CursorResult<Get{도메인}List>> { message = "잘못된 요청입니다.", data = null, code = 401 };
 
             // 2) 입력 검증 — pageSize는 1~100이다

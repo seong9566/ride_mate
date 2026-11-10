@@ -9,7 +9,7 @@
 | `{버전}` | `v1` |
 | `{도메인}` | PascalCase 단수 (`Pickup`, `User`) |
 | `{클라이언트}` | `M` 하나만 쓴다 |
-| `{인증구간}` | 인증이 필요한 API는 `sign`. 인증 방식은 인증 설계 때 `security.md`에 추가한다 |
+| `{인증구간}` | 인증이 필요한 API는 `sign`. 인증 방식은 `security.md` |
 | `{액션}` | PascalCase 동사+명사 |
 
 | HTTP | 액션 접두 | 예 |
@@ -49,6 +49,38 @@
 | 서버 오류(Service) | `서버에서 요청을 처리하지 못하였습니다.` (앱에는 전달되지 않는다) |
 | 서버 오류(Controller) | `서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.` (500 응답의 `detail`에 들어간다) |
 
+## `Token` 예외
+
+토큰 발급 API는 OAuth 2.0 형식을 따르므로 위 규약에서 다음이 다르다. 다른 API는 영향이 없다.
+
+- 주소는 `POST /api/v1/Auth/M/Token`이다. OAuth 토큰 발급이라 `Add` 접두를 쓰지 않는다. 이 API는 DB에 행을 하나 추가하는 것이 아니라 토큰을 발급·교체한다. 인증 구간이 없어(`sign` 아님) Bearer 없이 부른다.
+- 요청 본문은 JSON이 아니라 `application/x-www-form-urlencoded`이고, 필드 이름은 OAuth 규약대로 snake_case다.
+- 지금 지원하는 `grant_type`은 `refresh_token` 하나다(`refresh_token` 값을 함께 보낸다). `otp`와 `urn:ietf:params:oauth:grant-type:device_code`는 카드 T08·T09에서 더하며, 그 전에는 `unsupported_grant_type`을 돌려준다.
+- 성공(200)은 `{ message, data, code }`로 감싸지 않고 다음 본문을 그대로 돌려준다. `Cache-Control: no-store`가 붙는다.
+
+```json
+{
+  "access_token": "…",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "refresh_token": "…",
+  "session_id": 12,
+  "setup_required": true
+}
+```
+
+- `session_id`는 `LOGIN_SESSION_ID`다. `setup_required`는 그 계정의 실명이 비었거나 살아 있는 아이가 없으면 `true`다.
+- 실패(400)도 감싸지 않고 `{ "error": "...", "error_description": "..." }`를 돌려준다. `error_description`은 영어 한 줄이고 앱은 `error` 값으로 분기한다.
+
+| `error` | 상황 |
+|---|---|
+| `invalid_request` | `grant_type`이나 그 방식에 필요한 값이 빠졌다 |
+| `unsupported_grant_type` | 지원하지 않는 `grant_type` |
+| `invalid_grant` | refresh 토큰이 틀렸거나 만료됐거나 로그아웃된 세션이다 |
+
+- 서버 오류(500)는 다른 API와 같은 `ProblemDetails`다.
+- `Token`은 요청 DTO에 검증 특성을 붙이지 않아 값이 빠져도 `[ApiController]`의 `ProblemDetails` 400이 아니라 `invalid_request`가 나간다(`architecture/dto.md`).
+
 ## 커서 페이징
 
 - 목록은 오프셋 페이징을 쓰지 않고 `CursorResult<T>`(`items`·`lastCursor`·`hasMore`)로 돌려준다.
@@ -59,5 +91,5 @@
 
 ## API 명세
 
-- 앱↔서버 계약은 루트 `docs/api/openapi.json`이다. 모빌리티 앱은 이 파일을 보고 개발한다. 이 파일은 아직 없고, 첫 API를 추가하면서 `update-api-spec` 스킬을 실행할 때 생긴다.
+- 앱↔서버 계약은 루트 `docs/api/openapi.json`이다. 모빌리티 앱은 이 파일을 보고 개발한다.
 - 라우트·DTO를 바꾼 작업은 같은 PR에서 명세를 갱신한다. 절차는 `update-api-spec` 스킬을 따른다.

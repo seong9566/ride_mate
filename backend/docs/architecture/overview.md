@@ -14,6 +14,9 @@ RideMateService/
 │   ├── CursorResult.cs           # 커서 페이징 결과
 │   ├── RunActionFilter.cs        # 액션 실행 시간 로깅 필터
 │   ├── DateOnlyHandler.cs        # Dapper DateOnly 핸들러
+│   ├── SignRouteConvention.cs    # /sign/ 구간 경로에 인증 요구를 거는 엔드포인트 규약
+│   ├── SignRouteOperationFilter.cs # Swagger에 /sign/ 구간 작업만 Bearer 표시
+│   ├── Security/                 # 해시·전화번호 암호화·토큰 서비스와 설정 클래스
 │   ├── Logger/                   # ILogService, LogService
 │   └── Dto/v1/{도메인}/Request|Response/
 ├── Commons/
@@ -56,12 +59,12 @@ Controller ──▶ Service ──▶ Repository ──▶ DbContext / IDbConne
 2. ForwardedHeaders (프록시 뒤 클라이언트 IP·스킴 복원)
 3. 응답 압축 (Brotli + Gzip)
 4. Redis (`IConnectionMultiplexer` Singleton)
-5. Swagger (Bearer 보안 정의 포함)
+5. Swagger (Bearer 보안 정의 포함, `SignRouteOperationFilter`)
 6. 도메인 DI (`AddDomainModules()`)
 7. 백그라운드 워커 (HostedService)
 8. 공용 서비스 (`AddCommonInfrastructure()` — `ILogService`, HttpContextAccessor)
 9. Dapper 타입 핸들러
-10. 인증
+10. 인증 (`AddAuthInfrastructure()` — 키 설정 검증과 Singleton 등록, JwtBearer)
 11. DbContext + Dapper `IDbConnection` (연결 문자열이 없으면 기동 실패)
 12. CORS (허용 오리진이 없으면 기동 실패)
 13. `AddControllers` + `RunActionFilter` + `AddNewtonsoftJson`
@@ -75,10 +78,9 @@ Controller ──▶ Service ──▶ Repository ──▶ DbContext / IDbConne
 4. `UseSwagger()` / `UseSwaggerUI()`
 5. `UseStaticFiles()`
 6. `UseCors()`
-7. 인증 구간 미들웨어
-8. `UseAuthentication()`
-9. `UseAuthorization()`
-10. `MapGet("/")` → `/swagger` 리다이렉트, `MapControllers()`
+7. `UseAuthentication()`
+8. `UseAuthorization()`
+9. `MapGet("/")` → `/swagger` 리다이렉트, `MapControllers().RequireAuthForSignRoutes()` — 경로에 `/sign/` 구간이 있는 엔드포인트에 인증을 요구한다. 별도 미들웨어는 없다
 
 - 꺼져 있어도 에러가 나지 않는 기능(스케줄러·워커)은 ON/OFF 상태를 기동 로그에 남긴다.
 

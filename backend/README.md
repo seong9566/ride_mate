@@ -76,7 +76,7 @@ done
 docker compose exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP DATABASE ridemate; CREATE DATABASE ridemate CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"'
 ```
 
-### 5. 연결 문자열 설정
+### 5. 로컬 설정
 
 `RideMateService/RideMateService/appsettings.Development.json`을 만듭니다. git에서 제외되는 파일입니다.
 
@@ -84,13 +84,28 @@ docker compose exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DR
 {
   "ConnectionStrings": {
     "DefaultConnection": "Server=127.0.0.1;Port=3306;Database=ridemate;User=ridemate;Password=<.env의 MYSQL_PASSWORD>;"
+  },
+  "Jwt": {
+    "Issuer": "ridemate-local",
+    "Audience": "ridemate-app",
+    "SigningKey": "<base64 32바이트>"
+  },
+  "Crypto": {
+    "PhoneEncKey": "<base64 32바이트>",
+    "HashKey": "<base64 32바이트>"
   }
 }
 ```
 
 `.env`에 `MYSQL_PORT`를 적었으면 `Port=3306`을 그 값으로 바꿉니다.
 
-연결 문자열이 없으면 서버가 기동할 때 실패합니다.
+세 키는 각각 다른 값으로 만듭니다. 키 하나를 만드는 명령은 다음과 같고, 세 번 실행해 각 자리에 넣습니다. 출력된 값은 파일에만 두고 커밋하지 않습니다.
+
+```bash
+openssl rand -base64 32
+```
+
+연결 문자열과 `Jwt`·`Crypto`의 다섯 값 중 하나라도 비어 있으면 서버가 기동할 때 실패합니다.
 
 ## 빌드·실행
 

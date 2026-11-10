@@ -85,23 +85,30 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 - 차 정보와 호칭은 아이 화면에 보이는 값인데 명세서에 입력 화면이 없다. 입력처가 정해질 때까지 NULL 허용으로 둔다.
 - 호칭은 자유 입력이다. 코드 값으로 묶지 않는다.
 - 실명은 가입할 때 필수로 받는다. 입력 화면은 아직 명세서에 없다.
+- `PHONE_ENC`는 AES-256-GCM 암호문이다. 키 버전 1바이트(`0x01`) + nonce 12바이트 + 암호문 + tag 16바이트를 이어 저장한다. [ADR-0013]
 - 삭제(탈퇴)는 아래 "아이·계정 삭제" 순서를 따른다.
 
-### LOGIN_SESSION — 차량 로그인
+### LOGIN_SESSION — 로그인 세션
 
-차량에 발급한 로그인 토큰이다. 같은 차를 엄마와 아빠가 번갈아 쓰면 계정마다 한 행씩 생긴다.
+로그인 세션이다. 종류는 차량(`CAR`)과 휴대폰 웹(`WEB`) 둘이다. 같은 차를 엄마와 아빠가 번갈아 쓰면 계정마다 `CAR` 행이 한 개씩 생긴다. [ADR-0013]
 
 | 컬럼 | 타입 | NULL | 설명 |
 |---|---|---|---|
 | `LOGIN_SESSION_ID` | INT | N | PK |
 | `USER_ID` | INT | N | FK → USER_INFO |
+| `SESSION_TYPE` | VARCHAR(20) | N | `CAR`(차량 refresh 토큰), `WEB`(휴대폰 웹 쿠키). 처음 값 `CAR` |
 | `TOKEN_HASH` | CHAR(64) | N | 로그인 토큰의 HMAC. UNIQUE |
+| `PREV_TOKEN_HASH` | CHAR(64) | Y | 바꾸기 직전 refresh 토큰의 HMAC |
+| `ROTATE_DT` | DATETIME | Y | 토큰을 마지막으로 바꾼 시각 |
 | `DEVICE_ID` | VARCHAR(100) | N | 앱이 처음 실행할 때 만든 임의의 설치 번호. 차대번호가 아니다 |
 | `EXPIRE_DT` | DATETIME | N | 만료 시각 |
 | `LAST_USED_DT` | DATETIME | N | 마지막으로 쓰인 시각 |
 
-- 로그아웃하면 `DELETE_YN`을 켠다. 인증은 `DELETE_YN = FALSE`이고 `EXPIRE_DT`가 지나지 않은 행만 통과시킨다.
-- 인덱스: `(USER_ID, DEVICE_ID)`
+- 이 테이블을 읽는 모든 조회에 `SESSION_TYPE` 조건을 붙인다. refresh와 계정 목록은 `CAR`만, 쿠키 인증은 `WEB`만 본다. 종류를 가리지 않는 것은 계정 삭제뿐이다.
+- 로그아웃하면 `DELETE_YN`을 켠다. refresh 토큰은 `DELETE_YN = FALSE`이고 `EXPIRE_DT`가 지나지 않은 행만 통과시킨다.
+- refresh 토큰을 쓰면 같은 행을 고친다. 지금 값이면 `PREV_TOKEN_HASH`에 지금 값을, `TOKEN_HASH`에 새 값을, `ROTATE_DT`에 지금을 넣는다. `PREV_TOKEN_HASH`와 같고 `ROTATE_DT`가 10분 안이면 `TOKEN_HASH`만 새 값으로 바꾸고 `PREV_TOKEN_HASH`·`ROTATE_DT`는 그대로 둔다. 둘 다 아니면 거절한다. 어느 쪽이든 `EXPIRE_DT`는 지금 + 90일, `LAST_USED_DT`는 지금으로 고치고, 이 처리는 그 행을 `FOR UPDATE`로 잠그고 한다.
+- `WEB` 행은 `DEVICE_ID`가 빈 문자열이고 `PREV_TOKEN_HASH`·`ROTATE_DT`를 쓰지 않는다.
+- 인덱스: `(USER_ID, DEVICE_ID)`, `(PREV_TOKEN_HASH)`
 
 ### PHONE_VERIFICATION — 휴대폰 인증번호
 
@@ -597,8 +604,6 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | 항목 | 영향 |
 |---|---|
 | QR 로그인의 휴대폰 쪽 흐름 | `device_code`·`user_code`로 나누는 것은 정했다. 휴대폰에서 무엇으로 본인을 확인하는지와 `user_code`의 길이는 정하지 않았다 |
-| 로그인 토큰의 수명과 갱신 방식 | `LOGIN_SESSION.EXPIRE_DT` 값, 갱신 토큰을 따로 둘지 |
-| 암호화 방식과 키 보관 | `_ENC` 컬럼 길이, 설정 항목 |
 | 탈퇴 화면 | 명세서에 없다. 개인정보 안내는 "탈퇴 시까지 보관"이다 |
 | 동의 기록 보관 기간 | 계정을 삭제한 뒤 `CONSENT`를 언제까지 두는지 |
 | 차 정보·호칭·운전자 실명의 입력 화면 | 명세서에 입력처가 없다. 실명은 개인정보 고지(RM-C-P1)의 수집 항목에도 넣어야 한다 |

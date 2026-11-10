@@ -55,7 +55,7 @@ description: RideMate 백엔드에 새 도메인(DTO·Repository·Service·Contr
    - 이미 있으면 `Add{도메인}Module()`을 더하고 `AddDomainModules()`에 한 줄 추가한다.
 4. `RideMateService.csproj`에 11번 항목을 추가한다.
 5. `dotnet build RideMateService.sln -warnaserror`가 경고 0으로 통과하도록 고친다. 세 번 고쳐도 통과하지 못하면 멈추고 남은 오류를 사용자에게 알린다.
-6. 서버를 띄워 Swagger에서 새 API를 호출하고 응답을 확인한다. 로컬 서버와 로컬 DB가 대상일 때만 쓰기 API도 호출한다. 서버를 띄우고 끄는 방법은 `backend/AGENTS.md` §빌드·실행·검증을 따른다. 인증 방식을 정하기 전에는 `sign` 구간 API가 401을 돌려주므로 401 응답의 형태까지만 확인한다.
+6. 서버를 띄워 Swagger에서 새 API를 호출하고 응답을 확인한다. 로컬 서버와 로컬 DB가 대상일 때만 쓰기 API도 호출한다. 서버를 띄우고 끄는 방법은 `backend/AGENTS.md` §빌드·실행·검증을 따른다. `sign` 구간 API는 `docs/security.md`의 방법으로 받은 access 토큰을 Bearer로 실어 호출한다.
 7. `update-api-spec` 스킬로 `docs/api/openapi.json`을 갱신한다.
 8. `feat: <한국어 요약>`으로 커밋한다.
 
