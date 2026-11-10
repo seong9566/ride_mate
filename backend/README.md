@@ -83,10 +83,12 @@ docker compose exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DR
 ```json
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Server=127.0.0.1;Port=<MYSQL_PORT>;Database=ridemate;User=ridemate;Password=<.env의 MYSQL_PASSWORD>;"
+    "DefaultConnection": "Server=127.0.0.1;Port=3306;Database=ridemate;User=ridemate;Password=<.env의 MYSQL_PASSWORD>;"
   }
 }
 ```
+
+`.env`에 `MYSQL_PORT`를 적었으면 `Port=3306`을 그 값으로 바꿉니다.
 
 연결 문자열이 없으면 서버가 기동할 때 실패합니다.
 
