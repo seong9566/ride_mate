@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using RideMateService.Comm.Logger;
 using RideMateService.Comm.Security;
 using RideMateService.Repository.v1.Auth;
@@ -39,7 +40,7 @@ public static class InfrastructureExtensions
 
     /// <summary>
     /// 인증 설정(Jwt·Crypto)을 검증하고 해시·전화번호 암호화·토큰 서비스를 Singleton으로 등록한다.
-    /// 설정이 비었거나 키 형식·길이가 맞지 않으면 기동할 때 InvalidOperationException을 던진다.
+    /// 설정이 비었거나 키 형식·길이가 맞지 않거나 두 키가 같으면 기동할 때 InvalidOperationException을 던진다.
     /// </summary>
     public static IServiceCollection AddAuthInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
@@ -48,9 +49,13 @@ public static class InfrastructureExtensions
 
         RequireText(jwt, "Issuer");
         RequireText(jwt, "Audience");
-        RequireKey(jwt, "SigningKey", minBytes: 32, exact: false);
-        RequireKey(crypto, "PhoneEncKey", minBytes: 32, exact: true);
-        RequireKey(crypto, "HashKey", minBytes: 32, exact: false);
+        var signingKey = RequireKey(jwt, "SigningKey", minBytes: 32, exact: false);
+        var phoneEncKey = RequireKey(crypto, "PhoneEncKey", minBytes: 32, exact: true);
+        var hashKey = RequireKey(crypto, "HashKey", minBytes: 32, exact: false);
+
+        RequireDistinct(signingKey, "Jwt:SigningKey", phoneEncKey, "Crypto:PhoneEncKey");
+        RequireDistinct(signingKey, "Jwt:SigningKey", hashKey, "Crypto:HashKey");
+        RequireDistinct(phoneEncKey, "Crypto:PhoneEncKey", hashKey, "Crypto:HashKey");
 
         services.Configure<JwtOptions>(jwt);
         services.Configure<CryptoOptions>(crypto);
@@ -69,7 +74,7 @@ public static class InfrastructureExtensions
         return value;
     }
 
-    private static void RequireKey(IConfigurationSection section, string name, int minBytes, bool exact)
+    private static byte[] RequireKey(IConfigurationSection section, string name, int minBytes, bool exact)
     {
         var value = RequireText(section, name);
         var buffer = new byte[value.Length];
@@ -79,5 +84,14 @@ public static class InfrastructureExtensions
         if (exact ? length != minBytes : length < minBytes)
             throw new InvalidOperationException(
                 $"{section.Key}:{name} 설정의 길이가 맞지 않습니다. (필요: {minBytes}바이트{(exact ? "" : " 이상")})");
+
+        return buffer[..length];
+    }
+
+    // 디코딩한 바이트로 비교한다. 메시지에는 설정 이름만 넣는다
+    private static void RequireDistinct(byte[] first, string firstName, byte[] second, string secondName)
+    {
+        if (first.Length == second.Length && CryptographicOperations.FixedTimeEquals(first, second))
+            throw new InvalidOperationException($"{firstName}, {secondName} 두 설정이 같은 값입니다. 키마다 다른 값을 씁니다.");
     }
 }

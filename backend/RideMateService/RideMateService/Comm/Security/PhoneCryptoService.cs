@@ -13,6 +13,9 @@ public class PhoneCryptoService : IPhoneCryptoService
     private const int NonceSize = 12;
     private const int TagSize = 16;
 
+    // 버전 바이트를 인증 데이터로 묶어 첫 바이트를 바꾸면 복호화가 실패하게 한다
+    private static readonly byte[] AssociatedData = { Version };
+
     private readonly byte[] _phoneEncKey;
 
     public PhoneCryptoService(IOptions<CryptoOptions> options)
@@ -21,7 +24,7 @@ public class PhoneCryptoService : IPhoneCryptoService
     }
 
     /// <summary>
-    /// 숫자만 남긴 전화번호를 암호화한다. 결과는 0x01 | nonce(12) | 암호문 | tag(16)이다.
+    /// 숫자만 남긴 전화번호를 암호화한다. 결과는 0x01 | nonce(12) | 암호문 | tag(16)이고, 버전 바이트는 인증 데이터로 묶는다.
     /// </summary>
     public byte[] Encrypt(string phoneDigits)
     {
@@ -35,7 +38,7 @@ public class PhoneCryptoService : IPhoneCryptoService
 
         RandomNumberGenerator.Fill(nonce);
         using var aes = new AesGcm(this._phoneEncKey, TagSize);
-        aes.Encrypt(nonce, plain, cipher, tag);
+        aes.Encrypt(nonce, plain, cipher, tag, AssociatedData);
         return result;
     }
 
@@ -54,7 +57,7 @@ public class PhoneCryptoService : IPhoneCryptoService
 
         var plain = new byte[cipherLength];
         using var aes = new AesGcm(this._phoneEncKey, TagSize);
-        aes.Decrypt(nonce, cipher, tag, plain);
+        aes.Decrypt(nonce, cipher, tag, plain, AssociatedData);
         return Encoding.UTF8.GetString(plain);
     }
 }
