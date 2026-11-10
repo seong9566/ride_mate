@@ -77,6 +77,17 @@ bash "$TASK_VAULT/.claude/scripts/task.sh" done T0x --project ride-mate
 - 커밋 메시지는 `<type>: <한국어 요약>` 형식이다. type은 feat·fix·refactor·docs·chore 중 하나다.
 - pre-commit 훅을 우회하지 않는다(`--no-verify` 금지).
 
+## PM 세션 핸드오프 (작업 완료 시 필수)
+
+작업·하위작업 완료나 PM에게 넘길 일이 생기면 vault handoff에 한 줄 남긴다 — 손으로 쓰지 말고 스크립트로:
+`bash "$TASK_VAULT/.claude/scripts/handoff.sh" done ride-mate "<설명>" [--closes <ID>] [--pr <번호>]`
+
+- 슬러그는 정확히 `ride-mate`. 완료 아닌 메모는 `note`, PM이 할 일로 가져갈 건 `todo`. 실기기·테스트 버그는 `--bug`.
+- 하네스(AGENTS.md·hooks·skills 등) 개선점은 `todo ride-mate "[하네스] <개선점> — <파일/커밋>"`(아이디어면 `note`), 고칠 방법도 함께.
+- 해소한 노트는 `--closes <ID>`로 인용하고 `bash "$TASK_VAULT/.claude/scripts/task.sh" done <ID> --project ride-mate`로 직접 닫는다. 머지 대기면 닫지 않는다.
+- 날짜는 `(완료 YYYY-MM-DD)`만 — `(반영 …)`은 PM 전용. 규약 정본: `$TASK_VAULT/inbox/HANDOFF_GUIDE.md`.
+- `/pr-finish`의 handoff 단계도 이 스크립트로 한다.
+
 ## 커밋 훅
 
 - 클론한 뒤 한 번 설치한다: `sh scripts/install-hooks.sh` (`backend/`에서 실행)
