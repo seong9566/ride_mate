@@ -59,15 +59,22 @@ docker compose up -d --wait     # healthcheck가 통과할 때까지 기다립�
 
 ### 4. 스키마 적용
 
-`sql/`의 파일을 **이름 순서대로** 모두 적용합니다.
+새로 띄운 빈 DB에 `sql/`의 파일을 **이름 순서대로** 모두 적용합니다. 한 파일이라도 실패하면 그 자리에서 멈춥니다.
 
 ```bash
 for f in sql/*.sql; do
-  docker compose exec -T mysql sh -c 'mysql --default-character-set=utf8mb4 -uridemate -p"$MYSQL_PASSWORD" ridemate' < "$f"
+  echo "== $f"
+  docker compose exec -T mysql sh -c 'mysql --default-character-set=utf8mb4 -uridemate -p"$MYSQL_PASSWORD" ridemate' < "$f" || { echo "실패: $f"; break; }
 done
 ```
 
-`--default-character-set=utf8mb4`를 빼면 한국어 COMMENT가 깨진 채 저장됩니다.
+- `--default-character-set=utf8mb4`를 빼면 한국어 COMMENT가 깨진 채 저장됩니다.
+- 이 루프는 빈 DB 전용입니다. 이미 적용한 DB에서 다시 돌리면 `CREATE TABLE`이 중복 오류를 냅니다.
+- 중간에 실패했으면 이어서 돌리지 말고 DB를 비운 뒤 처음부터 다시 적용합니다. DDL은 문장마다 바로 반영돼 되돌려지지 않습니다.
+
+```bash
+docker compose exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP DATABASE ridemate; CREATE DATABASE ridemate CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"'
+```
 
 ### 5. 연결 문자열 설정
 
@@ -97,7 +104,13 @@ dotnet run --project RideMateService --launch-profile http # http://localhost:51
 ## 스키마를 바꿀 때
 
 1. `sql/{yyyyMMdd}_{설명}.sql`로 새 DDL 파일을 만듭니다. 이미 적용한 파일은 고치지 않습니다.
-2. 위 4단계처럼 로컬 DB에 적용합니다.
+2. **새로 만든 파일 하나만** 로컬 DB에 적용합니다. 4단계의 루프를 다시 돌리지 않습니다.
+
+```bash
+docker compose exec -T mysql sh -c 'mysql --default-character-set=utf8mb4 -uridemate -p"$MYSQL_PASSWORD" ridemate' < sql/{새 파일}.sql
+```
+
+
 3. 엔티티를 다시 스캐폴드합니다(`RideMateService/`에서 `dotnet tool restore` 후, `RideMateService/RideMateService/`에서 실행).
 
 ```bash
