@@ -9,7 +9,7 @@ description: RideMate 백엔드의 MySQL 테이블을 만들거나 바꿀 때 �
 
 ## 하지 말 것
 
-- `main` 브랜치에서 시작하지 않는다. `main`이면 멈추고 `start-task` 스킬로 브랜치부터 만든다.
+- `main`이나 `backend` 브랜치에서 시작하지 않는다. 그 브랜치면 멈추고 `start-task` 스킬로 브랜치부터 만든다.
 - 이미 적용된 DDL 파일을 고치지 않는다. 변경분은 새 파일로 쓴다.
 - EF Migration을 쓰지 않는다. 스캐폴드 산출물(`Commons/DBModels/*.cs`, `Commons/Repository/RideMateContext.cs`)을 손으로 고치지 않는다.
 - 비밀번호를 명령줄, 채팅, 로그에 쓰지 않는다. 스캐폴드가 설정을 못 읽어 실패해도 명령줄에 비밀번호를 넣어 우회하지 않고, 멈추고 사용자에게 알린다.
