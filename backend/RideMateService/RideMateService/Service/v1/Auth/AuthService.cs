@@ -14,6 +14,7 @@ public class AuthService : IAuthService
 {
     private const string GrantTypeRefreshToken = "refresh_token";
     private const string AuditUser = "PARENT";
+    private const int RefreshTokenMaxLength = 128; // 실제 값은 43자다. 더 길면 해시·트랜잭션 전에 거절한다
 
     private readonly IAuthRepository _authRepository;
     private readonly ILogService _logService;
@@ -53,6 +54,9 @@ public class AuthService : IAuthService
 
             if (string.IsNullOrWhiteSpace(dto.refresh_token))
                 return TokenError("invalid_request", "refresh_token is required");
+
+            if (dto.refresh_token.Length > RefreshTokenMaxLength)
+                return TokenError("invalid_grant", "refresh token is invalid or expired");
 
             DateTime thisTime = DateTime.Now;
             var requestHash = _hashService.Hmac(dto.refresh_token);
@@ -111,7 +115,8 @@ public class AuthService : IAuthService
             }
 
             // 5) 계정 확인 — 계정이 삭제됐으면 교체를 되돌린다
-            var setupRequired = await _authRepository.GetSetupRequiredAsync(session.UserId, cancellationToken).ConfigureAwait(false);
+            var setupRequired = await _authRepository.GetSetupRequiredAsync(session.UserId,
+                transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
             if (setupRequired is null)
             {
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);

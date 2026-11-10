@@ -19,7 +19,8 @@ public interface IAuthRepository
 
     /// <summary>
     /// refresh 토큰 해시로 살아 있는 차량 로그인 세션을 찾아 FOR UPDATE로 잠그고 ID를 돌려준다.
-    /// 지금 값이거나, 허용 시간(graceFrom 이후) 안에 바뀐 직전 값이면 찾는다
+    /// 지금 값이거나, 허용 시간(graceFrom 이후) 안에 바뀐 직전 값이면 찾는다.
+    /// 인덱스를 하나씩 타도록 지금 값(TOKEN_HASH)을 먼저 찾고, 없을 때만 직전 값(PREV_TOKEN_HASH)을 찾는다
     /// </summary>
     Task<int?> LockLoginSessionByRefreshAsync(string tokenHash, DateTime graceFrom, DateTime thisTime,
         IDbTransaction transaction, CancellationToken cancellationToken = default);
@@ -27,5 +28,6 @@ public interface IAuthRepository
     /// <summary>
     /// 계정의 초기 설정이 필요한지 조회한다. 실명이 비었거나 살아 있는 아이가 없으면 true, 계정이 없거나 삭제됐으면 null
     /// </summary>
-    Task<bool?> GetSetupRequiredAsync(int userId, CancellationToken cancellationToken = default);
+    Task<bool?> GetSetupRequiredAsync(int userId, IDbTransaction? transaction = null,
+        CancellationToken cancellationToken = default);
 }
