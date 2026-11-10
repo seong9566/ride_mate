@@ -397,9 +397,11 @@ public partial class RideMateContext : DbContext
         {
             entity.HasKey(e => e.LoginSessionId).HasName("PRIMARY");
 
-            entity.ToTable("LOGIN_SESSION", tb => tb.HasComment("차량 로그인"));
+            entity.ToTable("LOGIN_SESSION", tb => tb.HasComment("로그인 세션"));
 
             entity.HasIndex(e => new { e.UserId, e.DeviceId }, "IX_LOGIN_SESSION_01");
+
+            entity.HasIndex(e => e.PrevTokenHash, "IX_LOGIN_SESSION_02");
 
             entity.HasIndex(e => e.TokenHash, "UK_LOGIN_SESSION_01").IsUnique();
 
@@ -429,6 +431,19 @@ public partial class RideMateContext : DbContext
                 .HasComment("마지막 사용 일시")
                 .HasColumnType("datetime")
                 .HasColumnName("LAST_USED_DT");
+            entity.Property(e => e.PrevTokenHash)
+                .HasMaxLength(64)
+                .IsFixedLength()
+                .HasComment("교체 직전 로그인 토큰 HMAC")
+                .HasColumnName("PREV_TOKEN_HASH");
+            entity.Property(e => e.RotateDt)
+                .HasComment("토큰 교체 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("ROTATE_DT");
+            entity.Property(e => e.SessionType)
+                .HasMaxLength(20)
+                .HasComment("세션 종류 (CAR, WEB)")
+                .HasColumnName("SESSION_TYPE");
             entity.Property(e => e.TokenHash)
                 .HasMaxLength(64)
                 .IsFixedLength()

@@ -2,12 +2,16 @@ using System.Data;
 using System.IO.Compression;
 using System.Text.RegularExpressions;
 using Dapper;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
+using Newtonsoft.Json;
 using RideMateService.Comm;
-using RideMateService.Comm.Logger;
+using RideMateService.Comm.Security;
 using RideMateService.Commons.Repository;
+using RideMateService.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -52,29 +56,76 @@ builder.Services.AddSwaggerGen(c =>
     c.MapType<IFormFile>(() => new OpenApiSchema { Type = JsonSchemaType.String, Format = "binary" });
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
-        Description = @"입력양식 - 'Bearer' [space] and then your token.
-        예: 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'",
-        Name = "Authorization",
-        In = ParameterLocation.Header,
-        Type = SecuritySchemeType.ApiKey,
-        Scheme = "Bearer",
+        Description = @"access 토큰만 입력한다. 'Bearer ' 접두는 Swagger가 붙인다.
+        예: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
         BearerFormat = "JWT"
     });
-    c.AddSecurityRequirement(document => new OpenApiSecurityRequirement
-    {
-        [new OpenApiSecuritySchemeReference("Bearer", document, null)] = new List<string>()
-    });
+    c.OperationFilter<SignRouteOperationFilter>();
 });
+#endregion
+
+#region 도메인 DI
+
+builder.Services.AddDomainModules();
 #endregion
 
 #region 공용 서비스
 
-builder.Services.AddTransient<ILogService, LogService>();
+builder.Services.AddCommonInfrastructure();
 #endregion
 
 #region Dapper 타입 핸들러
 
 SqlMapper.AddTypeHandler(typeof(DateOnly), new DateOnlyHandler());
+#endregion
+
+#region 인증
+
+builder.Services.AddAuthInfrastructure(builder.Configuration);
+
+// 설정값은 AddAuthInfrastructure에서 이미 검증되었다
+var jwtOptions = builder.Configuration.GetSection("Jwt").Get<JwtOptions>()!;
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwtOptions.Issuer,
+            ValidateAudience = true,
+            ValidAudience = jwtOptions.Audience,
+            ValidateLifetime = true,
+            RequireExpirationTime = true,
+            RequireSignedTokens = true,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Convert.FromBase64String(jwtOptions.SigningKey)),
+            ValidAlgorithms = new[] { SecurityAlgorithms.HmacSha256 },
+            ClockSkew = TimeSpan.Zero
+        };
+        options.Events = new JwtBearerEvents
+        {
+            OnChallenge = async context =>
+            {
+                // 기본 응답을 막고 항상 같은 401 본문을 쓴다
+                if (context.Response.HasStarted)
+                    return;
+
+                context.HandleResponse();
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                context.Response.ContentType = "application/json; charset=utf-8";
+                var body = JsonConvert.SerializeObject(new ResponseModel<object>
+                {
+                    message = "잘못된 요청입니다.",
+                    data = null,
+                    code = 401
+                });
+                await context.Response.WriteAsync(body).ConfigureAwait(false);
+            }
+        };
+    });
 #endregion
 
 #region DbContext
@@ -122,10 +173,11 @@ app.UseSwaggerUI(c =>
 });
 #endregion
 
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
-app.MapControllers();
+app.MapControllers().RequireAuthForSignRoutes();
 
 app.Run();
 

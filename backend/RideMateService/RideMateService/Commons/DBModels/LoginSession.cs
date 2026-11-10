@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace RideMateService.Commons.DBModels;
 
 /// <summary>
-/// 차량 로그인
+/// 로그인 세션
 /// </summary>
 public partial class LoginSession
 {
@@ -19,9 +19,24 @@ public partial class LoginSession
     public int UserId { get; set; }
 
     /// <summary>
+    /// 세션 종류 (CAR, WEB)
+    /// </summary>
+    public string SessionType { get; set; } = null!;
+
+    /// <summary>
     /// 로그인 토큰 HMAC
     /// </summary>
     public string TokenHash { get; set; } = null!;
+
+    /// <summary>
+    /// 교체 직전 로그인 토큰 HMAC
+    /// </summary>
+    public string? PrevTokenHash { get; set; }
+
+    /// <summary>
+    /// 토큰 교체 일시
+    /// </summary>
+    public DateTime? RotateDt { get; set; }
 
     /// <summary>
     /// 차량 앱 설치 번호
