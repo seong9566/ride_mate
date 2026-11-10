@@ -67,7 +67,7 @@ public class AuthService : IAuthService
             await using var transactionScope = transaction.ConfigureAwait(false);
 
             var loginSessionId = await _authRepository.LockLoginSessionByRefreshAsync(requestHash,
-                thisTime.AddMinutes(-ITokenService.RefreshGraceMinutes), thisTime,
+                thisTime.AddHours(-ITokenService.RefreshGraceHours), thisTime,
                 transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
             if (loginSessionId is null)
             {
@@ -82,8 +82,10 @@ public class AuthService : IAuthService
                 return TokenError("invalid_grant", "refresh token is invalid or expired");
             }
 
-            // 3) refresh 교체 — 지금 값이면 직전 값으로 넘기고, 직전 값이면 지금 값만 바꾼다(허용 시간은 늘지 않는다)
-            var newRefreshToken = _tokenService.CreateRefreshToken();
+            // 3) refresh 교체 — 새 값은 세션과 낸 값으로 계산하므로 같은 값을 내면 늘 같은 새 값이 나온다.
+            //    지금 값이면 직전 값으로 넘기고 계산한 값을 지금 값으로 둔다.
+            //    직전 값이면(재시도·늦게 처리된 중복) 계산한 값이 이미 지금 값이므로 행의 값은 그대로 두고 같은 값을 다시 준다
+            var newRefreshToken = _tokenService.DeriveNextRefreshToken(session.LoginSessionId, dto.refresh_token);
             var newTokenHash = _hashService.Hmac(newRefreshToken);
 
             if (session.TokenHash == requestHash)
@@ -94,7 +96,12 @@ public class AuthService : IAuthService
             }
             else if (session.PrevTokenHash == requestHash)
             {
-                session.TokenHash = newTokenHash;
+                // 계산한 값이 지금 값과 다르면(이전 코드가 난수로 교체한 행, 해시 키 변경) 받아 줄 값이 없다
+                if (newTokenHash != session.TokenHash)
+                {
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return TokenError("invalid_grant", "refresh token is invalid or expired");
+                }
             }
             else
             {
