@@ -14,9 +14,9 @@ public partial class Child
     public int ChildId { get; set; }
 
     /// <summary>
-    /// 부모 계정 ID
+    /// 운전자 계정 ID
     /// </summary>
-    public int ParentId { get; set; }
+    public int UserId { get; set; }
 
     /// <summary>
     /// 아이 이름
@@ -58,9 +58,9 @@ public partial class Child
     /// </summary>
     public bool DeleteYn { get; set; }
 
-    public virtual Parent Parent { get; set; } = null!;
-
     public virtual ICollection<PickupPlan> PickupPlans { get; set; } = new List<PickupPlan>();
 
     public virtual ICollection<Timetable> Timetables { get; set; } = new List<Timetable>();
+
+    public virtual UserInfo User { get; set; } = null!;
 }

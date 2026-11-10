@@ -14,9 +14,9 @@ public partial class LoginSession
     public int LoginSessionId { get; set; }
 
     /// <summary>
-    /// 부모 계정 ID
+    /// 운전자 계정 ID
     /// </summary>
-    public int ParentId { get; set; }
+    public int UserId { get; set; }
 
     /// <summary>
     /// 로그인 토큰 HMAC
@@ -63,5 +63,5 @@ public partial class LoginSession
     /// </summary>
     public bool DeleteYn { get; set; }
 
-    public virtual Parent Parent { get; set; } = null!;
+    public virtual UserInfo User { get; set; } = null!;
 }

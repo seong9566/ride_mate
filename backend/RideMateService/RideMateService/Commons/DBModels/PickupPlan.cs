@@ -14,9 +14,9 @@ public partial class PickupPlan
     public int PickupPlanId { get; set; }
 
     /// <summary>
-    /// 부모 계정 ID
+    /// 운전자 계정 ID
     /// </summary>
-    public int? ParentId { get; set; }
+    public int? UserId { get; set; }
 
     /// <summary>
     /// 아이 ID
@@ -134,8 +134,6 @@ public partial class PickupPlan
 
     public virtual Child? Child { get; set; }
 
-    public virtual Parent? Parent { get; set; }
-
     public virtual ParkingLot? ParkingLot { get; set; }
 
     public virtual ICollection<PickupEvent> PickupEvents { get; set; } = new List<PickupEvent>();
@@ -145,4 +143,6 @@ public partial class PickupPlan
     public virtual PickupSpot? PickupSpot { get; set; }
 
     public virtual TimetableDay? TimetableDay { get; set; }
+
+    public virtual UserInfo? User { get; set; }
 }

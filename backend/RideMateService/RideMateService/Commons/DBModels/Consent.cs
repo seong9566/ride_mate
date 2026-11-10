@@ -14,9 +14,9 @@ public partial class Consent
     public int ConsentId { get; set; }
 
     /// <summary>
-    /// 부모 계정 ID
+    /// 운전자 계정 ID
     /// </summary>
-    public int ParentId { get; set; }
+    public int UserId { get; set; }
 
     /// <summary>
     /// 동의 종류 (GUARDIAN, CHILD_INFO, ARRIVAL_LOG)
@@ -73,7 +73,7 @@ public partial class Consent
     /// </summary>
     public bool DeleteYn { get; set; }
 
-    public virtual Parent Parent { get; set; } = null!;
-
     public virtual PhoneVerification? PhoneVerification { get; set; }
+
+    public virtual UserInfo User { get; set; } = null!;
 }

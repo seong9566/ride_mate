@@ -51,25 +51,26 @@ ACTIVE_FLAG TINYINT GENERATED ALWAYS AS (IF(DELETE_YN = 0, 1, NULL)) VIRTUAL
 ## 테이블 관계
 
 ```text
-PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_EXCEPTION
+USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_EXCEPTION
 ```
 
-- 계정·인증: `PARENT`, `LOGIN_SESSION`, `PHONE_VERIFICATION`, `QR_LOGIN`, `CONSENT`
+- 계정·인증: `USER_INFO`, `LOGIN_SESSION`, `PHONE_VERIFICATION`, `QR_LOGIN`, `CONSENT`
 - 아이·시간표: `CHILD`, `ACADEMY`, `TIMETABLE`, `TIMETABLE_DAY`, `TIMETABLE_EXCEPTION`
 - 기준 데이터: `AREA`, `PICKUP_SPOT`, `PICKUP_SPOT_BLOCK`, `ACADEMY_PICKUP_SPOT`, `LOOP_ROUTE`, `RESTRICTED_ZONE`, `PARKING_LOT`, `HOLIDAY`
 - 픽업 진행: `PICKUP_PLAN`, `PICKUP_SESSION`, `PICKUP_EVENT`
 
 ## 계정·인증
 
-부모만 계정을 가진다. 아이 계정은 없다. 비밀번호는 없고 휴대폰 인증번호나 QR로 로그인한다.
+운전자(부모)만 계정을 가진다. 아이 계정은 없다. 비밀번호는 없고 휴대폰 인증번호나 QR로 로그인한다. [ADR-0008] [ADR-0012]
 
-### PARENT — 부모 계정
+### USER_INFO — 운전자 계정
 
 | 컬럼 | 타입 | NULL | 설명 |
 |---|---|---|---|
-| `PARENT_ID` | INT | N | PK |
+| `USER_ID` | INT | N | PK |
 | `PHONE_ENC` | VARBINARY(255) | N | 휴대폰 번호(숫자만). 보호자 인증번호를 보낼 때 쓴다 |
 | `PHONE_HASH` | CHAR(64) | N | 휴대폰 번호의 HMAC. 로그인할 때 계정을 찾는다 |
+| `USER_NAME` | VARCHAR(50) | N | 운전자 실명. 차량의 계정 목록(RM-V00)에는 성만 남기고 가려서(「김OO」) 보여준다 |
 | `CALL_NAME` | VARCHAR(20) | Y | 아이에게 보이는 호칭(엄마, 아빠). 비어 있으면 화면은 "보호자"로 보여준다 |
 | `CAR_MODEL` | VARCHAR(50) | Y | 차종 |
 | `CAR_COLOR` | VARCHAR(20) | Y | 차 색 |
@@ -82,6 +83,8 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 
 - 살아 있는 행 UNIQUE: `(PHONE_HASH, ACTIVE_FLAG)`
 - 차 정보와 호칭은 아이 화면에 보이는 값인데 명세서에 입력 화면이 없다. 입력처가 정해질 때까지 NULL 허용으로 둔다.
+- 호칭은 자유 입력이다. 코드 값으로 묶지 않는다.
+- 실명은 가입할 때 필수로 받는다. 입력 화면은 아직 명세서에 없다.
 - 삭제(탈퇴)는 아래 "아이·계정 삭제" 순서를 따른다.
 
 ### LOGIN_SESSION — 차량 로그인
@@ -91,14 +94,14 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 | 컬럼 | 타입 | NULL | 설명 |
 |---|---|---|---|
 | `LOGIN_SESSION_ID` | INT | N | PK |
-| `PARENT_ID` | INT | N | FK → PARENT |
+| `USER_ID` | INT | N | FK → USER_INFO |
 | `TOKEN_HASH` | CHAR(64) | N | 로그인 토큰의 HMAC. UNIQUE |
 | `DEVICE_ID` | VARCHAR(100) | N | 앱이 처음 실행할 때 만든 임의의 설치 번호. 차대번호가 아니다 |
 | `EXPIRE_DT` | DATETIME | N | 만료 시각 |
 | `LAST_USED_DT` | DATETIME | N | 마지막으로 쓰인 시각 |
 
 - 로그아웃하면 `DELETE_YN`을 켠다. 인증은 `DELETE_YN = FALSE`이고 `EXPIRE_DT`가 지나지 않은 행만 통과시킨다.
-- 인덱스: `(PARENT_ID, DEVICE_ID)`
+- 인덱스: `(USER_ID, DEVICE_ID)`
 
 ### PHONE_VERIFICATION — 휴대폰 인증번호
 
@@ -120,24 +123,27 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 - 잠금 중인지는 그 번호의 가장 최근 행에서 `LOCK_UNTIL_DT`로 판단한다. 잠긴 동안에는 새 인증번호를 보내지 않는다.
 - 같은 번호로는 1분에 한 번만 보낸다(가정값).
 - 인증에 성공했거나 만료된 지 24시간이 지난 행은 주기 작업이 `PHONE_HASH`·`CODE_HASH`를 빈 문자열로 바꾸고 `DELETE_YN`을 켠다. 동의 증빙에 필요한 시각과 방법은 `CONSENT`에 있다.
-- `GUARDIAN`은 로그인한 부모 계정의 번호로만 보낸다.
+- `GUARDIAN`은 로그인한 운전자 계정의 번호로만 보낸다.
 - 틀린 횟수를 올릴 때는 그 행을 `FOR UPDATE`로 잠그고 읽는다. 동시에 여러 번 시도해도 횟수가 빠지지 않는다.
 - 인덱스: `(PHONE_HASH, PURPOSE, PHONE_VERIFICATION_ID)`
 
 ### QR_LOGIN — QR 로그인 요청
 
-차량이 QR을 띄우고, 부모가 휴대폰으로 찍어 인증하면 차량이 로그인된다.
+차량이 QR을 띄우고, 운전자가 휴대폰으로 찍어 인증하면 차량이 로그인된다. 요청을 만들 때 서버가 비밀 값 두 개를 만든다. `device_code`는 차량만 보관하고 결과를 기다릴 때 쓴다. `user_code`는 QR에 담겨 휴대폰이 인증할 때 쓴다. QR이 보여도 `device_code`가 없으면 로그인 토큰을 받을 수 없다.
 
 | 컬럼 | 타입 | NULL | 설명 |
 |---|---|---|---|
 | `QR_LOGIN_ID` | INT | N | PK |
-| `QR_TOKEN_HASH` | CHAR(64) | N | QR에 담긴 토큰의 HMAC. UNIQUE |
+| `DEVICE_CODE_HASH` | CHAR(64) | N | 차량이 보관하는 `device_code`의 HMAC. UNIQUE |
+| `USER_CODE_HASH` | CHAR(64) | N | QR에 담긴 `user_code`의 HMAC. UNIQUE |
 | `DEVICE_ID` | VARCHAR(100) | N | QR을 띄운 차량의 설치 번호 |
 | `STATUS` | VARCHAR(20) | N | `PENDING`(대기), `APPROVED`(휴대폰에서 인증됨), `USED`(차량이 토큰을 받아감) |
-| `PARENT_ID` | INT | Y | FK → PARENT. 인증된 뒤에 채운다 |
+| `USER_ID` | INT | Y | FK → USER_INFO. 인증된 뒤에 채운다 |
 | `EXPIRE_DT` | DATETIME | N | 만료 시각 |
 
-- `PENDING`일 때만 `PARENT_ID`가 비어 있다. 코드 값 조건이라 CHECK로 걸지 않고 Service에서 확인한다.
+- 휴대폰은 `user_code`로 `PENDING` 행을 찾아 `APPROVED`로 바꾼다. 차량은 `device_code`로 그 행을 찾아 결과를 받는다.
+- 두 UNIQUE는 삭제된 행까지 포함한다. 만든 값이 겹쳐 중복 키 오류가 나면 Service가 값을 새로 만들어 다시 넣는다.
+- `PENDING`일 때만 `USER_ID`가 비어 있다. 코드 값 조건이라 CHECK로 걸지 않고 Service에서 확인한다.
 - 차량이 `APPROVED`를 확인하면 `LOGIN_SESSION`을 만들고 `USED`로 바꾼다. 이 트랜잭션은 첫 문장에서 그 행을 `FOR UPDATE`로 잠그고 상태를 다시 읽는다. 이미 `USED`면 거절하므로 한 QR로 두 번 로그인할 수 없다.
 - 토큰을 받아가는 요청의 `DEVICE_ID`가 행의 값과 같아야 한다. QR을 찍어 간 다른 기기는 로그인 토큰을 받을 수 없다.
 
@@ -148,7 +154,7 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 | 컬럼 | 타입 | NULL | 설명 |
 |---|---|---|---|
 | `CONSENT_ID` | INT | N | PK |
-| `PARENT_ID` | INT | N | FK → PARENT |
+| `USER_ID` | INT | N | FK → USER_INFO |
 | `CONSENT_TYPE` | VARCHAR(20) | N | `GUARDIAN`(법정대리인 확인), `CHILD_INFO`(필수: 아이 이름·연락처), `ARRIVAL_LOG`(선택: 차량 도착 기록) |
 | `AGREE_YN` | TINYINT(1) | N | 동의 여부 |
 | `TERMS_VERSION` | VARCHAR(20) | N | 동의한 약관·고지 문서의 버전 |
@@ -156,8 +162,8 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 | `PHONE_VERIFICATION_ID` | INT | Y | FK → PHONE_VERIFICATION. 휴대폰 인증으로 확인한 경우 |
 | `CONSENT_DT` | DATETIME | N | 동의한 시각 |
 
-- 지금 동의 상태는 그 부모·종류의 가장 최근 행이다. 이 테이블이 정본이다. `PARENT.ARRIVAL_LOG_YN`은 화면이 빨리 읽기 위한 사본이고 `ARRIVAL_LOG` 행을 넣는 트랜잭션에서 함께 바꾼다.
-- 인덱스: `(PARENT_ID, CONSENT_TYPE, CONSENT_ID)`
+- 지금 동의 상태는 그 계정·종류의 가장 최근 행이다. 이 테이블이 정본이다. `USER_INFO.ARRIVAL_LOG_YN`은 화면이 빨리 읽기 위한 사본이고 `ARRIVAL_LOG` 행을 넣는 트랜잭션에서 함께 바꾼다.
+- 인덱스: `(USER_ID, CONSENT_TYPE, CONSENT_ID)`
 
 ## 아이·시간표
 
@@ -166,7 +172,7 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 | 컬럼 | 타입 | NULL | 설명 |
 |---|---|---|---|
 | `CHILD_ID` | INT | N | PK |
-| `PARENT_ID` | INT | N | FK → PARENT |
+| `USER_ID` | INT | N | FK → USER_INFO |
 | `CHILD_NAME` | VARCHAR(50) | N | 이름(화면 입력은 1~10자) |
 | `PHONE_ENC` | VARBINARY(255) | N | 휴대폰 번호(숫자만). 암호화해서 저장한다 |
 | `SEND_CHANNEL` | VARCHAR(20) | N | `SMS`, `ALIMTALK`. 처음 값 `SMS` |
@@ -261,9 +267,9 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 | 3 | `TIMETABLE_DAY` | `DELETE_YN`을 켠다 |
 | 4 | `TIMETABLE` | `DELETE_YN`을 켜고 `DISPLAY_NAME`을 빈 문자열로 바꾼다 |
 | 5 | `CHILD` | `DELETE_YN`을 켜고 `CHILD_NAME`을 빈 문자열로, `PHONE_ENC`를 빈 값으로 바꾼다 |
-| 6 | `LOGIN_SESSION`, `QR_LOGIN` | `DELETE_YN`을 켠다. `QR_LOGIN`은 `PARENT_ID`를 NULL로 바꾼다 |
+| 6 | `LOGIN_SESSION`, `QR_LOGIN` | `DELETE_YN`을 켠다. `QR_LOGIN`은 `USER_ID`를 NULL로 바꾼다 |
 | 7 | `PHONE_VERIFICATION` | 그 번호의 행에서 `PHONE_HASH`·`CODE_HASH`를 빈 문자열로 바꾸고 `DELETE_YN`을 켠다. 남겨 두면 `CONSENT`를 거쳐 삭제된 계정의 번호 해시로 이어진다 |
-| 8 | `PARENT` | `DELETE_YN`을 켜고 `PHONE_ENC`를 빈 값으로, `PHONE_HASH`를 빈 문자열로, 호칭·차 정보·목적지를 NULL로 바꾼다 |
+| 8 | `USER_INFO` | `DELETE_YN`을 켜고 `PHONE_ENC`를 빈 값으로, `PHONE_HASH`·`USER_NAME`을 빈 문자열로, 호칭·차 정보·목적지를 NULL로 바꾼다 |
 
 - `CONSENT`는 지우지 않는다. 동의를 받았다는 증빙이다. 보관 기간은 정해지지 않았다.
 - 로그아웃은 삭제가 아니다. 그 차량의 `LOGIN_SESSION`만 끝내고 서버의 시간표와 아이 정보는 남는다.
@@ -431,7 +437,7 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 | 컬럼 | 타입 | NULL | 설명 |
 |---|---|---|---|
 | `PICKUP_PLAN_ID` | INT | N | PK |
-| `PARENT_ID` | INT | Y | FK → PARENT. 끝나면 NULL |
+| `USER_ID` | INT | Y | FK → USER_INFO. 끝나면 NULL |
 | `CHILD_ID` | INT | Y | FK → CHILD. 끝나면 NULL |
 | `TIMETABLE_DAY_ID` | INT | Y | FK → TIMETABLE_DAY. 끝나면 NULL |
 | `ACADEMY_ID` | INT | Y | FK → ACADEMY. 끝나면 NULL |
@@ -465,7 +471,7 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 - UNIQUE: `(TIMETABLE_DAY_ID, PICKUP_DATE)`. 진행 중에 같은 계획을 두 번 만들 수 없다. 끝난 계획은 `TIMETABLE_DAY_ID`가 NULL이라 걸리지 않으므로 `ACTIVE_FLAG`가 필요 없다. 중복 키 오류가 나면 이미 만들어진 계획을 돌려준다.
 - 탑승이나 만료로 끝난 뒤 다시 만드는 것은 `TIMETABLE_DAY.LAST_PICKUP_DATE`로 막는다.
 - CHECK: `(PICKUP_SPOT_ID IS NULL) = (SLOT_DT IS NULL)`, `(PICKUP_SPOT_ID IS NULL) OR (WALK_MIN IS NOT NULL) OR (DELETE_YN = 1)`
-- 인덱스: `(PICKUP_SPOT_ID, SLOT_DT)`, `(PARENT_ID, PICKUP_DATE)`
+- 인덱스: `(PICKUP_SPOT_ID, SLOT_DT)`, `(USER_ID, PICKUP_DATE)`
 - 상태, 시각 컬럼, `PICKUP_EVENT`는 같은 일을 함께 적는다. 셋은 항상 같은 트랜잭션에서 쓴다.
 
 **배정 시각.** 아이가 픽업 지점에 도착할 것으로 보는 시각이다. `하원 시각 + 정리 시간 + WALK_MIN`으로 계산한다. 정리 시간은 설정값이다(가정 1분).
@@ -498,7 +504,7 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 
 **익명화.** 계획이 `BOARDED`·`EXPIRED`·`CANCELED`가 되면 같은 트랜잭션에서 아래를 한다. [ADR-0008]
 
-1. `PARENT_ID`·`CHILD_ID`·`TIMETABLE_DAY_ID`·`ACADEMY_ID`·`END_TIME`·`WALK_MIN`을 NULL로 바꾼다.
+1. `USER_ID`·`CHILD_ID`·`TIMETABLE_DAY_ID`·`ACADEMY_ID`·`END_TIME`·`WALK_MIN`을 NULL로 바꾼다.
 2. 그 계획의 `END_TIME_CHANGED` 이벤트는 `DETAIL`을 NULL로 바꾼다. 하원 시각이 들어 있기 때문이다.
 3. `DELETE_YN`을 켠다. `PICKUP_SESSION`·`PICKUP_EVENT`도 함께 켠다.
 
@@ -590,12 +596,12 @@ PARENT ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABLE_E
 
 | 항목 | 영향 |
 |---|---|
-| QR 로그인의 휴대폰 쪽 흐름 | 휴대폰에서 무엇으로 본인을 확인하는지. `QR_LOGIN`의 상태와 컬럼이 달라질 수 있다 |
+| QR 로그인의 휴대폰 쪽 흐름 | `device_code`·`user_code`로 나누는 것은 정했다. 휴대폰에서 무엇으로 본인을 확인하는지와 `user_code`의 길이는 정하지 않았다 |
 | 로그인 토큰의 수명과 갱신 방식 | `LOGIN_SESSION.EXPIRE_DT` 값, 갱신 토큰을 따로 둘지 |
 | 암호화 방식과 키 보관 | `_ENC` 컬럼 길이, 설정 항목 |
 | 탈퇴 화면 | 명세서에 없다. 개인정보 안내는 "탈퇴 시까지 보관"이다 |
 | 동의 기록 보관 기간 | 계정을 삭제한 뒤 `CONSENT`를 언제까지 두는지 |
-| 차 정보와 호칭의 입력 화면 | 아이 화면에 보이는데 명세서에 입력처가 없다 |
+| 차 정보·호칭·운전자 실명의 입력 화면 | 명세서에 입력처가 없다. 실명은 개인정보 고지(RM-C-P1)의 수집 항목에도 넣어야 한다 |
 | 같은 아이를 두 계정이 등록하는 경우 | 엄마와 아빠가 각자 등록하면 같은 날 계획이 둘 생긴다 |
 | 픽업 후 목적지를 여러 개 둘지 | 지금은 계정당 하나다. 학원이나 요일마다 다르면 테이블로 나눈다 |
 | 만료까지의 시간 | 배정 도착 시각 + 1시간으로 뒀다. 명세서는 만료 시점을 결정 필요로 적었다 |

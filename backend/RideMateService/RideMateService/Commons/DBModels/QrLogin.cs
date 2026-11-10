@@ -14,9 +14,14 @@ public partial class QrLogin
     public int QrLoginId { get; set; }
 
     /// <summary>
-    /// QR 토큰 HMAC
+    /// 차량이 보관하는 device_code HMAC
     /// </summary>
-    public string QrTokenHash { get; set; } = null!;
+    public string DeviceCodeHash { get; set; } = null!;
+
+    /// <summary>
+    /// QR에 담긴 user_code HMAC
+    /// </summary>
+    public string UserCodeHash { get; set; } = null!;
 
     /// <summary>
     /// 차량 앱 설치 번호
@@ -29,9 +34,9 @@ public partial class QrLogin
     public string Status { get; set; } = null!;
 
     /// <summary>
-    /// 인증된 부모 계정 ID
+    /// 인증한 운전자 계정 ID
     /// </summary>
-    public int? ParentId { get; set; }
+    public int? UserId { get; set; }
 
     /// <summary>
     /// QR 로그인 만료 일시
@@ -63,5 +68,5 @@ public partial class QrLogin
     /// </summary>
     public bool DeleteYn { get; set; }
 
-    public virtual Parent? Parent { get; set; }
+    public virtual UserInfo? User { get; set; }
 }
