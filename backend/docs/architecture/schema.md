@@ -208,20 +208,23 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | 컬럼 | 타입 | NULL | 설명 |
 |---|---|---|---|
 | `ACADEMY_ID` | INT | N | PK |
-| `AREA_ID` | INT | N | FK → AREA |
+| `AREA_ID` | INT | Y | FK → AREA. 좌표가 없으면 NULL |
 | `ACADEMY_NAME` | VARCHAR(100) | N | 원천 데이터나 검색 결과의 이름 |
-| `ADDRESS` | VARCHAR(200) | Y | 주소 |
-| `LAT`·`LNG` | DECIMAL(10,7) | N | 위치 |
+| `ADDRESS` | VARCHAR(200) | N | 주소 |
+| `LAT`·`LNG` | DECIMAL(10,7) | Y | 위치. 앱이 좌표를 주지 않으면 NULL |
 | `SOURCE_TYPE` | VARCHAR(20) | N | `TEAM`(운영팀), `NEIS`(학원·교습소 표준데이터), `PLACE`(장소 검색으로 추가) |
 | `PLACE_ID` | VARCHAR(100) | Y | 장소 검색 API의 장소 ID |
 | `SOURCE_REF` | VARCHAR(100) | Y | 원천 데이터의 학원 관리번호 |
 | `OPEN_STATUS` | VARCHAR(20) | Y | 원천 데이터의 등록 상태. `OPEN`(운영), `CLOSED`(휴원·폐원) |
 
-- 부모는 검색 결과에서만 학원 위치를 고른다. 고른 위치가 `AREA.BOUNDARY` 밖이면 등록을 거절한다.
-- 학원 검색은 서버가 먼저 이 테이블에서 찾고(운영팀·표준데이터 학원), 그 뒤에 장소 검색 API 결과를 붙여 돌려준다. 이 테이블의 학원은 `ACADEMY_ID`로 고른다.
-- 장소 검색 결과를 고르면 `PLACE_ID`가 같은 행이 있는지 먼저 본다. 없으면 이름이 같고 위치가 50m 안(가정값)인 행을 찾아 그 행에 `PLACE_ID`를 채워 쓴다. 그래도 없을 때만 `PLACE`로 새 행을 만든다. 운영팀이 검증한 학원이 검색 결과 때문에 둘로 갈리지 않게 한다.
+- 학원 이름·주소 문자열은 앱 SDK의 장소 검색에서 받아 필수이고, 좌표는 선택이다. 서버가 이 테이블을 먼저 찾고 장소 검색 API 결과를 붙여 돌려주는 학원 검색(`/places`)과 `ACADEMY_ID`로 고르는 방식은 지금은 쓰지 않는다(앱 SDK 검색).
+- 좌표가 있으면 그 점을 담는 `AREA`를 찾아 `AREA_ID`를 채운다. 담는 `AREA`가 없으면(`AREA.BOUNDARY` 밖) 등록을 거절한다. 좌표가 없으면 `AREA_ID`는 NULL이다.
+- 이름·주소를 정규화(앞뒤 공백 제거, 연속 공백 한 칸)해 같은 살아 있는 행을 재사용한다. 그 행에 좌표가 없고 새 요청에 좌표가 있으면 좌표와 `AREA_ID`를 채운다. 새 행은 `PLACE`로 만든다.
+- 좌표가 확정되면(카드 AC) `LAT`·`LNG`·`AREA_ID`를 다시 필수로 되돌린다.
+- 좌표 없는 학원은 픽업 지점 배정과 단속 판정을 하지 않는다. 출발 안내는 `NO_ACADEMY_LOCATION`을 준다.
 - 부모가 지은 학원 이름은 여기가 아니라 `TIMETABLE.DISPLAY_NAME`에 둔다.
 - 살아 있는 행 UNIQUE: `(PLACE_ID, ACTIVE_FLAG)`, `(SOURCE_REF, ACTIVE_FLAG)`. 값이 NULL인 행은 걸리지 않는다.
+- CHECK: `(LAT IS NULL) = (LNG IS NULL)`, `AREA_ID IS NULL OR LAT IS NOT NULL`(좌표 없이 학원가만 있는 행 금지)
 
 ### TIMETABLE — 시간표
 

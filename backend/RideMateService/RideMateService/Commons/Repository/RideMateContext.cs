@@ -137,7 +137,6 @@ public partial class RideMateContext : DbContext
 
             entity.HasOne(d => d.Area).WithMany(p => p.Academies)
                 .HasForeignKey(d => d.AreaId)
-                .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_ACADEMY_01");
         });
 
