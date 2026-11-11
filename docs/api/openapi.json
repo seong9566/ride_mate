@@ -191,6 +191,38 @@
         }
       }
     },
+    "/api/v1/Auth/M/GetLoginSessionList": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "이 차에 로그인한 계정 목록",
+        "parameters": [
+          {
+            "name": "deviceId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "maxLength": 100,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_System_Collections_Generic_List_RideMateService_Comm_Dto_v1_Auth_Response_GetLoginSessionList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/Auth/M/sign/DeleteLoginSession": {
       "delete": {
         "tags": [
@@ -565,6 +597,24 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_Dto_v1_Auth_Response_GetLoginSessionList": {
+        "type": "object",
+        "properties": {
+          "loginSessionSeq": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "userName": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastUsedDt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_Dto_v1_Auth_Response_PhoneVerificationResultDto": {
         "type": "object",
         "properties": {
@@ -740,6 +790,28 @@
           },
           "data": {
             "type": "boolean"
+          },
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_ResponseModel_System_Collections_Generic_List_RideMateService_Comm_Dto_v1_Auth_Response_GetLoginSessionList": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Auth_Response_GetLoginSessionList"
+            },
+            "nullable": true
           },
           "code": {
             "type": "integer",

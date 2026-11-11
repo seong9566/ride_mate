@@ -171,6 +171,13 @@
 - 휴대폰 취소는 현재 세션 계정으로 `VERIFIED`된, 만료 전 QR만 가능하다. `PENDING`·`SCANNED`는 현재 상태로 409, 다른 계정은 `USED`, 만료된 QR은 `EXPIRED`로 409다. 이미 `CANCELED`면 200이다.
 - `DeleteWebSession`의 JSON 본문은 선택이다. 본문이나 `userCode`가 없으면 QR을 되돌리지 않고 현재 웹 세션만 끝낸다.
 
+## 차 계정 목록
+
+- 주소는 `GET /api/v1/Auth/M/GetLoginSessionList?deviceId=…`이다. 로그인 전에 부르므로 인증 구간이 없다.
+- 그 기기의 살아 있는 `CAR` 세션 계정을 최근 사용 순으로 최대 10개 준다. 항목은 `loginSessionSeq`(로그인 응답의 `session_id`), `userName`, `lastUsedDt`다. 전화번호·계정 ID는 내보내지 않는다.
+- 아래 커서 페이징의 예외다. 한 차에 계정이 몇 개뿐이고 PK가 아니라 마지막 사용 순으로 보여주기 때문이다.
+- 같은 IP에서 1분에 30번을 넘으면 본문 없이 429다(`security.md`).
+
 ## 커서 페이징
 
 - 목록은 오프셋 페이징을 쓰지 않고 `CursorResult<T>`(`items`·`lastCursor`·`hasMore`)로 돌려준다.

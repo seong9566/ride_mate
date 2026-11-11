@@ -166,6 +166,7 @@ builder.Services.AddControllers(options =>
     .AddNewtonsoftJson();
 
 builder.Services.AddAuthorization();
+builder.Services.AddLoginSessionListRateLimit();
 
 var app = builder.Build();
 
@@ -185,6 +186,7 @@ app.UseSwaggerUI(c =>
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
 app.MapControllers().RequireAuthForSignRoutes();

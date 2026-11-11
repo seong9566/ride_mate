@@ -1,5 +1,6 @@
 using System.Data;
 using Dapper;
+using RideMateService.Comm.Dto.v1.Auth.Response;
 
 namespace RideMateService.Repository.v1.Auth;
 
@@ -349,6 +350,47 @@ public partial class AuthRepository
 
             return await _dapper.QueryFirstOrDefaultAsync<int?>(
                 new CommandDefinition(prevSql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 기기의 살아 있는 차량 로그인 세션을 계정 이름과 함께 최근 사용 순으로 조회한다(삭제된 계정·만료·로그아웃 세션 제외, 최대 limit개)
+    /// </summary>
+    public async Task<List<GetLoginSessionList>> GetLoginSessionListAsync(string deviceId, DateTime thisTime, int limit,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("deviceId", deviceId);
+            dp.Add("thisTime", thisTime);
+            dp.Add("limit", limit);
+
+            var sql = @"
+                SELECT s.LOGIN_SESSION_ID AS loginSessionSeq,
+                       u.USER_NAME        AS userName,
+                       s.LAST_USED_DT     AS lastUsedDt
+                FROM LOGIN_SESSION AS s
+                INNER JOIN USER_INFO AS u ON u.USER_ID = s.USER_ID
+                WHERE s.DEVICE_ID = @deviceId
+                  AND s.SESSION_TYPE = 'CAR'
+                  AND s.DELETE_YN = FALSE
+                  AND s.EXPIRE_DT > @thisTime
+                  AND u.DELETE_YN = FALSE
+                ORDER BY s.LAST_USED_DT DESC, s.LOGIN_SESSION_ID DESC
+                LIMIT @limit";
+
+            var rows = await _dapper.QueryAsync<GetLoginSessionList>(
+                new CommandDefinition(sql, dp, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            return rows.ToList();
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
         {

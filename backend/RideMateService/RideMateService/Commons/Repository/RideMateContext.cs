@@ -403,6 +403,8 @@ public partial class RideMateContext : DbContext
 
             entity.HasIndex(e => e.PrevTokenHash, "IX_LOGIN_SESSION_02");
 
+            entity.HasIndex(e => new { e.DeviceId, e.SessionType }, "IX_LOGIN_SESSION_03");
+
             entity.HasIndex(e => e.TokenHash, "UK_LOGIN_SESSION_01").IsUnique();
 
             entity.Property(e => e.LoginSessionId)

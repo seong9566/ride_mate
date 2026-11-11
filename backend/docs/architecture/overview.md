@@ -16,6 +16,7 @@ RideMateService/
 │   ├── DateOnlyHandler.cs        # Dapper DateOnly 핸들러
 │   ├── SignRouteConvention.cs    # /sign/ 구간 경로에 인증 요구를 거는 엔드포인트 규약
 │   ├── SignRouteOperationFilter.cs # Swagger에 /sign/ 구간 작업만 Bearer 표시
+│   ├── LoginSessionListRateLimit.cs # 차 계정 목록 API의 IP별 요청 빈도 제한
 │   ├── Security/                 # 해시·전화번호 암호화·토큰 서비스와 설정 클래스
 │   ├── Sms/                      # ISmsSender, 개발용 DevSmsSender
 │   ├── Logger/                   # ILogService, LogService

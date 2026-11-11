@@ -1,4 +1,5 @@
 using System.Data;
+using RideMateService.Comm.Dto.v1.Auth.Response;
 using RideMateService.Commons.DBModels;
 
 namespace RideMateService.Repository.v1.Auth;
@@ -141,5 +142,11 @@ public interface IAuthRepository
     /// 계정의 초기 설정이 필요한지 조회한다. 운전자 이름이 비었거나 살아 있는 아이가 없으면 true, 계정이 없거나 삭제됐으면 null
     /// </summary>
     Task<bool?> GetSetupRequiredAsync(int userId, IDbTransaction? transaction = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 기기의 살아 있는 차량 로그인 세션을 계정 이름과 함께 최근 사용 순으로 조회한다(삭제된 계정·만료·로그아웃 세션 제외, 최대 limit개)
+    /// </summary>
+    Task<List<GetLoginSessionList>> GetLoginSessionListAsync(string deviceId, DateTime thisTime, int limit,
         CancellationToken cancellationToken = default);
 }

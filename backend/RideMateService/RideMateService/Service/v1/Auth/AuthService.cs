@@ -27,6 +27,7 @@ public class AuthService : IAuthService
     private const int PhoneVerificationMaxFailCount = 5;
     private const int PhoneVerificationLockMinutes = 10;
     private const int QrLoginExpireMinutes = 3;
+    private const int LoginSessionListMax = 10;
     private const int QrLoginPollSeconds = 3;
     private const int QrLoginSlowDownSeconds = QrLoginPollSeconds - 1;
     private const int QrLoginApprovedGraceSeconds = 60;
@@ -962,6 +963,34 @@ public class AuthService : IAuthService
 #endif
             return new ResponseModel<bool>
                 { message = "서버에서 요청을 처리하지 못하였습니다.", data = false, code = 500 };
+        }
+    }
+
+    /// <summary>
+    /// 이 차에 로그인한 계정 목록
+    /// </summary>
+    public async Task<ResponseModel<List<GetLoginSessionList>>> GetLoginSessionListService(string deviceId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // 1) 입력 검증 — API 모델 검증을 거치지 않은 호출도 같은 규칙으로 거절한다
+            if (string.IsNullOrWhiteSpace(deviceId) || deviceId.Length > 100)
+                return new ResponseModel<List<GetLoginSessionList>> { message = "잘못된 요청입니다.", data = null, code = 400 };
+
+            // 2) 조회 — 한 차에 계정이 몇 개뿐이라 페이징 없이 최근 사용 순 최대 개수만 준다(api.md 예외)
+            var items = await _authRepository.GetLoginSessionListAsync(deviceId, DateTime.Now, LoginSessionListMax,
+                cancellationToken).ConfigureAwait(false);
+
+            return new ResponseModel<List<GetLoginSessionList>> { message = "요청이 정상 처리되었습니다.", data = items, code = 200 };
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 그대로 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return new ResponseModel<List<GetLoginSessionList>> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
         }
     }
 
