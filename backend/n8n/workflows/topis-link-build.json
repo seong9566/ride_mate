@@ -1,0 +1,2072 @@
+{
+  "id": "topisLinkBuild01",
+  "name": "TOPIS 링크 목록 만들기",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "수동 실행",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -2200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const key = String($env.TOPIS_API_KEY ?? '').trim();\n\nreturn [{\n  json: {\n    centerX: 205217,\n    centerY: 444228,\n    radiusM: 1500,\n    regionPrefixes: ['121', '122', '123'],\n    pageSize: key === 'sample' ? 5 : 1000,\n    hasKey: key.length > 0,\n    ok: false,\n    reason: key.length > 0 ? null : 'NO_KEY',\n    candidateCount: 0,\n    inRadiusCount: 0,\n    upserted: 0,\n    softDeleted: 0,\n  },\n}];"
+      },
+      "id": "build-settings",
+      "name": "설정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1980,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "has-topis-key",
+              "leftValue": "={{ $json.hasKey }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-api-key",
+      "name": "API 키 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        -1760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\n\nreturn [{\n  json: {\n    ok: false,\n    reason: context.reason || 'UNKNOWN',\n    candidateCount: Number(context.candidateCount || 0),\n    inRadiusCount: Number(context.inRadiusCount || 0),\n    upserted: Number(context.upserted || 0),\n    softDeleted: Number(context.softDeleted || 0),\n  },\n}];"
+      },
+      "id": "failure-result",
+      "name": "실패 결과",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        720
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'http://openapi.seoul.go.kr:8088/' + $env.TOPIS_API_KEY + '/xml/RoadDivInfo/1/' + $json.pageSize + '/' }}",
+        "authentication": "none",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 250
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text",
+              "outputPropertyName": "body"
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "request-road-divisions",
+      "name": "도로 분류 호출",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -1540,
+        180
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const settings = $('설정').first().json;\nconst response = $input.first().json;\nconst status = Number(response.statusCode);\nconst body = typeof response.body === 'string' ? response.body : '';\n\nfunction tagValue(xml, tagName) {\n  const match = xml.match(new RegExp(`<${tagName}(?:\\\\s[^>]*)?>([\\\\s\\\\S]*?)<\\\\/${tagName}>`, 'i'));\n  return match ? match[1].replace(/^\\s*<!\\[CDATA\\[/, String()).replace(/\\]\\]>/, String()).trim() : null;\n}\n\nfunction reasonFor(stage, httpStatus, code) {\n  if (httpStatus !== 200) return `${stage}_${Number.isInteger(httpStatus) ? `HTTP_${httpStatus}` : 'HTTP_ERROR'}`;\n  const safeCode = code && /^[A-Z0-9_-]{1,50}$/.test(code) ? code : code ? 'RESULT_CODE_INVALID' : 'RESULT_CODE_MISSING';\n  return `${stage}_${safeCode}`;\n}\n\nconst code = tagValue(body, 'CODE');\nif (status !== 200 || code !== 'INFO-000') {\n  return [{ json: { ...settings, ok: false, reason: reasonFor('ROAD_DIV', status, code) } }];\n}\n\nconst roadDivs = [...body.matchAll(/<row(?:\\s[^>]*)?>([\\s\\S]*?)<\\/row>/gi)]\n  .map((match) => tagValue(match[1], 'road_div_cd'))\n  .filter((value) => value && /^[A-Za-z0-9_-]{1,20}$/.test(value));\nconst uniqueRoadDivs = [...new Set(roadDivs)];\n\nreturn [{\n  json: {\n    ...settings,\n    ok: uniqueRoadDivs.length > 0,\n    reason: uniqueRoadDivs.length > 0 ? null : 'ROAD_DIV_INVALID_DATA',\n    roadDivs: uniqueRoadDivs,\n  },\n}];"
+      },
+      "id": "judge-road-divisions",
+      "name": "도로 분류 판정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1320,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "road-divisions-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-road-divisions",
+      "name": "도로 분류 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        -1100,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\n\nreturn context.roadDivs.map((roadDivCd) => ({\n  json: { roadDivCd, start: 1, end: context.pageSize },\n}));"
+      },
+      "id": "expand-road-info-first-pages",
+      "name": "도로 정보 첫 페이지 만들기",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -880,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'http://openapi.seoul.go.kr:8088/' + $env.TOPIS_API_KEY + '/xml/RoadInfo/' + $json.start + '/' + $json.end + '/' + $json.roadDivCd }}",
+        "authentication": "none",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 250
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text",
+              "outputPropertyName": "body"
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "request-road-info-first-pages",
+      "name": "도로 정보 첫 페이지 호출",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -660,
+        60
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "merge-road-info-first-pages",
+      "name": "도로 정보 첫 응답 합치기",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -440,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const settings = $('설정').first().json;\nconst axes = [];\nconst extraRequests = [];\nlet failureReason = null;\n\nfunction tagValue(xml, tagName) {\n  const match = xml.match(new RegExp(`<${tagName}(?:\\\\s[^>]*)?>([\\\\s\\\\S]*?)<\\\\/${tagName}>`, 'i'));\n  return match ? match[1].replace(/^\\s*<!\\[CDATA\\[/, String()).replace(/\\]\\]>/, String()).trim() : null;\n}\n\nfunction responseReason(stage, status, code) {\n  if (status !== 200) return `${stage}_${Number.isInteger(status) ? `HTTP_${status}` : 'HTTP_ERROR'}`;\n  const safeCode = code && /^[A-Z0-9_-]{1,50}$/.test(code) ? code : code ? 'RESULT_CODE_INVALID' : 'RESULT_CODE_MISSING';\n  return `${stage}_${safeCode}`;\n}\n\nfor (const item of $input.all()) {\n  const response = item.json;\n  const status = Number(response.statusCode);\n  const body = typeof response.body === 'string' ? response.body : '';\n  const code = tagValue(body, 'CODE');\n  if (status !== 200 || code !== 'INFO-000') {\n    failureReason ||= responseReason('ROAD_INFO', status, code);\n    continue;\n  }\n\n  const totalText = tagValue(body, 'list_total_count');\n  const total = totalText && /^\\d+$/.test(totalText) ? Number(totalText) : null;\n  if (!Number.isSafeInteger(total) || total < 0) {\n    failureReason ||= 'ROAD_INFO_INVALID_DATA';\n    continue;\n  }\n\n  for (const match of body.matchAll(/<row(?:\\s[^>]*)?>([\\s\\S]*?)<\\/row>/gi)) {\n    const axisCd = tagValue(match[1], 'axis_cd');\n    if (axisCd && /^[A-Za-z0-9_-]{1,20}$/.test(axisCd)) axes.push(axisCd);\n  }\n\n  for (let start = settings.pageSize + 1; start <= total; start += settings.pageSize) {\n    extraRequests.push({\n      roadDivCd: String(response.roadDivCd),\n      start,\n      end: Math.min(start + settings.pageSize - 1, total),\n    });\n  }\n}\n\nreturn [{\n  json: {\n    ...settings,\n    ok: failureReason === null,\n    reason: failureReason,\n    axes: [...new Set(axes)],\n    extraRequests,\n    hasExtra: extraRequests.length > 0,\n  },\n}];"
+      },
+      "id": "judge-road-info-first-pages",
+      "name": "도로 정보 첫 응답 판정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -220,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "road-info-first-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-road-info-first-pages",
+      "name": "도로 정보 첫 응답 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        0,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "road-info-has-extra",
+              "leftValue": "={{ $json.hasExtra }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-road-info-extra-pages",
+      "name": "도로 정보 추가 페이지 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        220,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "return $input.first().json.extraRequests.map((request) => ({ json: request }));"
+      },
+      "id": "expand-road-info-extra-pages",
+      "name": "도로 정보 추가 페이지 만들기",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        -260
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'http://openapi.seoul.go.kr:8088/' + $env.TOPIS_API_KEY + '/xml/RoadInfo/' + $json.start + '/' + $json.end + '/' + $json.roadDivCd }}",
+        "authentication": "none",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 250
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text",
+              "outputPropertyName": "body"
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "request-road-info-extra-pages",
+      "name": "도로 정보 추가 페이지 호출",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        660,
+        -260
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "merge-road-info-extra-pages",
+      "name": "도로 정보 추가 응답 합치기",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        880,
+        -340
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $('도로 정보 첫 응답 판정').first().json;\nconst axes = [...context.axes];\nlet failureReason = null;\n\nfunction tagValue(xml, tagName) {\n  const match = xml.match(new RegExp(`<${tagName}(?:\\\\s[^>]*)?>([\\\\s\\\\S]*?)<\\\\/${tagName}>`, 'i'));\n  return match ? match[1].replace(/^\\s*<!\\[CDATA\\[/, String()).replace(/\\]\\]>/, String()).trim() : null;\n}\n\nfunction responseReason(status, code) {\n  if (status !== 200) return `ROAD_INFO_${Number.isInteger(status) ? `HTTP_${status}` : 'HTTP_ERROR'}`;\n  const safeCode = code && /^[A-Z0-9_-]{1,50}$/.test(code) ? code : code ? 'RESULT_CODE_INVALID' : 'RESULT_CODE_MISSING';\n  return `ROAD_INFO_${safeCode}`;\n}\n\nfor (const item of $input.all()) {\n  const response = item.json;\n  const status = Number(response.statusCode);\n  const body = typeof response.body === 'string' ? response.body : '';\n  const code = tagValue(body, 'CODE');\n  if (status !== 200 || code !== 'INFO-000') {\n    failureReason ||= responseReason(status, code);\n    continue;\n  }\n  for (const match of body.matchAll(/<row(?:\\s[^>]*)?>([\\s\\S]*?)<\\/row>/gi)) {\n    const axisCd = tagValue(match[1], 'axis_cd');\n    if (axisCd && /^[A-Za-z0-9_-]{1,20}$/.test(axisCd)) axes.push(axisCd);\n  }\n}\n\nconst uniqueAxes = [...new Set(axes)];\nreturn [{\n  json: {\n    ...context,\n    ok: failureReason === null && uniqueAxes.length > 0,\n    reason: failureReason || (uniqueAxes.length > 0 ? null : 'ROAD_INFO_INVALID_DATA'),\n    axes: uniqueAxes,\n  },\n}];"
+      },
+      "id": "complete-road-info-with-extra",
+      "name": "도로 정보 추가 응답 판정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        -340
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\nconst axes = [...new Set(context.axes)];\n\nreturn [{\n  json: {\n    ...context,\n    ok: axes.length > 0,\n    reason: axes.length > 0 ? null : 'ROAD_INFO_INVALID_DATA',\n    axes,\n  },\n}];"
+      },
+      "id": "complete-road-info-without-extra",
+      "name": "도로 정보 완료",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "road-info-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-road-info",
+      "name": "도로 정보 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        1320,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\n\nreturn context.axes.map((axisCd) => ({\n  json: { axisCd, start: 1, end: context.pageSize },\n}));"
+      },
+      "id": "expand-link-load-first-pages",
+      "name": "도로별 링크 첫 페이지 만들기",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        -260
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'http://openapi.seoul.go.kr:8088/' + $env.TOPIS_API_KEY + '/xml/LinkWithLoad/' + $json.start + '/' + $json.end + '/' + $json.axisCd }}",
+        "authentication": "none",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 250
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text",
+              "outputPropertyName": "body"
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "request-link-load-first-pages",
+      "name": "도로별 링크 첫 페이지 호출",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1760,
+        -260
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "merge-link-load-first-pages",
+      "name": "도로별 링크 첫 응답 합치기",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1980,
+        -340
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const settings = $('설정').first().json;\nconst links = [];\nconst extraRequests = [];\nlet failureReason = null;\n\nfunction tagValue(xml, tagName) {\n  const match = xml.match(new RegExp(`<${tagName}(?:\\\\s[^>]*)?>([\\\\s\\\\S]*?)<\\\\/${tagName}>`, 'i'));\n  return match ? match[1].replace(/^\\s*<!\\[CDATA\\[/, String()).replace(/\\]\\]>/, String()).trim() : null;\n}\n\nfunction responseReason(status, code) {\n  if (status !== 200) return `LINK_WITH_LOAD_${Number.isInteger(status) ? `HTTP_${status}` : 'HTTP_ERROR'}`;\n  const safeCode = code && /^[A-Z0-9_-]{1,50}$/.test(code) ? code : code ? 'RESULT_CODE_INVALID' : 'RESULT_CODE_MISSING';\n  return `LINK_WITH_LOAD_${safeCode}`;\n}\n\nfor (const item of $input.all()) {\n  const response = item.json;\n  const status = Number(response.statusCode);\n  const body = typeof response.body === 'string' ? response.body : '';\n  const code = tagValue(body, 'CODE');\n  if (status !== 200 || code !== 'INFO-000') {\n    failureReason ||= responseReason(status, code);\n    continue;\n  }\n\n  const totalText = tagValue(body, 'list_total_count');\n  const total = totalText && /^\\d+$/.test(totalText) ? Number(totalText) : null;\n  if (!Number.isSafeInteger(total) || total < 0) {\n    failureReason ||= 'LINK_WITH_LOAD_INVALID_DATA';\n    continue;\n  }\n\n  for (const match of body.matchAll(/<row(?:\\s[^>]*)?>([\\s\\S]*?)<\\/row>/gi)) {\n    const linkId = tagValue(match[1], 'link_id');\n    const axisDir = tagValue(match[1], 'axis_dir');\n    if (linkId && /^\\d{1,20}$/.test(linkId)) links.push({ linkId, axisDir: axisDir || null });\n  }\n\n  for (let start = settings.pageSize + 1; start <= total; start += settings.pageSize) {\n    extraRequests.push({\n      axisCd: String(response.axisCd),\n      start,\n      end: Math.min(start + settings.pageSize - 1, total),\n    });\n  }\n}\n\nreturn [{\n  json: {\n    ...settings,\n    ok: failureReason === null,\n    reason: failureReason,\n    links,\n    extraRequests,\n    hasExtra: extraRequests.length > 0,\n  },\n}];"
+      },
+      "id": "judge-link-load-first-pages",
+      "name": "도로별 링크 첫 응답 판정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        -340
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "link-load-first-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-link-load-first-pages",
+      "name": "도로별 링크 첫 응답 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        2420,
+        -340
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "link-load-has-extra",
+              "leftValue": "={{ $json.hasExtra }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-link-load-extra-pages",
+      "name": "도로별 링크 추가 페이지 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        2640,
+        -460
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "return $input.first().json.extraRequests.map((request) => ({ json: request }));"
+      },
+      "id": "expand-link-load-extra-pages",
+      "name": "도로별 링크 추가 페이지 만들기",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        -580
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'http://openapi.seoul.go.kr:8088/' + $env.TOPIS_API_KEY + '/xml/LinkWithLoad/' + $json.start + '/' + $json.end + '/' + $json.axisCd }}",
+        "authentication": "none",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 250
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text",
+              "outputPropertyName": "body"
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "request-link-load-extra-pages",
+      "name": "도로별 링크 추가 페이지 호출",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        3080,
+        -580
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "merge-link-load-extra-pages",
+      "name": "도로별 링크 추가 응답 합치기",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        3300,
+        -660
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $('도로별 링크 첫 응답 판정').first().json;\nconst links = [...context.links];\nlet failureReason = null;\n\nfunction tagValue(xml, tagName) {\n  const match = xml.match(new RegExp(`<${tagName}(?:\\\\s[^>]*)?>([\\\\s\\\\S]*?)<\\\\/${tagName}>`, 'i'));\n  return match ? match[1].replace(/^\\s*<!\\[CDATA\\[/, String()).replace(/\\]\\]>/, String()).trim() : null;\n}\n\nfunction responseReason(status, code) {\n  if (status !== 200) return `LINK_WITH_LOAD_${Number.isInteger(status) ? `HTTP_${status}` : 'HTTP_ERROR'}`;\n  const safeCode = code && /^[A-Z0-9_-]{1,50}$/.test(code) ? code : code ? 'RESULT_CODE_INVALID' : 'RESULT_CODE_MISSING';\n  return `LINK_WITH_LOAD_${safeCode}`;\n}\n\nfor (const item of $input.all()) {\n  const response = item.json;\n  const status = Number(response.statusCode);\n  const body = typeof response.body === 'string' ? response.body : '';\n  const code = tagValue(body, 'CODE');\n  if (status !== 200 || code !== 'INFO-000') {\n    failureReason ||= responseReason(status, code);\n    continue;\n  }\n  for (const match of body.matchAll(/<row(?:\\s[^>]*)?>([\\s\\S]*?)<\\/row>/gi)) {\n    const linkId = tagValue(match[1], 'link_id');\n    const axisDir = tagValue(match[1], 'axis_dir');\n    if (linkId && /^\\d{1,20}$/.test(linkId)) links.push({ linkId, axisDir: axisDir || null });\n  }\n}\n\nreturn [{\n  json: {\n    ...context,\n    ok: failureReason === null,\n    reason: failureReason,\n    links,\n  },\n}];"
+      },
+      "id": "complete-link-load-with-extra",
+      "name": "도로별 링크 추가 응답 판정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3520,
+        -660
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "return [{ json: $input.first().json }];"
+      },
+      "id": "complete-link-load-without-extra",
+      "name": "도로별 링크 완료",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3520,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "link-load-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-link-load",
+      "name": "도로별 링크 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        3740,
+        -460
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\nconst byLinkId = new Map();\n\nfor (const link of context.links) {\n  const current = byLinkId.get(link.linkId);\n  if (!current || (!current.axisDir && link.axisDir)) byLinkId.set(link.linkId, link);\n}\n\nconst candidates = [...byLinkId.values()]\n  .filter((link) => context.regionPrefixes.includes(link.linkId.slice(0, 3)))\n  .sort((left, right) => left.linkId.localeCompare(right.linkId));\n\nreturn [{\n  json: {\n    ...context,\n    links: undefined,\n    extraRequests: undefined,\n    candidates,\n    candidateCount: candidates.length,\n    hasCandidates: candidates.length > 0,\n  },\n}];"
+      },
+      "id": "prefilter-links",
+      "name": "링크 접두사 사전 필터",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3960,
+        -460
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "has-candidates",
+              "leftValue": "={{ $json.hasCandidates }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-candidates",
+      "name": "후보 링크 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        4180,
+        -460
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\n\nreturn context.candidates.map((link) => ({\n  json: {\n    linkId: link.linkId,\n    axisDir: link.axisDir,\n    end: context.pageSize,\n  },\n}));"
+      },
+      "id": "expand-link-vertices",
+      "name": "링크 정점 호출 행 만들기",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4400,
+        -580
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'http://openapi.seoul.go.kr:8088/' + $env.TOPIS_API_KEY + '/xml/LinkVerInfo/1/' + $json.end + '/' + $json.linkId }}",
+        "authentication": "none",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 250
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text",
+              "outputPropertyName": "body"
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "request-link-vertices",
+      "name": "링크 정점 호출",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        4620,
+        -580
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "merge-link-vertices",
+      "name": "링크 정점 응답 합치기",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        4840,
+        -660
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $('링크 접두사 사전 필터').first().json;\nconst inRadiusLinks = [];\nlet failureReason = null;\n\nfunction tagValue(xml, tagName) {\n  const match = xml.match(new RegExp(`<${tagName}(?:\\\\s[^>]*)?>([\\\\s\\\\S]*?)<\\\\/${tagName}>`, 'i'));\n  return match ? match[1].replace(/^\\s*<!\\[CDATA\\[/, String()).replace(/\\]\\]>/, String()).trim() : null;\n}\n\nfunction responseReason(status, code) {\n  if (status !== 200) return `LINK_VERTEX_${Number.isInteger(status) ? `HTTP_${status}` : 'HTTP_ERROR'}`;\n  const safeCode = code && /^[A-Z0-9_-]{1,50}$/.test(code) ? code : code ? 'RESULT_CODE_INVALID' : 'RESULT_CODE_MISSING';\n  return `LINK_VERTEX_${safeCode}`;\n}\n\nfor (const item of $input.all()) {\n  const response = item.json;\n  const status = Number(response.statusCode);\n  const body = typeof response.body === 'string' ? response.body : '';\n  const code = tagValue(body, 'CODE');\n  if (status !== 200 || code !== 'INFO-000') {\n    failureReason ||= responseReason(status, code);\n    continue;\n  }\n\n  const distances = [];\n  for (const match of body.matchAll(/<row(?:\\s[^>]*)?>([\\s\\S]*?)<\\/row>/gi)) {\n    const x = Number(tagValue(match[1], 'GRS80TM_X'));\n    const y = Number(tagValue(match[1], 'GRS80TM_Y'));\n    if (Number.isFinite(x) && Number.isFinite(y)) {\n      distances.push(Math.hypot(x - context.centerX, y - context.centerY));\n    }\n  }\n\n  if (distances.length === 0) {\n    failureReason ||= 'LINK_VERTEX_INVALID_DATA';\n    continue;\n  }\n\n  const centerDistM = Math.round(Math.min(...distances));\n  if (centerDistM <= context.radiusM) {\n    inRadiusLinks.push({\n      linkId: String(response.linkId),\n      axisDir: response.axisDir || null,\n      centerDistM,\n    });\n  }\n}\n\nreturn [{\n  json: {\n    ...context,\n    ok: failureReason === null,\n    reason: failureReason,\n    inRadiusLinks,\n    inRadiusCount: inRadiusLinks.length,\n    hasInRadiusLinks: inRadiusLinks.length > 0,\n  },\n}];"
+      },
+      "id": "judge-link-vertices",
+      "name": "링크 정점 판정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5060,
+        -660
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "link-vertices-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-link-vertices",
+      "name": "링크 정점 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        5280,
+        -660
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "has-in-radius-links",
+              "leftValue": "={{ $json.hasInRadiusLinks }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-in-radius-links",
+      "name": "반경 안 링크 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        5500,
+        -780
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\n\nreturn context.inRadiusLinks.map((link) => ({ json: link }));"
+      },
+      "id": "expand-link-details",
+      "name": "링크 상세 호출 행 만들기",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5720,
+        -900
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'http://openapi.seoul.go.kr:8088/' + $env.TOPIS_API_KEY + '/xml/LinkInfo/1/1/' + $json.linkId }}",
+        "authentication": "none",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 250
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text",
+              "outputPropertyName": "body"
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "request-link-details",
+      "name": "링크 상세 호출",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        5940,
+        -900
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "merge-link-details",
+      "name": "링크 상세 응답 합치기",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        6160,
+        -980
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $('링크 정점 판정').first().json;\nconst links = [];\nlet failureReason = null;\n\nfunction tagValue(xml, tagName) {\n  const match = xml.match(new RegExp(`<${tagName}(?:\\\\s[^>]*)?>([\\\\s\\\\S]*?)<\\\\/${tagName}>`, 'i'));\n  return match ? match[1].replace(/^\\s*<!\\[CDATA\\[/, String()).replace(/\\]\\]>/, String()).trim() : null;\n}\n\nfunction decodeXml(value) {\n  return value\n    .replace(/&lt;/g, '<')\n    .replace(/&gt;/g, '>')\n    .replace(/&quot;/g, String.fromCharCode(34))\n    .replace(/&apos;/g, String.fromCharCode(39))\n    .replace(/&#(\\d+);/g, (_, code) => String.fromCodePoint(Number(code)))\n    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)))\n    .replace(/&amp;/g, '&');\n}\n\nfunction responseReason(status, code) {\n  if (status !== 200) return `LINK_INFO_${Number.isInteger(status) ? `HTTP_${status}` : 'HTTP_ERROR'}`;\n  const safeCode = code && /^[A-Z0-9_-]{1,50}$/.test(code) ? code : code ? 'RESULT_CODE_INVALID' : 'RESULT_CODE_MISSING';\n  return `LINK_INFO_${safeCode}`;\n}\n\nfor (const item of $input.all()) {\n  const response = item.json;\n  const status = Number(response.statusCode);\n  const body = typeof response.body === 'string' ? response.body : '';\n  const code = tagValue(body, 'CODE');\n  if (status !== 200 || code !== 'INFO-000') {\n    failureReason ||= responseReason(status, code);\n    continue;\n  }\n\n  const rowMatch = body.match(/<row(?:\\s[^>]*)?>([\\s\\S]*?)<\\/row>/i);\n  const roadName = rowMatch ? tagValue(rowMatch[1], 'ROAD_NAME') : null;\n  const stNodeName = rowMatch ? tagValue(rowMatch[1], 'ST_NODE_NM') : null;\n  const edNodeName = rowMatch ? tagValue(rowMatch[1], 'ED_NODE_NM') : null;\n  const distanceText = rowMatch ? tagValue(rowMatch[1], 'MAP_DIST') : null;\n  const distance = Number(distanceText);\n\n  if (roadName === null || stNodeName === null || edNodeName === null || !Number.isFinite(distance) || distance < 0) {\n    failureReason ||= 'LINK_INFO_INVALID_DATA';\n    continue;\n  }\n\n  links.push({\n    linkId: String(response.linkId),\n    roadName: decodeXml(roadName),\n    stNodeName: decodeXml(stNodeName),\n    edNodeName: decodeXml(edNodeName),\n    axisDir: response.axisDir || null,\n    distanceM: Math.round(distance),\n    centerDistM: Number(response.centerDistM),\n  });\n}\n\nreturn [{\n  json: {\n    ...context,\n    ok: failureReason === null && links.length === context.inRadiusCount,\n    reason: failureReason || (links.length === context.inRadiusCount ? null : 'LINK_INFO_INVALID_DATA'),\n    links,\n  },\n}];"
+      },
+      "id": "judge-link-details",
+      "name": "링크 상세 판정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6380,
+        -980
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "link-details-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-link-details",
+      "name": "링크 상세 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        6600,
+        -980
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\n\nreturn [{\n  json: {\n    ...context,\n    ok: true,\n    reason: null,\n    inRadiusLinks: [],\n    inRadiusCount: 0,\n    links: [],\n  },\n}];"
+      },
+      "id": "prepare-empty-link-details",
+      "name": "빈 링크 상세 준비",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6380,
+        -700
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\nconst replacements = [];\nlet query;\n\nif (context.links.length === 0) {\n  query = 'SELECT $1 AS UPSERTED';\n  replacements.push(0);\n} else {\n  let parameter = 1;\n  const valueGroups = context.links.map((link) => {\n    const placeholders = [];\n    for (const value of [link.linkId, link.roadName, link.stNodeName, link.edNodeName, link.axisDir, link.distanceM, link.centerDistM]) {\n      placeholders.push(`$${parameter}`);\n      replacements.push(value);\n      parameter += 1;\n    }\n    return `('TOPIS', 'DAECHI', ${placeholders[0]}, NULL, ${placeholders[1]}, ${placeholders[2]}, ${placeholders[3]}, ${placeholders[4]}, ${placeholders[5]}, ${placeholders[6]}, NOW(), 'SYSTEM', NOW(), 'SYSTEM', 0)`;\n  });\n\n  query = `INSERT INTO TRAFFIC_LINK (SOURCE, AREA_CODE, LINK_ID, ROUTE_ID, ROAD_NAME, ST_NODE_NAME, ED_NODE_NAME, AXIS_DIR, DISTANCE_M, CENTER_DIST_M, CREATE_DT, CREATE_USER, UPDATE_DT, UPDATE_USER, DELETE_YN)\\nVALUES ${valueGroups.join(',\\n')}\\nON DUPLICATE KEY UPDATE AREA_CODE = VALUES(AREA_CODE), ROUTE_ID = VALUES(ROUTE_ID), ROAD_NAME = VALUES(ROAD_NAME), ST_NODE_NAME = VALUES(ST_NODE_NAME), ED_NODE_NAME = VALUES(ED_NODE_NAME), AXIS_DIR = VALUES(AXIS_DIR), DISTANCE_M = VALUES(DISTANCE_M), CENTER_DIST_M = VALUES(CENTER_DIST_M), UPDATE_DT = NOW(), UPDATE_USER = 'SYSTEM', DELETE_YN = 0`;\n}\n\nreturn [{ json: { ...context, query, replacements } }];"
+      },
+      "id": "prepare-link-upsert",
+      "name": "정상 링크 적재 준비",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6820,
+        -820
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.query }}",
+        "options": {
+          "queryReplacement": "={{ $json.replacements }}"
+        }
+      },
+      "id": "upsert-links",
+      "name": "정상 링크 적재",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        7040,
+        -820
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "rmMysqlCred00001",
+          "name": "ridemate-mysql"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $('정상 링크 적재 준비').first().json;\nconst failed = $input.all().some((item) => item.json.error != null);\n\nreturn [{\n  json: {\n    ...context,\n    ok: !failed,\n    reason: failed ? 'DB_UPSERT_FAILED' : null,\n    upserted: failed ? 0 : context.links.length,\n  },\n}];"
+      },
+      "id": "judge-link-upsert",
+      "name": "정상 링크 적재 판정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7260,
+        -820
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "link-upsert-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-link-upsert",
+      "name": "정상 링크 적재 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        7480,
+        -820
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\nconst replacements = [1];\nlet parameter = 2;\nlet query = \"SELECT COUNT(*) AS STALE_COUNT\\nFROM TRAFFIC_LINK\\nWHERE SOURCE = 'TOPIS' AND DELETE_YN = 0 AND $1 = 1\";\n\nif (context.links.length > 0) {\n  // n8n MySQL 노드는 숫자처럼 보이는 값을 숫자로 바꾼다. 링크 ID를 문자열로 비교하도록 JSON 문자열 하나로 넘긴다.\n  // JSON 경로는 큰따옴표로 쓴다. 쿼리 식을 펼칠 때 String.replace가 작은따옴표 앞의 $를 특수 패턴으로 읽는다.\n  replacements.push(JSON.stringify(context.links.map((link) => String(link.linkId))));\n  query += `\\n  AND LINK_ID NOT IN (SELECT j.LINK_ID FROM JSON_TABLE($${parameter}, \"$[*]\" COLUMNS (LINK_ID VARCHAR(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PATH \"$\")) j)`;\n}\n\nreturn [{ json: { ...context, query, replacements } }];"
+      },
+      "id": "prepare-stale-count",
+      "name": "삭제 대상 조회 준비",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7700,
+        -940
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.query }}",
+        "options": {
+          "queryReplacement": "={{ $json.replacements }}"
+        }
+      },
+      "id": "count-stale-links",
+      "name": "삭제 대상 조회",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        7920,
+        -940
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "rmMysqlCred00001",
+          "name": "ridemate-mysql"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $('삭제 대상 조회 준비').first().json;\nconst rows = $input.all().map((item) => item.json);\nconst failed = rows.some((row) => row.error != null);\nconst countRow = rows.find((row) => row.STALE_COUNT != null);\nconst staleCount = countRow ? Number(countRow.STALE_COUNT) : null;\nconst validCount = Number.isSafeInteger(staleCount) && staleCount >= 0;\n\nreturn [{\n  json: {\n    ...context,\n    ok: !failed && validCount,\n    reason: failed ? 'DB_STALE_COUNT_FAILED' : validCount ? null : 'DB_STALE_COUNT_INVALID',\n    staleCount: validCount ? staleCount : 0,\n  },\n}];"
+      },
+      "id": "judge-stale-count",
+      "name": "삭제 대상 조회 판정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        8140,
+        -940
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "stale-count-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-stale-count",
+      "name": "삭제 대상 조회 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        8360,
+        -940
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\nconst replacements = [1];\nlet parameter = 2;\nlet query = \"UPDATE TRAFFIC_LINK\\nSET DELETE_YN = 1, UPDATE_DT = NOW(), UPDATE_USER = 'SYSTEM'\\nWHERE SOURCE = 'TOPIS' AND DELETE_YN = 0 AND $1 = 1\";\n\nif (context.links.length > 0) {\n  // n8n MySQL 노드는 숫자처럼 보이는 값을 숫자로 바꾼다. 링크 ID를 문자열로 비교하도록 JSON 문자열 하나로 넘긴다.\n  // JSON 경로는 큰따옴표로 쓴다. 쿼리 식을 펼칠 때 String.replace가 작은따옴표 앞의 $를 특수 패턴으로 읽는다.\n  replacements.push(JSON.stringify(context.links.map((link) => String(link.linkId))));\n  query += `\\n  AND LINK_ID NOT IN (SELECT j.LINK_ID FROM JSON_TABLE($${parameter}, \"$[*]\" COLUMNS (LINK_ID VARCHAR(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PATH \"$\")) j)`;\n}\n\nreturn [{ json: { ...context, query, replacements } }];"
+      },
+      "id": "prepare-soft-delete",
+      "name": "빠진 링크 삭제 표시 준비",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        8580,
+        -1060
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.query }}",
+        "options": {
+          "queryReplacement": "={{ $json.replacements }}"
+        }
+      },
+      "id": "soft-delete-links",
+      "name": "빠진 링크 삭제 표시",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        8800,
+        -1060
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "rmMysqlCred00001",
+          "name": "ridemate-mysql"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $('빠진 링크 삭제 표시 준비').first().json;\nconst failed = $input.all().some((item) => item.json.error != null);\n\nreturn [{\n  json: {\n    ...context,\n    ok: !failed,\n    reason: failed ? 'DB_SOFT_DELETE_FAILED' : null,\n    softDeleted: failed ? 0 : context.staleCount,\n  },\n}];"
+      },
+      "id": "judge-soft-delete",
+      "name": "빠진 링크 삭제 표시 판정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        9020,
+        -1060
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "soft-delete-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-soft-delete",
+      "name": "빠진 링크 삭제 표시 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        9240,
+        -1060
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\n\nreturn [{\n  json: {\n    ok: true,\n    reason: null,\n    candidateCount: context.candidateCount,\n    inRadiusCount: context.inRadiusCount,\n    upserted: context.upserted,\n    softDeleted: context.softDeleted,\n  },\n}];"
+      },
+      "id": "success-result",
+      "name": "성공 결과",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        9460,
+        -1180
+      ]
+    }
+  ],
+  "connections": {
+    "수동 실행": {
+      "main": [
+        [
+          {
+            "node": "설정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "설정": {
+      "main": [
+        [
+          {
+            "node": "API 키 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API 키 확인": {
+      "main": [
+        [
+          {
+            "node": "도로 분류 호출",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "실패 결과",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "도로 분류 호출": {
+      "main": [
+        [
+          {
+            "node": "도로 분류 판정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "도로 분류 판정": {
+      "main": [
+        [
+          {
+            "node": "도로 분류 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "도로 분류 성공 확인": {
+      "main": [
+        [
+          {
+            "node": "도로 정보 첫 페이지 만들기",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "실패 결과",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "도로 정보 첫 페이지 만들기": {
+      "main": [
+        [
+          {
+            "node": "도로 정보 첫 페이지 호출",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "도로 정보 첫 응답 합치기",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "도로 정보 첫 페이지 호출": {
+      "main": [
+        [
+          {
+            "node": "도로 정보 첫 응답 합치기",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "도로 정보 첫 응답 합치기": {
+      "main": [
+        [
+          {
+            "node": "도로 정보 첫 응답 판정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "도로 정보 첫 응답 판정": {
+      "main": [
+        [
+          {
+            "node": "도로 정보 첫 응답 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "도로 정보 첫 응답 성공 확인": {
+      "main": [
+        [
+          {
+            "node": "도로 정보 추가 페이지 확인",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "실패 결과",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "도로 정보 추가 페이지 확인": {
+      "main": [
+        [
+          {
+            "node": "도로 정보 추가 페이지 만들기",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "도로 정보 완료",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "도로 정보 추가 페이지 만들기": {
+      "main": [
+        [
+          {
+            "node": "도로 정보 추가 페이지 호출",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "도로 정보 추가 응답 합치기",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "도로 정보 추가 페이지 호출": {
+      "main": [
+        [
+          {
+            "node": "도로 정보 추가 응답 합치기",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "도로 정보 추가 응답 합치기": {
+      "main": [
+        [
+          {
+            "node": "도로 정보 추가 응답 판정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "도로 정보 추가 응답 판정": {
+      "main": [
+        [
+          {
+            "node": "도로 정보 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "도로 정보 완료": {
+      "main": [
+        [
+          {
+            "node": "도로 정보 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "도로 정보 성공 확인": {
+      "main": [
+        [
+          {
+            "node": "도로별 링크 첫 페이지 만들기",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "실패 결과",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "도로별 링크 첫 페이지 만들기": {
+      "main": [
+        [
+          {
+            "node": "도로별 링크 첫 페이지 호출",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "도로별 링크 첫 응답 합치기",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "도로별 링크 첫 페이지 호출": {
+      "main": [
+        [
+          {
+            "node": "도로별 링크 첫 응답 합치기",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "도로별 링크 첫 응답 합치기": {
+      "main": [
+        [
+          {
+            "node": "도로별 링크 첫 응답 판정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "도로별 링크 첫 응답 판정": {
+      "main": [
+        [
+          {
+            "node": "도로별 링크 첫 응답 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "도로별 링크 첫 응답 성공 확인": {
+      "main": [
+        [
+          {
+            "node": "도로별 링크 추가 페이지 확인",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "실패 결과",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "도로별 링크 추가 페이지 확인": {
+      "main": [
+        [
+          {
+            "node": "도로별 링크 추가 페이지 만들기",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "도로별 링크 완료",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "도로별 링크 추가 페이지 만들기": {
+      "main": [
+        [
+          {
+            "node": "도로별 링크 추가 페이지 호출",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "도로별 링크 추가 응답 합치기",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "도로별 링크 추가 페이지 호출": {
+      "main": [
+        [
+          {
+            "node": "도로별 링크 추가 응답 합치기",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "도로별 링크 추가 응답 합치기": {
+      "main": [
+        [
+          {
+            "node": "도로별 링크 추가 응답 판정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "도로별 링크 추가 응답 판정": {
+      "main": [
+        [
+          {
+            "node": "도로별 링크 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "도로별 링크 완료": {
+      "main": [
+        [
+          {
+            "node": "도로별 링크 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "도로별 링크 성공 확인": {
+      "main": [
+        [
+          {
+            "node": "링크 접두사 사전 필터",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "실패 결과",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "링크 접두사 사전 필터": {
+      "main": [
+        [
+          {
+            "node": "후보 링크 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "후보 링크 확인": {
+      "main": [
+        [
+          {
+            "node": "링크 정점 호출 행 만들기",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "빈 링크 상세 준비",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "링크 정점 호출 행 만들기": {
+      "main": [
+        [
+          {
+            "node": "링크 정점 호출",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "링크 정점 응답 합치기",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "링크 정점 호출": {
+      "main": [
+        [
+          {
+            "node": "링크 정점 응답 합치기",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "링크 정점 응답 합치기": {
+      "main": [
+        [
+          {
+            "node": "링크 정점 판정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "링크 정점 판정": {
+      "main": [
+        [
+          {
+            "node": "링크 정점 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "링크 정점 성공 확인": {
+      "main": [
+        [
+          {
+            "node": "반경 안 링크 확인",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "실패 결과",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "반경 안 링크 확인": {
+      "main": [
+        [
+          {
+            "node": "링크 상세 호출 행 만들기",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "빈 링크 상세 준비",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "링크 상세 호출 행 만들기": {
+      "main": [
+        [
+          {
+            "node": "링크 상세 호출",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "링크 상세 응답 합치기",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "링크 상세 호출": {
+      "main": [
+        [
+          {
+            "node": "링크 상세 응답 합치기",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "링크 상세 응답 합치기": {
+      "main": [
+        [
+          {
+            "node": "링크 상세 판정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "링크 상세 판정": {
+      "main": [
+        [
+          {
+            "node": "링크 상세 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "링크 상세 성공 확인": {
+      "main": [
+        [
+          {
+            "node": "정상 링크 적재 준비",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "실패 결과",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "빈 링크 상세 준비": {
+      "main": [
+        [
+          {
+            "node": "정상 링크 적재 준비",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "정상 링크 적재 준비": {
+      "main": [
+        [
+          {
+            "node": "정상 링크 적재",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "정상 링크 적재": {
+      "main": [
+        [
+          {
+            "node": "정상 링크 적재 판정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "정상 링크 적재 판정": {
+      "main": [
+        [
+          {
+            "node": "정상 링크 적재 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "정상 링크 적재 성공 확인": {
+      "main": [
+        [
+          {
+            "node": "삭제 대상 조회 준비",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "실패 결과",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "삭제 대상 조회 준비": {
+      "main": [
+        [
+          {
+            "node": "삭제 대상 조회",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "삭제 대상 조회": {
+      "main": [
+        [
+          {
+            "node": "삭제 대상 조회 판정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "삭제 대상 조회 판정": {
+      "main": [
+        [
+          {
+            "node": "삭제 대상 조회 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "삭제 대상 조회 성공 확인": {
+      "main": [
+        [
+          {
+            "node": "빠진 링크 삭제 표시 준비",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "실패 결과",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "빠진 링크 삭제 표시 준비": {
+      "main": [
+        [
+          {
+            "node": "빠진 링크 삭제 표시",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "빠진 링크 삭제 표시": {
+      "main": [
+        [
+          {
+            "node": "빠진 링크 삭제 표시 판정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "빠진 링크 삭제 표시 판정": {
+      "main": [
+        [
+          {
+            "node": "빠진 링크 삭제 표시 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "빠진 링크 삭제 표시 성공 확인": {
+      "main": [
+        [
+          {
+            "node": "성공 결과",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "실패 결과",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Asia/Seoul",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false,
+    "executionOrder": "v1"
+  },
+  "active": false
+}

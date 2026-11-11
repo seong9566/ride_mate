@@ -32,6 +32,20 @@ docker compose up -d n8n
 
 워크플로는 키를 각각 `$env.TOPIS_API_KEY`, `$env.GITS_API_KEY`로 읽는다. 키는 워크플로 JSON, 명령줄 인자, 로그, 실행 이력이나 `ERROR_MESSAGE`에 넣지 않는다.
 
+## 링크 목록 만들기 — TOPIS
+
+`TOPIS_API_KEY`를 넣은 뒤 한 번 실행하고, 대치동 중심·반경이나 대상 구가 바뀌었을 때 다시 실행한다. 수동 워크플로 `TOPIS 링크 목록 만들기`의 첫 Code 노드 `설정`에 `centerX`, `centerY`, `radiusM`, `regionPrefixes`가 모여 있다.
+
+워크플로는 `LinkWithLoad`에서 얻은 링크 중 링크 ID 앞 세 자리가 `regionPrefixes`에 포함된 링크만 `LinkVerInfo`로 조회해 외부 호출 수를 줄인 뒤, TM 정점과 중심 사이의 실제 거리가 `radiusM` 이하인 링크만 저장한다. 대상 구를 바꿀 때는 `regionPrefixes`를 해당 구 코드 목록으로 바꾸고, 필요한 경우 중심 좌표와 반경도 함께 바꾼다. 접두사 필터는 호출을 줄이기 위한 사전 필터이며 최종 범위 판정을 대신하지 않는다.
+
+실행 뒤 살아 있는 TOPIS 링크 수와 중심 거리 범위는 다음 SQL로 확인한다.
+
+```sql
+SELECT COUNT(*), MIN(CENTER_DIST_M), MAX(CENTER_DIST_M)
+FROM TRAFFIC_LINK
+WHERE SOURCE = 'TOPIS' AND DELETE_YN = 0;
+```
+
 ## 5분 수집
 
 TOPIS와 GITS 수집 워크플로는 매일 14:00부터 23:55까지 5분마다 실행한다. 각 워크플로는 소스별 수집 대상 링크의 속도와 여행 시간을 `TRAFFIC_SPEED`에 저장하고, 같은 5분 회차의 처리 결과를 `TRAFFIC_COLLECT_RUN`에 한 행으로 남긴다. 같은 소스와 회차 시각으로 다시 실행해도 회차와 속도 행은 중복으로 쌓이지 않는다.
