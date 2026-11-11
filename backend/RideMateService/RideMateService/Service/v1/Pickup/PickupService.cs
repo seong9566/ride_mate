@@ -174,25 +174,19 @@ public class PickupService : IPickupService
                 return new ResponseModel<GetRestrictedZoneList> { message = "잘못된 요청입니다.", data = null, code = 401 };
 
             var userAreas = await _pickupRepository.GetUserAreasAsync(userId, cancellationToken).ConfigureAwait(false);
+            var areaIds = userAreas.Select(a => a.AreaId).ToArray();
+            string version;
             if (userAreas.Count == 0)
             {
-                return new ResponseModel<GetRestrictedZoneList>
-                {
-                    message = "요청이 정상 처리되었습니다.",
-                    data = new GetRestrictedZoneList
-                    {
-                        version = ComputeVersion(Array.Empty<int>(), null, null, 0),
-                        areas = new List<RestrictedZoneAreaDto>()
-                    },
-                    code = 200
-                };
+                version = ComputeVersion(areaIds, null, null, 0);
             }
-
-            var areaIds = userAreas.Select(a => a.AreaId).ToArray();
-            var versionRow = await _pickupRepository.GetRestrictedZoneVersionAsync(areaIds, cancellationToken)
-                .ConfigureAwait(false);
-            var version = ComputeVersion(areaIds, userAreas.Max(a => a.AreaUpdatedDt), versionRow.MaxDt,
-                versionRow.LiveCount);
+            else
+            {
+                var versionRow = await _pickupRepository.GetRestrictedZoneVersionAsync(areaIds, cancellationToken)
+                    .ConfigureAwait(false);
+                version = ComputeVersion(areaIds, userAreas.Max(a => a.AreaUpdatedDt), versionRow.MaxDt,
+                    versionRow.LiveCount);
+            }
 
             if (dto.version == version)
             {
@@ -201,6 +195,16 @@ public class PickupService : IPickupService
                     message = "요청이 정상 처리되었습니다.",
                     data = new GetRestrictedZoneList { version = version, areas = null },
                     code = 101
+                };
+            }
+
+            if (userAreas.Count == 0)
+            {
+                return new ResponseModel<GetRestrictedZoneList>
+                {
+                    message = "요청이 정상 처리되었습니다.",
+                    data = new GetRestrictedZoneList { version = version, areas = new List<RestrictedZoneAreaDto>() },
+                    code = 200
                 };
             }
 
@@ -256,6 +260,10 @@ public class PickupService : IPickupService
                                 }).ToList()).ToList()
                             }).ToList();
                         }
+                    }
+                    else
+                    {
+                        _logService.LogMessage($"restricted zone shape failed: id={row.RestrictedZoneId}, reason=no-origin");
                     }
 
                     vertexCount += zone.polygons.Sum(p => p.outer.Count + p.holes.Sum(h => h.Count));

@@ -114,27 +114,38 @@ public static class ZoneShapeBuilder
         double metersPerDegreeLat,
         double metersPerDegreeLng)
     {
+        if (geometry.IsEmpty)
+            return;
+
         if (geometry is Polygon polygon)
         {
             var holes = new List<List<(double Lat, double Lng)>>(polygon.NumInteriorRings);
             for (var i = 0; i < polygon.NumInteriorRings; i++)
             {
-                holes.Add(ToLngLatRing(
+                var hole = ToLatLngRing(
                     polygon.GetInteriorRingN(i).Coordinates,
                     originLat,
                     originLng,
                     metersPerDegreeLat,
-                    metersPerDegreeLng));
+                    metersPerDegreeLng);
+                if (hole.Count >= 3)
+                    holes.Add(hole);
             }
+
+            var outer = ToLatLngRing(
+                polygon.ExteriorRing.Coordinates,
+                originLat,
+                originLng,
+                metersPerDegreeLat,
+                metersPerDegreeLng);
+
+            // 꼭짓점이 3개 미만인 링은 면을 이루지 못한다. 모두 빠지면 Build가 실패로 처리한다
+            if (outer.Count < 3)
+                return;
 
             polygons.Add(new ZonePolygon
             {
-                Outer = ToLngLatRing(
-                    polygon.ExteriorRing.Coordinates,
-                    originLat,
-                    originLng,
-                    metersPerDegreeLat,
-                    metersPerDegreeLng),
+                Outer = outer,
                 Holes = holes,
             });
             return;
@@ -155,7 +166,7 @@ public static class ZoneShapeBuilder
         }
     }
 
-    private static List<(double Lat, double Lng)> ToLngLatRing(
+    private static List<(double Lat, double Lng)> ToLatLngRing(
         Coordinate[] coordinates,
         double originLat,
         double originLng,
