@@ -1,0 +1,9 @@
+-- T13 아이 정보 저장: 아이 번호 해시(PHONE_HASH)와 살아 있는 행 UNIQUE
+-- 정본: backend/docs/architecture/schema.md
+
+-- 이 칸을 넣기 전에 만든 행은 PHONE_HASH가 NULL이다. NULL은 UNIQUE에 걸리지 않는다.
+-- 새 행은 Service가 USER_INFO.PHONE_HASH와 같은 HMAC으로 채운다.
+ALTER TABLE CHILD
+    ADD COLUMN PHONE_HASH CHAR(64) NULL COMMENT '휴대폰 번호의 HMAC' AFTER PHONE_ENC,
+    ADD COLUMN ACTIVE_FLAG TINYINT GENERATED ALWAYS AS (IF(DELETE_YN = 0, 1, NULL)) VIRTUAL COMMENT '살아 있는 행 표시 (UNIQUE용)',
+    ADD UNIQUE KEY UK_CHILD_01 (PHONE_HASH, ACTIVE_FLAG);

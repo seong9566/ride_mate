@@ -7,11 +7,11 @@ public class TodayPickupRow
 {
     public int TimetableDayId { get; set; }
     public int AcademyId { get; set; }
-    public int AreaId { get; set; }
+    public int? AreaId { get; set; }
     public string DisplayName { get; set; } = string.Empty;
     public TimeSpan EndTime { get; set; }
-    public decimal AcademyLat { get; set; }
-    public decimal AcademyLng { get; set; }
+    public decimal? AcademyLat { get; set; }
+    public decimal? AcademyLng { get; set; }
 }
 
 /// <summary>

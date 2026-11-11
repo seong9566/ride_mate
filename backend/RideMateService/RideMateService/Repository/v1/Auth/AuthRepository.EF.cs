@@ -113,6 +113,35 @@ public partial class AuthRepository
     }
 
     /// <summary>
+    /// 운전자 계정의 도착 기록 사용 여부만 바꾼다. 다른 컬럼은 건드리지 않고, 바뀐 행이 정확히 1개일 때 true를 돌려준다.
+    /// </summary>
+    public async Task<bool> UpdateUserArrivalLogAsync(int userId, bool arrivalLogYn, DateTime updateDt, string updateUser,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var affected = await _context.UserInfos
+                .Where(x => x.UserId == userId
+                            && x.DeleteYn == false)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.ArrivalLogYn, arrivalLogYn)
+                    .SetProperty(x => x.UpdateDt, updateDt)
+                    .SetProperty(x => x.UpdateUser, updateUser), cancellationToken)
+                .ConfigureAwait(false);
+
+            return affected == 1;
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw; // Service가 500으로 바꾼다
+        }
+    }
+
+    /// <summary>
     /// 동의 기록을 등록한다.
     /// </summary>
     public async Task<bool> AddConsentsAsync(IEnumerable<Consent> models,

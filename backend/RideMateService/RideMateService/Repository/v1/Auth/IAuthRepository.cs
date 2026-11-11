@@ -32,6 +32,12 @@ public interface IAuthRepository
     Task<bool> AddUserInfoAsync(UserInfo model, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 운전자 계정의 도착 기록 사용 여부만 바꾼다. 다른 컬럼은 건드리지 않고, 바뀐 행이 정확히 1개일 때 true를 돌려준다.
+    /// </summary>
+    Task<bool> UpdateUserArrivalLogAsync(int userId, bool arrivalLogYn, DateTime updateDt, string updateUser,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 동의 기록을 등록한다.
     /// </summary>
     Task<bool> AddConsentsAsync(IEnumerable<Consent> models, CancellationToken cancellationToken = default);
@@ -139,7 +145,7 @@ public interface IAuthRepository
         IDbTransaction transaction, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 계정의 초기 설정이 필요한지 조회한다. 운전자 이름이 비었거나 살아 있는 아이가 없으면 true, 계정이 없거나 삭제됐으면 null
+    /// 계정의 초기 설정이 필요한지 조회한다. 운전자 이름이 비었거나 초기 설정 완료 시각이 없으면 true, 계정이 없거나 삭제됐으면 null
     /// </summary>
     Task<bool?> GetSetupRequiredAsync(int userId, IDbTransaction? transaction = null,
         CancellationToken cancellationToken = default);

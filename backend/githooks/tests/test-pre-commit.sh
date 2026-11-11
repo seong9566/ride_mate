@@ -69,10 +69,16 @@ echo "x" > "backend/docs/한글-파일.md" && git add "backend/docs/한글-파�
 check "main에서 한글 이름 backend 파일 차단" 1 "main 브랜치에는 backend/ 변경을 커밋하지 않는다" block
 reset
 
-# 2-2. 통합 브랜치 backend에서도 backend 변경은 막는다 (차단)
+# 2-2. 배포 브랜치 backend에서도 backend 변경은 막는다 (차단)
 git checkout --quiet -B backend
 echo "// test" >> "$program" && git add "$program"
 check "backend 브랜치에서 backend 변경 차단" 1 "backend 브랜치에는 backend/ 변경을 커밋하지 않는다" block
+reset
+
+# 2-3. 통합 브랜치 backend-dev에서도 backend 변경은 막는다 (차단)
+git checkout --quiet -B backend-dev
+echo "// test" >> "$program" && git add "$program"
+check "backend-dev 브랜치에서 backend 변경 차단" 1 "backend-dev 브랜치에는 backend/ 변경을 커밋하지 않는다" block
 reset
 
 # 3. dotnet이 없으면 막는다 (차단)

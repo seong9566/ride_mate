@@ -29,6 +29,7 @@ public partial class PickupService : IPickupService
     private const string ReasonHigherSpotBlocked = "HIGHER_SPOT_BLOCKED";
     private const string ReasonNoSpotAvailable = "NO_SPOT_AVAILABLE";
     private const string ReasonCustomLocation = "CUSTOM_LOCATION";
+    private const string ReasonNoAcademyLocation = "NO_ACADEMY_LOCATION";
 
     private readonly IPickupRepository _pickupRepository;
     private readonly ILogService _logService;
@@ -109,6 +110,13 @@ public partial class PickupService : IPickupService
                 endTime = target.EndTime.ToString(@"hh\:mm")
             };
 
+            // 학원 좌표가 없으면 학원에서 걷는 시간·픽업 지점·단속 구역을 알 수 없다. 앱이 픽업 좌표를 보냈어도 같다
+            if (target.AcademyLat is not { } academyLat || target.AcademyLng is not { } academyLng)
+            {
+                result.reasons.Add(new DepartureGuideReasonDto { code = ReasonNoAcademyLocation });
+                return new ResponseModel<DetailDepartureGuideDto> { message = "요청이 정상 처리되었습니다.", data = result, code = 200 };
+            }
+
             // 5) 픽업 장소와 도보 시간
             DepartureGuidePickupDto? pickup;
             if (dto.pickupLat is null || dto.pickupLng is null)
@@ -121,14 +129,14 @@ public partial class PickupService : IPickupService
                 }
 
                 // 학원 앞이 단속 구역이면 근거 맨 앞에 둔다. 판정 시각은 하원 + 정리 시간
-                var academyZones = await MatchZonesAsync(target.AreaId, target.AcademyLat, target.AcademyLng, dayType,
+                var academyZones = await MatchZonesAsync(target.AreaId, academyLat, academyLng, dayType,
                     target.EndTime + TimeSpan.FromMinutes(_options.TidyUpMin), cancellationToken).ConfigureAwait(false);
                 if (academyZones is { Count: > 0 })
                     result.reasons.Insert(0, new DepartureGuideReasonDto { code = ReasonAcademyFrontRestricted, zoneTypes = academyZones });
             }
             else
             {
-                pickup = await CustomPickupAsync(target, dto.pickupLat.Value, dto.pickupLng.Value, cancellationToken).ConfigureAwait(false);
+                pickup = await CustomPickupAsync(academyLat, academyLng, dto.pickupLat.Value, dto.pickupLng.Value, cancellationToken).ConfigureAwait(false);
                 result.reasons.Add(new DepartureGuideReasonDto { code = ReasonCustomLocation });
             }
 
@@ -364,12 +372,12 @@ public partial class PickupService : IPickupService
 
     // 임의 좌표: 카카오 도보 경로(학원 → 픽업)를 매번 부른다(결과 캐싱 금지).
     // 실패하면 직선 거리 ÷ 아이 도보 속도로 추정하고 경로는 주지 않는다
-    private async Task<DepartureGuidePickupDto> CustomPickupAsync(TodayPickupRow target, decimal lat, decimal lng,
+    private async Task<DepartureGuidePickupDto> CustomPickupAsync(decimal academyLat, decimal academyLng, decimal lat, decimal lng,
         CancellationToken cancellationToken)
     {
         var pickup = new DepartureGuidePickupDto { lat = lat, lng = lng };
 
-        var route = await _walkRouteClient.GetWalkRouteAsync(target.AcademyLat, target.AcademyLng, lat, lng,
+        var route = await _walkRouteClient.GetWalkRouteAsync(academyLat, academyLng, lat, lng,
             cancellationToken).ConfigureAwait(false);
         if (route is not null)
         {
@@ -381,23 +389,26 @@ public partial class PickupService : IPickupService
             return pickup;
         }
 
-        var meters = GeoDistance.Meters(target.AcademyLat, target.AcademyLng, lat, lng);
+        var meters = GeoDistance.Meters(academyLat, academyLng, lat, lng);
         pickup.walkMin = DepartureGuideCalculator.EstimateMinutes(meters, _options.ChildWalkKmh);
         pickup.walkSource = WalkSourceEstimate;
         return pickup;
     }
 
-    // 걸린 구역 유형. 학원가 밖이거나 학원가에 구역 데이터가 없어 판정할 수 없으면 null
-    private async Task<List<string>?> MatchZonesAsync(int areaId, decimal lat, decimal lng, string dayType, TimeSpan at,
+    // 걸린 구역 유형. 학원가가 없거나 학원가 밖이거나 학원가에 구역 데이터가 없어 판정할 수 없으면 null
+    private async Task<List<string>?> MatchZonesAsync(int? areaId, decimal lat, decimal lng, string dayType, TimeSpan at,
         CancellationToken cancellationToken)
     {
-        if (!await _pickupRepository.IsInsideAreaAsync(areaId, lat, lng, cancellationToken).ConfigureAwait(false))
+        if (areaId is not { } area)
             return null;
 
-        if (await _pickupRepository.CountRestrictedZonesAsync(areaId, cancellationToken).ConfigureAwait(false) == 0)
+        if (!await _pickupRepository.IsInsideAreaAsync(area, lat, lng, cancellationToken).ConfigureAwait(false))
             return null;
 
-        return await _pickupRepository.GetMatchedZoneTypesAsync(areaId, lat, lng, dayType, at, cancellationToken)
+        if (await _pickupRepository.CountRestrictedZonesAsync(area, cancellationToken).ConfigureAwait(false) == 0)
+            return null;
+
+        return await _pickupRepository.GetMatchedZoneTypesAsync(area, lat, lng, dayType, at, cancellationToken)
             .ConfigureAwait(false);
     }
 

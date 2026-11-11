@@ -20,6 +20,7 @@ public abstract class ApiControllerBase : ControllerBase
             101 => Ok(model),
             102 => Ok(model),
             103 => Ok(model),
+            104 => Ok(model),
             201 => Ok(model),
             202 => Ok(model),
             200 => Ok(model),

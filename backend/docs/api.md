@@ -29,7 +29,7 @@
 | code | 의미 | HTTP |
 |---|---|---|
 | 200 | 정상 처리 | 200 |
-| 101·102·103·201·202 | 도메인별 부분 성공·분기 | 200 |
+| 101·102·103·104·201·202 | 도메인별 부분 성공·분기 | 200 |
 | 400 | 잘못된 요청(DTO null, 검증 실패) | 400 |
 | 401 | 인증 실패·미인증 | 401 |
 | 403 | 권한 없음 | 403 |
@@ -69,7 +69,7 @@
 }
 ```
 
-- `session_id`는 `LOGIN_SESSION_ID`다. `setup_required`는 그 계정의 운전자 이름이 비었거나 살아 있는 아이가 없으면 `true`다.
+- `session_id`는 `LOGIN_SESSION_ID`다. `setup_required`는 그 계정의 운전자 이름이 비었거나 초기 설정을 완료하지 않았으면(`SETUP_DONE_DT` 없음) `true`다.
 - `otp`로 같은 기기에서 같은 계정에 다시 로그인하면 그 계정·기기의 직전 차량 세션은 모두 끝나고 새 세션이 만들어진다.
 - 실패(400)도 감싸지 않고 `{ "error": "...", "error_description": "..." }`를 돌려준다. `error_description`은 영어 한 줄이고 앱은 `error` 값으로 분기한다.
 
@@ -186,7 +186,7 @@
 
 | code | 상황 | HTTP |
 |---|---|---|
-| 200 | 계산했다. 쓸 수 있는 기본 지점이 없으면 `pickup`과 계산 필드가 null이고 `reasons`에 `NO_SPOT_AVAILABLE`이 들어간다 | 200 |
+| 200 | 계산했다. 쓸 수 있는 기본 지점이 없으면 `pickup`과 계산 필드가 null이고 `reasons`에 `NO_SPOT_AVAILABLE`이 들어간다. 학원 좌표가 없으면 `pickup`과 계산 필드가 null이고 `reasons`에 `NO_ACADEMY_LOCATION`이 들어간다(앱이 `pickupLat`·`pickupLng`를 보내도 같다) | 200 |
 | 101 | 오늘 남은 픽업이 없다. `data`는 null이다 | 200 |
 | 400 | 필수 값이 없거나 범위를 벗어났거나 픽업 좌표가 한쪽만 왔거나 형식이 틀린 값(해석할 수 없는 `currentDt`나 숫자)이나 `Z`·오프셋이 붙은 `currentDt`가 왔다 | 400 (`ProblemDetails`) |
 | 401 | 인증 실패 | 401 |

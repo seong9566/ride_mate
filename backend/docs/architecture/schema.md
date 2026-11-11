@@ -57,6 +57,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 - 계정·인증: `USER_INFO`, `LOGIN_SESSION`, `PHONE_VERIFICATION`, `QR_LOGIN`, `CONSENT`
 - 아이·시간표: `CHILD`, `ACADEMY`, `TIMETABLE`, `TIMETABLE_DAY`, `TIMETABLE_EXCEPTION`
 - 기준 데이터: `AREA`, `PICKUP_SPOT`, `PICKUP_SPOT_BLOCK`, `ACADEMY_PICKUP_SPOT`, `LOOP_ROUTE`, `RESTRICTED_ZONE`, `PARKING_LOT`, `HOLIDAY`
+- 도로 소통 수집: `TRAFFIC_LINK`, `TRAFFIC_COLLECT_RUN`, `TRAFFIC_SPEED`
 - 픽업 진행: `PICKUP_PLAN`, `PICKUP_SESSION`, `PICKUP_EVENT`
 
 ## 계정·인증
@@ -79,9 +80,13 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `AUTO_SEND_YN` | TINYINT(1) | N | 링크 자동 발송 여부. 처음 값 0(매번 음성 확인) |
 | `ARRIVAL_LOG_YN` | TINYINT(1) | N | 차량 도착 기록 사용 여부. 처음 값 0. 기록 자체는 차 안에만 있고 서버에 오지 않는다 |
 | `WAKE_BEFORE_MIN` | TINYINT | N | 쉬는 모드에서 깨우는 시점(출발 몇 분 전, 0이면 출발 시각). 처음 값 5 |
+| `SETUP_DONE_DT` | DATETIME | Y | 초기 설정 완료 시각. 4/4 완료 API가 채운다. NULL이면 로그인 응답의 `setup_required`가 true |
 
 - 살아 있는 행 UNIQUE: `(PHONE_HASH, ACTIVE_FLAG)`
 - 차 정보는 아이 화면에 보이는 값이다. 기획이 확정되지 않아 NULL 허용으로 두고 최초 설정에서 선택 입력으로 받는다.
+- `CAR_COLOR`는 `WHITE`·`BLACK`·`GRAY`·`ETC`만 받는다. DB는 자유 문자열로 두고(기획이 색상 목록을 바꿀 수 있어 CHECK를 걸지 않는다) 검사는 Service에서 한다.
+- `CAR_MODEL`은 화면 입력이 앞뒤 공백을 지운 뒤 1~20자(유니코드 코드 포인트 수)다. 칸은 VARCHAR(50)이다.
+- 집·차 저장과 초기 설정 완료는 트랜잭션 첫 문장에서 `USER_INFO`를 `FOR UPDATE`로 잠그고 그 뒤 바꾸는 칸(`DEST_*`·`CAR_*`·`SETUP_DONE_DT`)만 갱신한다. 요청에 없는 칸을 옛 값으로 덮어쓰지 않는다.
 - 아이 화면에 보이는 호칭은 따로 두지 않고 운전자 이름(`USER_NAME`)을 쓴다. 가입 화면에서 엄마·아빠·할머니·직접 입력으로 받는다. [ADR-0016]
 - 운전자 이름은 가입할 때 필수로 받는다. 형식은 검사하지 않는다. 앞뒤 공백을 지운 값을 저장하고, 지운 뒤 비었거나 50자(유니코드 코드 포인트 수, MySQL `CHAR_LENGTH` 기준)를 넘으면 거절한다. 입력 화면은 아직 명세서에 없다.
 - `PHONE_ENC`는 AES-256-GCM 암호문이다. 키 버전 1바이트(`0x01`) + nonce 12바이트 + 암호문 + tag 16바이트를 이어 저장한다. [ADR-0013]
@@ -175,6 +180,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `CONSENT_DT` | DATETIME | N | 동의한 시각 |
 
 - 지금 동의 상태는 그 계정·종류의 가장 최근 행이다. 이 테이블이 정본이다. `USER_INFO.ARRIVAL_LOG_YN`은 화면이 빨리 읽기 위한 사본이고 `ARRIVAL_LOG` 행을 넣는 트랜잭션에서 함께 바꾼다.
+- 초기 설정의 보호자 동의(`GUARDIAN`·`CHILD_INFO`·`ARRIVAL_LOG` 3행)는 그 번호의 가장 최근 `GUARDIAN` 인증번호 행이 인증에 성공한 지 10분 안일 때만 넣는다. 선택 항목에 동의하지 않아도 `ARRIVAL_LOG` 행을 `AGREE_YN = 0`으로 넣는다.
 - 인덱스: `(USER_ID, CONSENT_TYPE, CONSENT_ID)`
 
 ## 아이·시간표
@@ -187,34 +193,42 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `USER_ID` | INT | N | FK → USER_INFO |
 | `CHILD_NAME` | VARCHAR(50) | N | 이름(화면 입력은 1~10자) |
 | `PHONE_ENC` | VARBINARY(255) | N | 휴대폰 번호(숫자만). 암호화해서 저장한다 |
+| `PHONE_HASH` | CHAR(64) | Y | 휴대폰 번호의 HMAC. 같은 번호가 이미 등록됐는지, 부모 번호와 같은지 비교한다. NULL은 이 칸을 넣기 전에 만든 행이거나 삭제한 행이다 |
 | `SEND_CHANNEL` | VARCHAR(20) | N | `SMS`, `ALIMTALK`. 처음 값 `SMS` |
 
+- 살아 있는 행 UNIQUE: `(PHONE_HASH, ACTIVE_FLAG)`. 값이 NULL인 행은 걸리지 않는다.
 - 부모 한 명이 아이를 여러 명 둘 수 있는 구조다. 명세서의 화면은 아이 1명 흐름이다.
-- 아이 번호가 부모 번호와 같으면 등록을 거절한다. 복호화한 값끼리 Service에서 비교한다.
+- 한 계정에는 살아 있는 아이를 하나만 등록한다(초기 설정 화면이 아이 1명 흐름). 여러 명은 화면이 생기면 바꾼다.
+- 다른 계정의 살아 있는 아이와 번호가 같으면 등록을 거절한다(두 계정이 같은 아이를 등록하지 못한다).
+- 아이 번호가 부모 번호와 같으면 등록을 거절한다. 같은지는 `PHONE_HASH`끼리 Service에서 비교한다.
 - 화면에 내려줄 때는 Service에서 복호화한 뒤 가운데 자리를 가린다.
+- 아이 등록은 트랜잭션 첫 문장에서 `USER_INFO`를 `FOR UPDATE`로 잠그고 그 뒤에 기존 아이·번호를 조회한다. 계정당 살아 있는 아이 1명은 DB 제약이 아니라 이 잠금으로 지킨다. 아이를 추가하는 다른 경로도 같은 잠금을 먼저 잡는다.
 - 삭제는 아래 "아이·계정 삭제" 순서를 따른다. 복구는 할 수 없다.
 
 ### ACADEMY — 학원
 
-지원 학원가 안의 학원만 있다. 여러 부모가 같은 행을 가리킨다.
+좌표가 있는 학원은 지원 학원가 안에 있다. 좌표 없는 학원도 있다(학원가 NULL). 여러 부모가 같은 행을 가리킨다.
 
 | 컬럼 | 타입 | NULL | 설명 |
 |---|---|---|---|
 | `ACADEMY_ID` | INT | N | PK |
-| `AREA_ID` | INT | N | FK → AREA |
+| `AREA_ID` | INT | Y | FK → AREA. 좌표가 없으면 NULL |
 | `ACADEMY_NAME` | VARCHAR(100) | N | 원천 데이터나 검색 결과의 이름 |
-| `ADDRESS` | VARCHAR(200) | Y | 주소 |
-| `LAT`·`LNG` | DECIMAL(10,7) | N | 위치 |
+| `ADDRESS` | VARCHAR(200) | N | 주소 |
+| `LAT`·`LNG` | DECIMAL(10,7) | Y | 위치. 앱이 좌표를 주지 않으면 NULL |
 | `SOURCE_TYPE` | VARCHAR(20) | N | `TEAM`(운영팀), `NEIS`(학원·교습소 표준데이터), `PLACE`(장소 검색으로 추가) |
-| `PLACE_ID` | VARCHAR(100) | Y | 장소 검색 API의 장소 ID |
+| `PLACE_ID` | VARCHAR(100) | Y | 장소 검색 API의 장소 ID. 차량 앱 SDK의 검색 결과로 만든 행은 NULL이다 |
 | `SOURCE_REF` | VARCHAR(100) | Y | 원천 데이터의 학원 관리번호 |
 | `OPEN_STATUS` | VARCHAR(20) | Y | 원천 데이터의 등록 상태. `OPEN`(운영), `CLOSED`(휴원·폐원) |
 
-- 부모는 검색 결과에서만 학원 위치를 고른다. 고른 위치가 `AREA.BOUNDARY` 밖이면 등록을 거절한다.
-- 학원 검색은 서버가 먼저 이 테이블에서 찾고(운영팀·표준데이터 학원), 그 뒤에 장소 검색 API 결과를 붙여 돌려준다. 이 테이블의 학원은 `ACADEMY_ID`로 고른다.
-- 장소 검색 결과를 고르면 `PLACE_ID`가 같은 행이 있는지 먼저 본다. 없으면 이름이 같고 위치가 50m 안(가정값)인 행을 찾아 그 행에 `PLACE_ID`를 채워 쓴다. 그래도 없을 때만 `PLACE`로 새 행을 만든다. 운영팀이 검증한 학원이 검색 결과 때문에 둘로 갈리지 않게 한다.
+- 학원 이름·주소 문자열은 앱 SDK의 장소 검색에서 받아 필수이고, 좌표는 선택이다. 서버가 이 테이블을 먼저 찾고 장소 검색 API 결과를 붙여 돌려주는 학원 검색(`/places`)과 `ACADEMY_ID`로 고르는 방식은 지금은 쓰지 않는다(앱 SDK 검색).
+- 좌표가 있으면 그 점을 담는 `AREA`를 찾아 `AREA_ID`를 채운다. 담는 `AREA`가 없으면(`AREA.BOUNDARY` 밖) 등록을 거절한다. 좌표가 없으면 `AREA_ID`는 NULL이다.
+- 이름·주소를 정규화(앞뒤 공백 제거, 연속 공백 한 칸)해 같은 살아 있는 행을 재사용한다. 그 행에 좌표가 없고 새 요청에 좌표가 있으면 좌표와 `AREA_ID`를 채운다. 새 행은 `PLACE`로 만든다.
+- 좌표가 확정되면(카드 AC) `LAT`·`LNG`·`AREA_ID`를 다시 필수로 되돌린다.
+- 좌표 없는 학원은 픽업 지점 배정과 단속 판정을 하지 않는다. 출발 안내는 `NO_ACADEMY_LOCATION`을 준다.
 - 부모가 지은 학원 이름은 여기가 아니라 `TIMETABLE.DISPLAY_NAME`에 둔다.
 - 살아 있는 행 UNIQUE: `(PLACE_ID, ACTIVE_FLAG)`, `(SOURCE_REF, ACTIVE_FLAG)`. 값이 NULL인 행은 걸리지 않는다.
+- CHECK: `(LAT IS NULL) = (LNG IS NULL)`, `AREA_ID IS NULL OR LAT IS NOT NULL`(좌표 없이 학원가만 있는 행 금지)
 
 ### TIMETABLE — 시간표
 
@@ -230,6 +244,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 
 - CHECK: `END_TIME BETWEEN '14:00:00' AND '23:30:00'`, `MINUTE(END_TIME) % 5 = 0 AND SECOND(END_TIME) = 0`
 - 등록 개수 제한(가정 10건)과 같은 요일 ±40분 겹침 경고는 Service에서 한다.
+- 시간표 등록과 픽업 스위치 변경은 트랜잭션 첫 문장에서 `USER_INFO`를 `FOR UPDATE`로 잠근 뒤 개수·겹침·소유를 확인한다(T13 아이 등록과 같은 순서). 새 학원 행을 학원가와 함께 넣거나 좌표를 채우면 FK 때문에 그 `AREA` 행에 공유 잠금이 걸린다 — 삭제·계획 생성처럼 `AREA`를 먼저 잠그는 경로를 구현할 때 순서를 확인한다.
 - 진행 중인 픽업 계획이 있는 시간표는 삭제하지 않고, 학원·하원 시각을 바꾸거나 그 계획의 요일을 빼는 편집도 거절한다. 오늘 하원 시각만 바꾸는 것은 `TIMETABLE_EXCEPTION`으로 한다.
 - 편집으로 요일을 뺐다가 다시 넣으면 새 행을 만들지 않고 삭제 표시된 `TIMETABLE_DAY` 행을 되살린다. `LAST_PICKUP_DATE`가 이어진다.
 - 시간표를 지우고 같은 내용으로 다시 등록하면 새 시간표다. 그날 이미 탑승으로 끝났어도 계획이 다시 만들어질 수 있다. 감수한다.
@@ -278,12 +293,13 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | 2 | `TIMETABLE_EXCEPTION` | `DELETE_YN`을 켠다 |
 | 3 | `TIMETABLE_DAY` | `DELETE_YN`을 켠다 |
 | 4 | `TIMETABLE` | `DELETE_YN`을 켜고 `DISPLAY_NAME`을 빈 문자열로 바꾼다 |
-| 5 | `CHILD` | `DELETE_YN`을 켜고 `CHILD_NAME`을 빈 문자열로, `PHONE_ENC`를 빈 값으로 바꾼다 |
+| 5 | `CHILD` | `DELETE_YN`을 켜고 `CHILD_NAME`을 빈 문자열로, `PHONE_ENC`를 빈 값으로, `PHONE_HASH`를 NULL로 바꾼다 |
 | 6 | `LOGIN_SESSION`, `QR_LOGIN` | `DELETE_YN`을 켠다. `QR_LOGIN`은 `USER_ID`를 NULL로 바꾼다 |
 | 7 | `PHONE_VERIFICATION` | 그 번호의 행에서 `PHONE_HASH`·`CODE_HASH`를 빈 문자열로 바꾸고 `DELETE_YN`을 켠다. 남겨 두면 `CONSENT`를 거쳐 삭제된 계정의 번호 해시로 이어진다 |
 | 8 | `USER_INFO` | `DELETE_YN`을 켜고 `PHONE_ENC`를 빈 값으로, `PHONE_HASH`·`USER_NAME`을 빈 문자열로, 차 정보·목적지를 NULL로 바꾼다 |
 
 - `CONSENT`는 지우지 않는다. 동의를 받았다는 증빙이다. 보관 기간은 정해지지 않았다.
+- 탈퇴를 구현할 때 아이 등록(`USER_INFO` → `CHILD` 순서로 잠금)과 잠금 순서가 맞는지 확인한다.
 - 로그아웃은 삭제가 아니다. 그 차량의 `LOGIN_SESSION`만 끝내고 서버의 시간표와 아이 정보는 남는다.
 
 ## 기준 데이터
@@ -439,6 +455,66 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `HOLIDAY_NAME` | VARCHAR(50) | N | 이름 |
 
 - 살아 있는 행 UNIQUE: `(HOLIDAY_DATE, ACTIVE_FLAG)`
+
+## 도로 소통 수집
+
+대치동·평촌 학원가의 도로 소통 이력을 n8n 수집기가 적재한다. 감사 컬럼은 `CREATE_USER = SYSTEM`, `UPDATE_USER = SYSTEM`으로 넣는다.
+
+코드 값: `SOURCE`는 `TOPIS`·`GITS`, `AREA_CODE`는 `DAECHI`·`PYEONGCHON`, `STATUS`는 `OK`·`PARTIAL`·`NO_KEY`·`FAILED`다.
+
+### TRAFFIC_LINK — 수집 대상 링크
+
+| 컬럼 | 타입 | NULL | 설명 |
+|---|---|---|---|
+| `TRAFFIC_LINK_ID` | INT | N | PK |
+| `SOURCE` | VARCHAR(20) | N | 소스 |
+| `AREA_CODE` | VARCHAR(20) | N | 학원가 |
+| `LINK_ID` | VARCHAR(20) | N | 소스의 링크 ID(TOPIS 링크 ID와 GITS 링크 ID는 체계가 다르다) |
+| `ROUTE_ID` | VARCHAR(20) | Y | GITS 도로 ID. 5분 수집에서 도로 단위로 부를 때 쓴다. TOPIS는 NULL |
+| `ROAD_NAME` | VARCHAR(100) | N | 도로명 |
+| `ST_NODE_NAME`·`ED_NODE_NAME` | VARCHAR(100) | N | 시작·끝 지점명 |
+| `AXIS_DIR` | VARCHAR(20) | Y | 방향(TOPIS `axis_dir`, GITS `routeWay`) |
+| `DISTANCE_M` | INT | N | 링크 길이(m) |
+| `CENTER_DIST_M` | INT | Y | 학원가 중심에서 링크까지 최단 거리(m). 좌표가 있는 TOPIS만 채운다 |
+
+- 살아 있는 행 UNIQUE: `(SOURCE, LINK_ID, ACTIVE_FLAG)`. 목록을 다시 만들 때 이 값으로 같은 링크를 찾아 덮어쓰고, 결과에서 빠진 링크는 삭제 표시한다.
+- 인덱스: `(SOURCE, AREA_CODE)`
+- CHECK: `DISTANCE_M >= 0 AND (CENTER_DIST_M IS NULL OR CENTER_DIST_M >= 0)`
+- 좌표는 저장하지 않는다.
+
+### TRAFFIC_COLLECT_RUN — 수집 회차(소스별)
+
+| 컬럼 | 타입 | NULL | 설명 |
+|---|---|---|---|
+| `COLLECT_RUN_ID` | INT | N | PK |
+| `SOURCE` | VARCHAR(20) | N | 소스 |
+| `RUN_DT` | DATETIME | N | 회차 시각(KST, 5분 경계) |
+| `STATUS` | VARCHAR(20) | N | `OK`·`PARTIAL`·`NO_KEY`·`FAILED` |
+| `LINK_COUNT` | INT | N | 대상 링크 수 |
+| `SAVED_COUNT` | INT | N | 저장한 행 수 |
+| `ERROR_MESSAGE` | VARCHAR(500) | Y | 실패 요약. 키·URL을 넣지 않는다 |
+
+- UNIQUE: `(SOURCE, RUN_DT)`
+- CHECK: `LINK_COUNT >= 0 AND SAVED_COUNT BETWEEN 0 AND LINK_COUNT`
+- 수집 공백 = 수집 시간대 안의 5분 칸 중 그 소스의 행이 없는 칸.
+- `NO_KEY`는 키가 비어 호출하지 않은 회차, `FAILED`는 저장한 행이 0인 회차, `PARTIAL`은 일부 링크만 저장한 회차다.
+
+### TRAFFIC_SPEED — 5분 소통 이력
+
+| 컬럼 | 타입 | NULL | 설명 |
+|---|---|---|---|
+| `TRAFFIC_SPEED_ID` | INT | N | PK |
+| `TRAFFIC_LINK_ID` | INT | N | FK → TRAFFIC_LINK |
+| `COLLECT_RUN_ID` | INT | N | FK → TRAFFIC_COLLECT_RUN |
+| `COLLECTED_DT` | DATETIME | N | 회차 시각(5분 경계). 한 회차의 행은 모두 같은 값이다 |
+| `SOURCE_COLLECTED_DT` | DATETIME | Y | 소스가 준 수집 시각(GITS `collDate`). TOPIS는 NULL |
+| `SPEED_KMH` | SMALLINT | N | 속도(TOPIS `prcs_spd`, GITS `spd`). 소수로 오므로(예 77.4) 정수로 반올림한다 |
+| `TRAVEL_SEC` | INT | N | 여행시간 초(TOPIS `prcs_trv_time`, GITS `trvlTime`을 초로 맞춘 값). 소수면 반올림한다 |
+
+- UNIQUE: `(TRAFFIC_LINK_ID, COLLECTED_DT)`. 같은 회차가 두 번 돌아도 중복으로 쌓이지 않는다. FK 인덱스를 겸한다.
+- 인덱스: `(COLLECT_RUN_ID)`, `(COLLECTED_DT)`
+- CHECK: `SPEED_KMH >= 0 AND TRAVEL_SEC >= 0`
+- T18의 요일·시간대 집계는 `DAYOFWEEK(COLLECTED_DT)`·`TIME(COLLECTED_DT)`로 한다.
 
 ## 픽업 진행
 
@@ -622,18 +698,17 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | 동의 기록 보관 기간 | 계정을 삭제한 뒤 `CONSENT`를 언제까지 두는지 |
 | 개인정보 고지의 운전자 이름 | 가입 때 받는 운전자 이름을 개인정보 고지(RM-C-P1)의 수집 항목에 넣어야 한다 |
 | 약관 문서 버전 | `CONSENT.TERMS_VERSION`의 형식이 정해지지 않았다. 지금은 서버 상수로 기록한다 |
-| 같은 아이를 두 계정이 등록하는 경우 | 엄마와 아빠가 각자 등록하면 같은 날 계획이 둘 생긴다 |
 | 픽업 후 목적지를 여러 개 둘지 | 지금은 계정당 하나다. 학원이나 요일마다 다르면 테이블로 나눈다 |
 | 만료까지의 시간 | 배정 도착 시각 + 1시간으로 뒀다. 명세서는 만료 시점을 결정 필요로 적었다 |
 | 만료된 링크의 화면 | 명세서 P-05는 "404와 같은 화면", 입력 검증과 상태 정의는 "이 링크는 끝났어요"다. 스키마는 뒤쪽을 지원한다 |
 | 끝난 계획의 보관 | 명세서는 "세션은 종료 후 삭제"로 고지한다. 익명화한 행을 남기는 것을 고지 문구에 넣어야 한다 |
 | 정리 시간, 앞뒤 간격, 늦추는 한도 | 가정값 1분, 2분, 2분 |
-| 인증번호 재발송 간격, 같은 학원으로 보는 거리 | 가정값 1분, 50m |
+| 인증번호 재발송 간격 | 가정값 1분 |
 | 제외 반경 | `NO_PARKING`·`YELLOW_*`·`CCTV`·`RESIDENT_PARKING`의 `BUFFER_M`. 단속 카메라가 비추는 구간은 데이터에 없다 |
 | 어린이보호구역 데이터의 모양 | 경계가 없고 시설 위치만 있으면 반경 300m로 넣는다 |
 | 실시간 주차대수의 범위 | 시영 주차장만 제공한다. 강남구 운영 공영주차장이 포함되는지 |
-| 장소 검색 API | 어느 지도 사업자를 쓰는지. `PLACE_ID`의 형식과 대소문자 구분이 달라진다. 도보 경로는 카카오맵 `v2/routing/walk`로 정했지만 장소 검색 사업자는 아직 정하지 않았다 |
+| 장소 검색 API (보류) | 지금은 앱 SDK 검색을 쓰므로 서버의 장소 검색은 보류다. 서버가 쓰게 되면 어느 지도 사업자를 쓰는지. `PLACE_ID`의 형식과 대소문자 구분이 달라진다. 도보 경로는 카카오맵 `v2/routing/walk`로 정했지만 장소 검색 사업자는 아직 정하지 않았다 |
 | 아이 도보 속도 | 보행자 경로 API가 실패했을 때 `WALK_MIN` 추정에 쓰는 설정값. `DepartureGuide:ChildWalkKmh` 4.0(가정)으로 뒀다 |
-| 교통 소통 정보의 저장 | 서버 5분 캐시다. DB 테이블 없이 메모리 캐시로 둔다고 가정했다 |
+| 교통 소통 정보의 저장 | 이력은 `TRAFFIC_*` 테이블에 쌓는다(n8n 수집기, 대치동 TOPIS·평촌 GITS). 서버가 실시간 값을 따로 호출·캐시할지, 최신 회차를 읽을지는 T18에서 정한다. 서버가 따로 부르면 같은 키의 일일 한도를 나눠 쓴다 |
 | 잠금 순서의 실제 검증 | 이 문서의 잠금 순서는 실행해 보지 않았다. 구현할 때 같은 시간표로 계획 생성과 탑승 처리를 동시에 보내 교착과 정원 초과가 없는지 확인한다 |
 | DB 시간대 | 서버 코드와 DB의 현재 시각이 같은 시간대여야 한다. 배포처가 정해지면 맞춘다 |

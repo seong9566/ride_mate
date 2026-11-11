@@ -19,6 +19,7 @@
 | 테이블 목록·컬럼·코드 값 | `docs/architecture/schema.md` |
 | 라우트·응답 code·커서 페이징·API 명세 | `docs/api.md` |
 | 설정·비밀값·로그·입력 처리·인증 | `docs/security.md` |
+| 도로 소통 수집(n8n)·공공 교통 API 키 | `n8n/README.md` |
 | 네이밍·코드 스타일 | `docs/coding-style.md` |
 | 규칙을 그렇게 정한 이유(결정 기록) | `docs/adr/README.md` |
 | 기능 요구사항(화면 동작·입력 검증·데이터·상태 문구) | `docs/spec/README.md` → 해당 시트 |
@@ -62,8 +63,10 @@
 
 ## 작업 흐름
 
-- 백엔드 작업의 통합 브랜치는 `backend`다. 작업마다 `backend`에서 브랜치를 만들고 `backend`를 base로 PR을 연다(`gh pr create --base backend`). 워크트리도 `backend`에서 판다. 시작은 `start-task` 스킬로 한다.
-- `main`과 `backend`에 직접 커밋하지 않는다.
+- 백엔드 작업의 통합 브랜치는 `backend-dev`다. 작업마다 `backend-dev`에서 브랜치를 만들고 `backend-dev`를 base로 PR을 연다(`gh pr create --base backend-dev`). 워크트리도 `backend-dev`에서 판다. 시작은 `start-task` 스킬로 한다.
+- `backend`는 배포 브랜치다. `backend`에 push되면 맥의 self-hosted runner가 API 서버를 다시 띄운다(`.github/workflows/backend-deploy.yml`, README §배포).
+- `backend-dev` → `backend` 반영(배포)은 사용자가 지시할 때만 한다. `backend-dev`를 head, `backend`를 base로 PR을 열고 머지 커밋으로 머지한다: `merge-pr.sh <PR#> --method merge`.
+- `main`, `backend`, `backend-dev`에 직접 커밋하지 않는다.
 - `backend` → `main` 반영은 사용자가 지시할 때만 한다. `backend`를 head, `main`을 base로 PR을 열고 머지 커밋으로 머지한다: `merge-pr.sh <PR#> --method merge`(스쿼시하면 두 브랜치의 SHA가 갈라져 다음 반영 PR이 거짓 충돌을 낸다).
 - 기능(feat)·버그(fix) 작업은 PM vault 작업 카드 단위로 한다. 카드 위치: `personal_dev/wiki/projects/ride-mate/tasks/`
   - 카드가 없으면 먼저 만든다. 빈 번호를 `ls`로 확인한다. 쓰인 번호를 재사용하지 않는다.
