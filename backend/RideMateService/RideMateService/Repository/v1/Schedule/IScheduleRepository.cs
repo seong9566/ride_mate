@@ -29,6 +29,13 @@ public interface IScheduleRepository
     Task<bool> UpdateScheduleDayPickupAsync(int scheduleDaySeq, bool pickupYn, DateTime updateDt, string updateUser,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// 시간표를 지운다. 날짜별 예외 → 요일 → 시간표 순으로 표마다 UPDATE 한 번씩 DELETE_YN을 켜고, 시간표의 DISPLAY_NAME은 빈 문자열로 바꾼다.
+    /// 시간표 행이 바뀌지 않았으면 false를 돌려준다.
+    /// </summary>
+    Task<bool> DeleteScheduleAsync(int timetableId, IReadOnlyCollection<int> timetableDayIds, DateTime updateDt,
+        string updateUser, CancellationToken cancellationToken = default);
+
     // ====== Dapper
 
     /// <summary>
@@ -85,4 +92,35 @@ public interface IScheduleRepository
     /// </summary>
     Task<List<ScheduleItemDto>> GetScheduleItemsAsync(int childId, int? timetableId, IDbTransaction? transaction = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 그 계정의 살아 있는 아이의 살아 있는 시간표가 가리키는 학원의 학원가 ID를 돌려준다.
+    /// 시간표가 없거나 남의 것이거나 학원에 좌표가 없으면 null이다. 트랜잭션 없이 부르면 잠글 학원가를 고르는 일반 조회이고,
+    /// 트랜잭션을 넘기면 FOR SHARE 잠금 읽기로 최신 값을 읽고 그 아이·시간표·학원 행을 잠근다(학원가가 채워지지 못하게 한다).
+    /// </summary>
+    Task<int?> GetScheduleAreaIdAsync(int userId, int timetableId, IDbTransaction? transaction = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 학원가 행을 FOR UPDATE로 잠근다. 같은 학원가의 계획 생성과 시간표 삭제를 직렬화한다. 트랜잭션의 첫 문장으로 부른다.
+    /// </summary>
+    Task LockAreaAsync(int areaId, IDbTransaction transaction, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 그 아이의 살아 있는 시간표이면 그 시간표의 요일 ID를 삭제 여부와 관계없이 모두 돌려준다. 없거나 남의 것이면 null이다.
+    /// </summary>
+    Task<List<int>?> GetLiveScheduleDayIdsAsync(int childId, int timetableId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 그 요일들을 가리키는 진행 중인 픽업 계획(PLANNED·STARTED·WAITING·STOPPED·LOOPING)의 ID를 일반 조회로 돌려준다. 잠그지 않는다.
+    /// </summary>
+    Task<List<int>> GetActivePickupPlanIdsAsync(IReadOnlyCollection<int> timetableDayIds, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 그 계획들을 PK 순서로 FOR UPDATE 잠그고, 최신 값으로 아직 그 요일들을 가리키는 진행 중 계획인 것의 ID만 돌려준다.
+    /// </summary>
+    Task<List<int>> LockActivePickupPlanIdsAsync(IReadOnlyCollection<int> pickupPlanIds,
+        IReadOnlyCollection<int> timetableDayIds, IDbTransaction transaction, CancellationToken cancellationToken = default);
 }

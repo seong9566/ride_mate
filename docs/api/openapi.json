@@ -941,6 +941,40 @@
         ]
       }
     },
+    "/api/v1/Schedule/M/sign/DeleteSchedule": {
+      "delete": {
+        "tags": [
+          "Schedule"
+        ],
+        "summary": "시간표 삭제",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Schedule_Request_DeleteScheduleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Schedule_Response_DeleteScheduleResultDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/api/v1/User/M/sign/UpdateHome": {
       "patch": {
         "tags": [
@@ -1875,6 +1909,19 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_Dto_v1_Schedule_Request_DeleteScheduleDto": {
+        "required": [
+          "scheduleSeq"
+        ],
+        "type": "object",
+        "properties": {
+          "scheduleSeq": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_Dto_v1_Schedule_Request_SchedulePlaceDto": {
         "required": [
           "address",
@@ -1936,6 +1983,16 @@
               "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Schedule_Response_ScheduleOverlapItemDto"
             },
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Schedule_Response_DeleteScheduleResultDto": {
+        "type": "object",
+        "properties": {
+          "scheduleSeq": {
+            "type": "integer",
+            "format": "int32"
           }
         },
         "additionalProperties": false
@@ -2288,6 +2345,24 @@
           },
           "data": {
             "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Schedule_Response_AddScheduleResultDto"
+          },
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Schedule_Response_DeleteScheduleResultDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Schedule_Response_DeleteScheduleResultDto"
           },
           "code": {
             "type": "integer",

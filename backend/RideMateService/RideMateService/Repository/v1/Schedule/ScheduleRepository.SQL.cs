@@ -344,4 +344,190 @@ public partial class ScheduleRepository
             throw;
         }
     }
+
+    /// <summary>
+    /// 그 계정의 살아 있는 아이의 살아 있는 시간표가 가리키는 학원의 학원가 ID를 돌려준다.
+    /// 시간표가 없거나 남의 것이거나 학원에 좌표가 없으면 null이다. 트랜잭션 없이 부르면 잠글 학원가를 고르는 일반 조회이고,
+    /// 트랜잭션을 넘기면 FOR SHARE 잠금 읽기로 최신 값을 읽고 그 아이·시간표·학원 행을 잠근다(학원가가 채워지지 못하게 한다).
+    /// </summary>
+    public async Task<int?> GetScheduleAreaIdAsync(int userId, int timetableId, IDbTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("userId", userId);
+            dp.Add("timetableId", timetableId);
+
+            var sql = @"
+                SELECT a.AREA_ID
+                FROM TIMETABLE AS t
+                INNER JOIN CHILD AS c
+                        ON c.CHILD_ID = t.CHILD_ID
+                       AND c.DELETE_YN = FALSE
+                INNER JOIN ACADEMY AS a
+                        ON a.ACADEMY_ID = t.ACADEMY_ID
+                       AND a.DELETE_YN = FALSE
+                WHERE t.TIMETABLE_ID = @timetableId
+                  AND t.DELETE_YN = FALSE
+                  AND c.USER_ID = @userId";
+            if (transaction is not null)
+                sql += @"
+                FOR SHARE";
+
+            return await _dapper.QueryFirstOrDefaultAsync<int?>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 학원가 행을 FOR UPDATE로 잠근다. 같은 학원가의 계획 생성과 시간표 삭제를 직렬화한다. 트랜잭션의 첫 문장으로 부른다.
+    /// </summary>
+    public async Task LockAreaAsync(int areaId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("areaId", areaId);
+
+            // 잠금이 목적이라 schema.md 배정 1단계와 같은 문장을 쓴다(DELETE_YN 조건 없음)
+            var sql = @"
+                SELECT a.AREA_ID
+                FROM AREA AS a
+                WHERE a.AREA_ID = @areaId
+                FOR UPDATE";
+
+            await _dapper.QueryFirstOrDefaultAsync<int?>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 그 아이의 살아 있는 시간표이면 그 시간표의 요일 ID를 삭제 여부와 관계없이 모두 돌려준다. 없거나 남의 것이면 null이다.
+    /// </summary>
+    public async Task<List<int>?> GetLiveScheduleDayIdsAsync(int childId, int timetableId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("childId", childId);
+            dp.Add("timetableId", timetableId);
+
+            // 진행 중 계획 확인에 쓰므로 요일의 DELETE_YN은 거르지 않는다. 시간표가 있고 요일이 없으면 NULL 한 행이 나온다
+            var sql = @"
+                SELECT td.TIMETABLE_DAY_ID
+                FROM TIMETABLE AS t
+                LEFT JOIN TIMETABLE_DAY AS td
+                       ON td.TIMETABLE_ID = t.TIMETABLE_ID
+                WHERE t.TIMETABLE_ID = @timetableId
+                  AND t.CHILD_ID = @childId
+                  AND t.DELETE_YN = FALSE
+                ORDER BY td.TIMETABLE_DAY_ID";
+
+            var rows = (await _dapper.QueryAsync<int?>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false))
+                .ToList();
+            return rows.Count == 0
+                ? null
+                : rows.Where(x => x is not null).Select(x => x!.Value).ToList();
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 그 요일들을 가리키는 진행 중인 픽업 계획(PLANNED·STARTED·WAITING·STOPPED·LOOPING)의 ID를 일반 조회로 돌려준다. 잠그지 않는다.
+    /// </summary>
+    public async Task<List<int>> GetActivePickupPlanIdsAsync(IReadOnlyCollection<int> timetableDayIds,
+        IDbTransaction transaction, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("timetableDayIds", timetableDayIds);
+
+            // PICKUP_PLAN은 DELETE_YN이 "끝나서 익명화됨"이라 조건을 붙이지 않고 STATUS로 가린다(database.md).
+            // 끝난 계획은 TIMETABLE_DAY_ID가 NULL이라 걸리지 않는다.
+            // 이 조회는 잠그지 않는다 — UK_PICKUP_PLAN_01(보조 인덱스)로 잠그면 계획을 끝내는 트랜잭션(계획 PK 잠금 → TIMETABLE_DAY_ID 비우기)과 교착한다
+            var sql = @"
+                SELECT p.PICKUP_PLAN_ID
+                FROM PICKUP_PLAN AS p
+                WHERE p.TIMETABLE_DAY_ID IN @timetableDayIds
+                  AND p.STATUS IN ('PLANNED', 'STARTED', 'WAITING', 'STOPPED', 'LOOPING')
+                ORDER BY p.PICKUP_PLAN_ID";
+
+            var rows = await _dapper.QueryAsync<int>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            return rows.ToList();
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 그 계획들을 PK 순서로 FOR UPDATE 잠그고, 최신 값으로 아직 그 요일들을 가리키는 진행 중 계획인 것의 ID만 돌려준다.
+    /// </summary>
+    public async Task<List<int>> LockActivePickupPlanIdsAsync(IReadOnlyCollection<int> pickupPlanIds,
+        IReadOnlyCollection<int> timetableDayIds, IDbTransaction transaction, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("pickupPlanIds", pickupPlanIds);
+            dp.Add("timetableDayIds", timetableDayIds);
+
+            // 잠금 읽기는 최신 커밋을 보므로 그사이 끝난 계획(STATUS가 바뀌고 TIMETABLE_DAY_ID가 NULL)은 빠진다.
+            // 계획을 끝내는 트랜잭션과 같이 PK부터 잠그도록 PRIMARY를 강제한다(옵티마이저가 UK_PICKUP_PLAN_01을 고르면 교착한다)
+            var sql = @"
+                SELECT p.PICKUP_PLAN_ID
+                FROM PICKUP_PLAN AS p FORCE INDEX (PRIMARY)
+                WHERE p.PICKUP_PLAN_ID IN @pickupPlanIds
+                  AND p.TIMETABLE_DAY_ID IN @timetableDayIds
+                  AND p.STATUS IN ('PLANNED', 'STARTED', 'WAITING', 'STOPPED', 'LOOPING')
+                ORDER BY p.PICKUP_PLAN_ID
+                FOR UPDATE";
+
+            var rows = await _dapper.QueryAsync<int>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            return rows.ToList();
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
 }

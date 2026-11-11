@@ -282,6 +282,22 @@
 - `opened`·`openedDt`·`leaving`·`leavingDt`는 `LINK_OPENED`·`CHILD_LEAVING` 이벤트의 유무와 첫 이벤트의 `EVENT_DT`다. 이 이벤트를 기록하는 API(링크를 여는 웹)는 아직 없어서 지금은 항상 false와 null이다.
 - 필드·예시는 Notion "[차량] 픽업 링크 문자 발송"(https://app.notion.com/p/415aa638eaf881bbbd18cf5d4fd3de6d), "[차량] 정차 후 다시 알림 문자 발송"(https://app.notion.com/p/415aa638eaf881068dd4f1dbf92a31cd), "[차량] 픽업 링크 전달 상태 조회"(https://app.notion.com/p/415aa638eaf881a0a737d13571e9265c) 페이지가 정본이다.
 
+## 시간표 삭제
+
+- 주소는 `DELETE /api/v1/Schedule/M/sign/DeleteSchedule`다. 인증 구간 `sign`이 있어 Bearer가 필요하고, 사용자는 JWT의 `sub`에서 꺼낸다. JSON 본문 `{ "scheduleSeq": 12 }`를 보낸다(`DeleteQrLogin`과 같이 DELETE에 본문을 싣는다).
+- 시간표와 그 요일·날짜별 예외를 함께 삭제 표시한다. 되돌릴 수 없다. 처리 순서와 잠금은 `architecture/schema.md`의 `TIMETABLE` 절이다.
+
+| code | 상황 | HTTP |
+|---|---|---|
+| 200 | 지웠다. `data.scheduleSeq`는 지운 시간표 ID다 | 200 |
+| 400 | `scheduleSeq`가 없거나 1보다 작다. 빠지면 `ProblemDetails`다 | 400 |
+| 401 | 인증 실패이거나 계정이 없다 | 401 |
+| 404 | 시간표가 없거나, 로그인한 계정 아이의 시간표가 아니거나, 이미 지웠다. 셋을 구분하지 않는다 | 404 |
+| 409 | 이 시간표의 요일을 가리키는 진행 중 픽업 계획(`PLANNED`·`STARTED`·`WAITING`·`STOPPED`·`LOOPING`)이 있다. `data`는 null이다 | 409 |
+
+- 400·401·409의 `message`는 `잘못된 요청입니다.`, 404는 `대상을 찾을 수 없습니다.`다(시간표 API의 기존 404 문구). 앱은 `code`로 나눈다.
+- 진행 중인지는 계획의 `STATUS`로만 본다. `EXPIRE_DT`가 지났는데 만료 처리가 아직 돌지 않은 계획도 진행 중으로 보고 409다.
+
 ## 커서 페이징
 
 - 목록은 오프셋 페이징을 쓰지 않고 `CursorResult<T>`(`items`·`lastCursor`·`hasMore`)로 돌려준다.

@@ -352,6 +352,123 @@ public class ScheduleService : IScheduleService
         }
     }
 
+    /// <summary>
+    /// 시간표 삭제
+    /// </summary>
+    public Task<ResponseModel<DeleteScheduleResultDto>> DeleteScheduleService(DeleteScheduleDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        return RetryOnDeadlockAsync(() => DeleteScheduleCoreAsync(dto, cancellationToken), cancellationToken);
+    }
+
+    // 교착은 RetryOnDeadlockAsync가 다시 실행하므로 여기서는 500으로 바꾸지 않고 올려보낸다
+    private async Task<ResponseModel<DeleteScheduleResultDto>> DeleteScheduleCoreAsync(DeleteScheduleDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // 1) 입력 검증 — API 모델 검증을 거치지 않은 호출도 같은 규칙으로 거절한다
+            if (dto is not { scheduleSeq: >= 1 })
+                return Fail<DeleteScheduleResultDto>(400, "잘못된 요청입니다.");
+
+            // 2) 인증 확인 — sub 클레임이 없으면 거절하고, 계정이 있는지는 아래 잠금 조회가 확인한다
+            var loginUserId = GetLoginUserId();
+            if (loginUserId is null)
+                return Fail<DeleteScheduleResultDto>(401, "잘못된 요청입니다.");
+
+            // 3) 잠글 학원가를 트랜잭션 밖에서 고른다 — 트랜잭션 안에서 먼저 조회하면 AREA 잠금 전의 스냅샷이 고정된다(schema.md 배정 1단계).
+            //    없으면(남의 시간표·좌표 없는 학원) 잠그지 않고, 소유는 아래 잠금 뒤 조회가 다시 확인한다
+            var areaId = await _scheduleRepository.GetScheduleAreaIdAsync(loginUserId.Value, dto.scheduleSeq.Value,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            DateTime thisTime = NowToSecond();
+            var transaction = await _context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            await using var transactionScope = transaction.ConfigureAwait(false);
+            var dbTransaction = transaction.GetDbTransaction();
+
+            // 4) 첫 문장으로 학원가를 잠근다 — 계획 생성(AREA → TIMETABLE_DAY)과 같은 잠금을 먼저 잡아 삭제 도중에 새 계획이 끼어들지 못한다
+            if (areaId is not null)
+            {
+                await _scheduleRepository.LockAreaAsync(areaId.Value, dbTransaction, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            // 5) 계정을 잠가 같은 계정의 시간표 등록·스위치 변경과 직렬화한다 — 잠근 뒤에 일반 조회를 해야 직전 커밋을 본다
+            var lockedUserId = await _scheduleRepository.LockUserInfoAsync(loginUserId.Value, dbTransaction,
+                cancellationToken).ConfigureAwait(false);
+            if (lockedUserId is null) // 계정이 없거나 지워졌다
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return Fail<DeleteScheduleResultDto>(401, "잘못된 요청입니다.");
+            }
+
+            // 6) 학원가를 잠그지 않았으면 일반 조회 전에 잠금 읽기로 최신 학원가를 다시 본다. 학원 행을 공유 잠금해 그사이 좌표·학원가가 채워지지 못하게 한다.
+            //    트랜잭션 밖 조회 뒤에 학원가가 채워졌으면 지금 잠근다 — 순서는 어긋나지만 일반 조회 전이라 아래 조회가 그 잠금 뒤의 커밋을 본다(드문 교착은 재시도)
+            if (areaId is null)
+            {
+                var latestAreaId = await _scheduleRepository.GetScheduleAreaIdAsync(lockedUserId.Value,
+                    dto.scheduleSeq.Value, dbTransaction, cancellationToken).ConfigureAwait(false);
+                if (latestAreaId is not null)
+                {
+                    await _scheduleRepository.LockAreaAsync(latestAreaId.Value, dbTransaction, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+            }
+
+            // 7) 이 계정 아이의 살아 있는 시간표인지 확인한다. 아이가 없거나 남의 것이거나 이미 지웠으면 찾을 수 없다
+            var childId = await _scheduleRepository.GetLiveChildIdAsync(lockedUserId.Value, dbTransaction,
+                cancellationToken).ConfigureAwait(false);
+            var dayIds = childId is null
+                ? null
+                : await _scheduleRepository.GetLiveScheduleDayIdsAsync(childId.Value, dto.scheduleSeq.Value,
+                    dbTransaction, cancellationToken).ConfigureAwait(false);
+            if (dayIds is null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return Fail<DeleteScheduleResultDto>(404, "대상을 찾을 수 없습니다.");
+            }
+
+            // 8) 진행 중인 픽업 계획이 있으면 지우지 않는다. 학원가 잠금으로 새 계획은 생길 수 없으니 일반 조회로 후보를 찾고,
+            //    후보만 PK 순서로 잠가 최신 상태를 다시 본다 — 그사이 끝난 계획은 빠진다. 계획을 끝내는 트랜잭션과 같이 계획 PK부터 잠근다
+            if (dayIds.Count > 0)
+            {
+                var candidatePlanIds = await _scheduleRepository.GetActivePickupPlanIdsAsync(dayIds, dbTransaction,
+                    cancellationToken).ConfigureAwait(false);
+                var activePlanIds = candidatePlanIds.Count == 0
+                    ? candidatePlanIds
+                    : await _scheduleRepository.LockActivePickupPlanIdsAsync(candidatePlanIds, dayIds, dbTransaction,
+                        cancellationToken).ConfigureAwait(false);
+                if (activePlanIds.Count > 0)
+                {
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return Fail<DeleteScheduleResultDto>(409, "잘못된 요청입니다.");
+                }
+            }
+
+            // 9) 날짜별 예외 → 요일 → 시간표 순으로 지운다 — 감사 컬럼은 Service가 채운다
+            if (!await _scheduleRepository.DeleteScheduleAsync(dto.scheduleSeq.Value, dayIds, thisTime, AuditUser,
+                    cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return Fail<DeleteScheduleResultDto>(500, "서버에서 요청을 처리하지 못하였습니다.");
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+            return new ResponseModel<DeleteScheduleResultDto>
+            {
+                message = "요청이 정상 처리되었습니다.",
+                data = new DeleteScheduleResultDto { scheduleSeq = dto.scheduleSeq.Value },
+                code = 200
+            };
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && !IsDeadlock(ex)) // 요청 취소·교착은 그대로 올려보낸다
+        {
+            LogServiceException(ex);
+            return Fail<DeleteScheduleResultDto>(500, "서버에서 요청을 처리하지 못하였습니다.");
+        }
+    }
+
     // 로그인한 계정(JWT sub)의 ID — 클레임이 없거나 숫자가 아니면 null. 부른 쪽이 401로 바꾼다
     private int? GetLoginUserId()
     {
