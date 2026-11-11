@@ -941,6 +941,40 @@
         ]
       }
     },
+    "/api/v1/Schedule/M/sign/UpdateSchedule": {
+      "patch": {
+        "tags": [
+          "Schedule"
+        ],
+        "summary": "시간표 편집",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Schedule_Request_UpdateScheduleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Schedule_Response_AddScheduleResultDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/api/v1/Schedule/M/sign/DeleteSchedule": {
       "delete": {
         "tags": [
@@ -1967,6 +2001,46 @@
           },
           "pickupYn": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Schedule_Request_UpdateScheduleDto": {
+        "required": [
+          "days",
+          "displayName",
+          "endTime",
+          "place",
+          "scheduleSeq"
+        ],
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "place": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Schedule_Request_SchedulePlaceDto"
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          "endTime": {
+            "minLength": 1,
+            "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+            "type": "string"
+          },
+          "confirmOverlap": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "scheduleSeq": {
+            "type": "integer",
+            "format": "int32"
           }
         },
         "additionalProperties": false

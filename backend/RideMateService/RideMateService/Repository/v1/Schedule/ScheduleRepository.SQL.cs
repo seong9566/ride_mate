@@ -205,9 +205,9 @@ public partial class ScheduleRepository
     }
 
     /// <summary>
-    /// 그 좌표를 담는 살아 있는 학원가의 ID를 돌려준다. 학원가 밖이면 null이다.
+    /// 그 좌표를 담는 살아 있는 학원가의 ID를 돌려준다. 학원가 밖이면 null이다. 트랜잭션 밖에서 부를 때는 넘기지 않는다.
     /// </summary>
-    public async Task<int?> FindAreaIdAsync(decimal lat, decimal lng, IDbTransaction transaction,
+    public async Task<int?> FindAreaIdAsync(decimal lat, decimal lng, IDbTransaction? transaction = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -448,6 +448,74 @@ public partial class ScheduleRepository
             return rows.Count == 0
                 ? null
                 : rows.Where(x => x is not null).Select(x => x!.Value).ToList();
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 그 아이의 살아 있는 시간표 한 건의 학원 ID·하원 시각을 돌려준다. 없거나 남의 것이면 null이다.
+    /// </summary>
+    public async Task<LiveScheduleRow?> GetLiveScheduleAsync(int childId, int timetableId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("childId", childId);
+            dp.Add("timetableId", timetableId);
+
+            var sql = @"
+                SELECT t.TIMETABLE_ID AS TimetableId,
+                       t.ACADEMY_ID AS AcademyId,
+                       t.END_TIME AS EndTime
+                FROM TIMETABLE AS t
+                WHERE t.TIMETABLE_ID = @timetableId
+                  AND t.CHILD_ID = @childId
+                  AND t.DELETE_YN = FALSE";
+
+            return await _dapper.QueryFirstOrDefaultAsync<LiveScheduleRow>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 그 시간표의 요일 행을 삭제 여부와 관계없이 모두 돌려준다. 편집에서 뺄 요일·되살릴 요일을 고르는 데 쓴다.
+    /// </summary>
+    public async Task<List<ScheduleDayRow>> GetScheduleDayRowsAsync(int timetableId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("timetableId", timetableId);
+
+            // 되살릴 행과 진행 중 계획 확인에 쓰므로 요일의 DELETE_YN은 거르지 않는다
+            var sql = @"
+                SELECT td.TIMETABLE_DAY_ID AS TimetableDayId,
+                       td.DAY_OF_WEEK AS DayOfWeek,
+                       td.DELETE_YN AS DeleteYn
+                FROM TIMETABLE_DAY AS td
+                WHERE td.TIMETABLE_ID = @timetableId
+                ORDER BY td.TIMETABLE_DAY_ID";
+
+            var rows = await _dapper.QueryAsync<ScheduleDayRow>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            return rows.ToList();
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
         {

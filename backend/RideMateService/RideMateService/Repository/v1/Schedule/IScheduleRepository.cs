@@ -36,6 +36,14 @@ public interface IScheduleRepository
     Task<bool> DeleteScheduleAsync(int timetableId, IReadOnlyCollection<int> timetableDayIds, DateTime updateDt,
         string updateUser, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// 시간표를 편집한다. 뺀 요일의 날짜별 예외 → 뺀 요일 → 되살릴 요일 → 새 요일 → 시간표 순으로 쓴다.
+    /// 되살린 요일은 픽업 스위치를 켜고 LAST_PICKUP_DATE는 그대로 둔다. 시간표 행이 바뀌지 않았으면 false를 돌려준다.
+    /// </summary>
+    Task<bool> UpdateScheduleAsync(int timetableId, int academyId, string displayName, TimeSpan endTime,
+        IReadOnlyCollection<int> deleteDayIds, IReadOnlyCollection<int> reviveDayIds, IReadOnlyCollection<TimetableDay> newDays,
+        DateTime updateDt, string updateUser, CancellationToken cancellationToken = default);
+
     // ====== Dapper
 
     /// <summary>
@@ -74,9 +82,9 @@ public interface IScheduleRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 그 좌표를 담는 살아 있는 학원가의 ID를 돌려준다. 학원가 밖이면 null이다.
+    /// 그 좌표를 담는 살아 있는 학원가의 ID를 돌려준다. 학원가 밖이면 null이다. 트랜잭션 밖에서 부를 때는 넘기지 않는다.
     /// </summary>
-    Task<int?> FindAreaIdAsync(decimal lat, decimal lng, IDbTransaction transaction,
+    Task<int?> FindAreaIdAsync(decimal lat, decimal lng, IDbTransaction? transaction = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -110,6 +118,18 @@ public interface IScheduleRepository
     /// 그 아이의 살아 있는 시간표이면 그 시간표의 요일 ID를 삭제 여부와 관계없이 모두 돌려준다. 없거나 남의 것이면 null이다.
     /// </summary>
     Task<List<int>?> GetLiveScheduleDayIdsAsync(int childId, int timetableId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 그 아이의 살아 있는 시간표 한 건의 학원 ID·하원 시각을 돌려준다. 없거나 남의 것이면 null이다.
+    /// </summary>
+    Task<LiveScheduleRow?> GetLiveScheduleAsync(int childId, int timetableId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 그 시간표의 요일 행을 삭제 여부와 관계없이 모두 돌려준다. 편집에서 뺄 요일·되살릴 요일을 고르는 데 쓴다.
+    /// </summary>
+    Task<List<ScheduleDayRow>> GetScheduleDayRowsAsync(int timetableId, IDbTransaction transaction,
         CancellationToken cancellationToken = default);
 
     /// <summary>

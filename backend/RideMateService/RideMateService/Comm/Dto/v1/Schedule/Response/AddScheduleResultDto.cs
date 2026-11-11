@@ -1,7 +1,7 @@
 namespace RideMateService.Comm.Dto.v1.Schedule.Response;
 
 /// <summary>
-/// 시간표 등록 결과. 200이면 schedule만, 103(겹침 경고)이면 overlaps만 채워진다
+/// 시간표 등록·편집 결과. 200이면 schedule만, 103(겹침 경고)이면 overlaps만 채워진다
 /// </summary>
 public class AddScheduleResultDto
 {
