@@ -101,4 +101,36 @@ public partial class ChildInfoRepository
             throw;
         }
     }
+
+    /// <summary>
+    /// 같은 번호 해시의 살아 있는 아이가 (어느 계정에든) 있는지 돌려준다.
+    /// </summary>
+    public async Task<bool> ExistsLivePhoneHashAsync(string phoneHash, IDbTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("phoneHash", phoneHash);
+
+            var sql = @"
+                SELECT t.CHILD_ID
+                FROM CHILD AS t
+                WHERE t.PHONE_HASH = @phoneHash
+                  AND t.DELETE_YN = FALSE
+                LIMIT 1";
+
+            var childId = await _dapper.QueryFirstOrDefaultAsync<int?>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            return childId is not null;
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
 }

@@ -11,7 +11,7 @@ public interface IChildInfoRepository
     Task<UserInfo?> GetUserInfoAsync(int userId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 아이 등록. 저장 뒤 model의 아이 ID가 채워진다. 같은 번호의 살아 있는 아이가 있으면 MySQL 중복 키 예외(1062)를 올려보낸다.
+    /// 아이 등록. 저장 뒤 model의 아이 ID가 채워진다. 같은 번호의 살아 있는 아이가 있으면 MySQL 중복 키 예외(1062)를 로그 없이 올려보낸다.
     /// </summary>
     Task<bool> AddChildAsync(Child model, CancellationToken cancellationToken = default);
 
@@ -33,5 +33,11 @@ public interface IChildInfoRepository
     /// 그 계정에 살아 있는 아이가 있는지 돌려준다.
     /// </summary>
     Task<bool> ExistsLiveChildAsync(int userId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 같은 번호 해시의 살아 있는 아이가 (어느 계정에든) 있는지 돌려준다.
+    /// </summary>
+    Task<bool> ExistsLivePhoneHashAsync(string phoneHash, IDbTransaction transaction,
         CancellationToken cancellationToken = default);
 }

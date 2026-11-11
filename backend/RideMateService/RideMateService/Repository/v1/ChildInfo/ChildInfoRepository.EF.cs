@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using MySql.Data.MySqlClient;
 using RideMateService.Commons.DBModels;
 
 namespace RideMateService.Repository.v1.ChildInfo;
@@ -28,7 +29,7 @@ public partial class ChildInfoRepository
     }
 
     /// <summary>
-    /// 아이 등록. 저장 뒤 model의 아이 ID가 채워진다. 같은 번호의 살아 있는 아이가 있으면 MySQL 중복 키 예외(1062)를 올려보낸다.
+    /// 아이 등록. 저장 뒤 model의 아이 ID가 채워진다. 같은 번호의 살아 있는 아이가 있으면 MySQL 중복 키 예외(1062)를 로그 없이 올려보낸다.
     /// </summary>
     public async Task<bool> AddChildAsync(Child model, CancellationToken cancellationToken = default)
     {
@@ -38,13 +39,25 @@ public partial class ChildInfoRepository
 
             return await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false) > 0;
         }
-        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        // 요청 취소는 로그 없이 올려보낸다. 중복 키(1062)는 정상 업무 결과(103)라 에러로 기록하지 않고 Service에 맡긴다
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && !IsDuplicateKey(ex))
         {
             _logService.LogMessage(ex.ToString());
 #if DEBUG
             _logService.ConsoleWarning(ex.ToString());
 #endif
-            throw; // Service가 500(중복 키는 103)으로 바꾼다
+            throw; // Service가 500으로 바꾼다
         }
+    }
+
+    private static bool IsDuplicateKey(Exception? ex)
+    {
+        for (; ex is not null; ex = ex.InnerException)
+        {
+            if (ex is MySqlException { Number: 1062 })
+                return true;
+        }
+
+        return false;
     }
 }

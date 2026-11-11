@@ -108,7 +108,15 @@ public class ChildInfoService : IChildInfoService
                 return Fail(409, "이미 등록된 아이가 있습니다.");
             }
 
-            // 7) 저장 — 감사 컬럼은 Service가 채운다
+            // 7) 다른 계정의 살아 있는 아이와 번호가 같으면 미리 거절한다 — 정상 거절 경로가 중복 키 예외를 거치지 않게 한다
+            if (await _childInfoRepository.ExistsLivePhoneHashAsync(phoneHash, transaction.GetDbTransaction(),
+                    cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return Fail(103, "이미 다른 계정에 등록된 번호예요.");
+            }
+
+            // 8) 저장 — 감사 컬럼은 Service가 채운다
             var child = new Child
             {
                 UserId = lockedUserId.Value,
@@ -131,7 +139,7 @@ public class ChildInfoService : IChildInfoService
                     return Fail(500, "서버에서 요청을 처리하지 못하였습니다.");
                 }
             }
-            catch (Exception ex) when (IsDuplicateKey(ex)) // 다른 계정의 살아 있는 아이와 번호가 같다(UK_CHILD_01)
+            catch (Exception ex) when (IsDuplicateKey(ex)) // 7)을 지난 뒤 다른 계정이 먼저 같은 번호를 커밋한 경합(UK_CHILD_01)
             {
                 _context.ChangeTracker.Clear();
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -140,7 +148,7 @@ public class ChildInfoService : IChildInfoService
 
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
-            // 8) 응답
+            // 9) 응답
             return new ResponseModel<AddChildResultDto>
             {
                 message = "요청이 정상 처리되었습니다.",
