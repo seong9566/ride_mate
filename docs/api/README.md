@@ -31,7 +31,7 @@
 
 ### 요청 검증 실패 (400)
 
-요청 값(JSON 본문, query)이 DTO 검증 규칙에 맞지 않거나 JSON 형식이 깨졌으면 ASP.NET Core의 `ProblemDetails`가 나간다. `errors`에 필드별 메시지가 들어간다.
+요청 값(JSON 본문, query, form)이 DTO나 Controller 매개변수의 검증 특성에 맞지 않거나 JSON 형식이 깨졌으면 ASP.NET Core의 `ProblemDetails`가 나간다. `errors`에 필드별 메시지가 들어간다.
 
 - status (integer): 400
 - errors (object): 필드 이름을 키로, 메시지 목록(array of strings)을 값으로 갖는다

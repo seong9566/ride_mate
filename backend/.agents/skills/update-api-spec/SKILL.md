@@ -28,7 +28,7 @@ description: RideMate 백엔드의 라우트·DTO나 응답 code·message·오�
 | Authorization | 경로에 `sign` 구간이 있으면 mandatory, 없으면 불필요(`backend/docs/security.md`) |
 | 요청 값의 위치(JSON 본문, query, form) | Controller 매개변수의 `[FromBody]`·`[FromQuery]`·`[FromForm]` |
 | 필드 이름, 타입 | 요청·응답 DTO와 갱신한 `openapi.json` |
-| 필수 여부 | DTO의 검증 특성(`[Required]` 등). 특성이 없으면 Service의 입력 검증 |
+| 필수 여부 | DTO나 Controller 매개변수의 검증 특성(`[Required]` 등). 특성이 없으면 Service의 입력 검증 |
 | `message`, `code`, 예외 상황 | Service의 `return` 문 |
 | 오류 본문 | Controller의 `[ProducesResponseType]`과 `ApiControllerBase` |
 
@@ -46,7 +46,7 @@ description: RideMate 백엔드의 라우트·DTO나 응답 code·message·오�
 ## 완료 조건
 
 - [ ] `sh scripts/update-api-spec.sh`가 종료 코드 0으로 끝났다.
-- [ ] 라우트·DTO를 바꿨으면 커밋하기 전에 `git status --short -- ../docs/api/`에 `openapi.json`이 보이고, `git diff -- ../docs/api/openapi.json`에 의도한 라우트·DTO 변경만 있다(처음 생긴 파일은 diff에 나오지 않으니 내용을 직접 본다). 라우트·DTO를 바꾸지 않았으면 `openapi.json`의 diff가 없다.
+- [ ] 라우트·DTO·Controller 특성(`[Consumes]`·`[ProducesResponseType]`·`[SwaggerOperation]` 등)을 바꿨으면 커밋하기 전에 `git status --short -- ../docs/api/`에 `openapi.json`이 보이고, `git diff -- ../docs/api/openapi.json`에 의도한 변경만 있다(처음 생긴 파일은 diff에 나오지 않으니 내용을 직접 본다). 셋 다 바꾸지 않았으면 `openapi.json`의 diff가 없다.
 - [ ] `lsof -ti :5168`의 출력이 없다(임시 서버가 종료됐다).
 - [ ] 바꾼 API마다 `docs/api/{도메인}/{액션}.md`가 있고, `README.md` 목록의 경로가 `openapi.json`의 경로와 같다.
 - [ ] API 문서에 자리표시자와 양식 주석이 남지 않았다. `grep -rnE '\{[^}"]*[가-힣][^}"]*\}|<!--' ../docs/api/*/`의 출력이 없다.
