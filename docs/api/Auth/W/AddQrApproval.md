@@ -6,7 +6,7 @@
 
 ## Header
 
-- Authorization(Bearer jwt) : 쿠키(`rm_web_session`)
+- Authorization(Bearer jwt) : 쿠키(`__Host-rm_web_session`)
 - Content-Type : `application/json`
 
 ## Request
@@ -52,7 +52,7 @@ data (object): QR 허용 결과
   "message": "잘못된 요청입니다.",
   "data": {
     "qrState": "SCANNED",
-    "signedIn": false,
+    "signedIn": true,
     "signupRequired": false
   },
   "code": 409

@@ -148,7 +148,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `CANCEL_REASON` | VARCHAR(20) | Y | `CANCELED`일 때만 채운다. `USER`(차에서 취소·새 QR), `DRIVING`(차가 출발해 중단), `PHONE`(휴대폰에서 취소) |
 | `USER_ID` | INT | Y | FK → USER_INFO. 휴대폰에서 본인 확인을 마치면(`VERIFIED`) 채운다 |
 | `EXPIRE_DT` | DATETIME | N | 만료 시각(만든 뒤 3분) |
-| `LAST_POLL_DT` | DATETIME | Y | 차량이 마지막으로 결과를 물은 시각. 5초 안에 다시 물으면 `slow_down`이다 |
+| `LAST_POLL_DT` | DATETIME | Y | 차량이 마지막으로 결과를 물은 시각. 폴링 간격(3초)보다 1초 넘게 빨리 다시 물으면 `slow_down`이다 |
 
 - 상태는 `PENDING` → `SCANNED` → `VERIFIED` → `APPROVED` → `USED`로만 나아간다. 휴대폰에서 "다른 번호로 로그인"을 고르면 `VERIFIED`에서 `SCANNED`로 돌아가고 `USER_ID`를 비운다. `USED` 전이면 어느 상태에서든 `CANCELED`가 될 수 있다.
 - 만료는 상태가 아니라 `EXPIRE_DT`로 판단한다. 만료된 행에서는 휴대폰의 모든 요청을 거절하고, 차량은 `APPROVED`가 아니면 `expired_token`을 받는다.

@@ -83,8 +83,8 @@
 | `otp_mismatch` | 인증번호가 틀렸다. `remaining_attempts`에 잠기기 전까지 남은 횟수가 들어간다 |
 | `signup_required` | 인증번호는 맞지만 계정이 없다. 휴대폰 웹에서 가입해야 한다 |
 | `authorization_pending` | QR 승인을 기다리는 중이다. `qr_status`에 `PENDING`·`SCANNED`·`VERIFIED` 중 현재 단계가 들어간다 |
-| `slow_down` | 마지막 상태 조회 뒤 5초가 지나기 전에 다시 조회했다 |
-| `expired_token` | 승인되지 않은 채 QR의 3분 유효 시간이 지났다 |
+| `slow_down` | 초 단위 서버 시각이 마지막 상태 조회 시각 + (`interval` - 1)초보다 이르다. 현재 `interval` 3에서는 2초 미만이다 |
+| `expired_token` | 승인 전 QR의 3분 유효 시간이 지났거나, 승인 뒤 수령 유예 60초까지 지났다 |
 | `access_denied` | QR 로그인이 취소됐다. `cancel_reason`에 `USER`·`DRIVING`·`PHONE` 중 취소 사유가 들어간다 |
 
 - 서버 오류(500)는 다른 API와 같은 `ProblemDetails`다.
@@ -94,7 +94,7 @@
 
 - 주소는 `POST /api/v1/Auth/M/DeviceAuthorization`이고 인증 구간이 없다. 요청은 `application/x-www-form-urlencoded`이며 `device_id`를 보낸다.
 - 이 API도 OAuth 2.0 기기 인증 형식이라 공통 응답으로 감싸지 않는다. 성공에는 `Cache-Control: no-store`가 붙고, 실패는 `Token`과 같은 `{ "error", "error_description" }` 형식이다.
-- 성공 필드는 `device_code`(차량이 보관), `user_code`(QR 주소에 포함), `verification_uri`, `verification_uri_complete`, `expires_in`(180), `interval`(5), `match_code`(숫자 4자리)다.
+- 성공 필드는 `device_code`(차량이 보관), `user_code`(QR 주소에 포함), `verification_uri`, `verification_uri_complete`, `expires_in`(180), `interval`(3), `match_code`(숫자 4자리)다.
 
 ```json
 {
@@ -103,7 +103,7 @@
   "verification_uri": "http://localhost:3000/qr",
   "verification_uri_complete": "http://localhost:3000/qr?code=AAAAAAAAAAAAAAAAAAAAAA",
   "expires_in": 180,
-  "interval": 5,
+  "interval": 3,
   "match_code": "0427"
 }
 ```
@@ -143,7 +143,7 @@
 | `DELETE /api/v1/Auth/W/sign/DeleteQrLogin` | 휴대폰에서 QR 로그인을 취소한다 |
 | `DELETE /api/v1/Auth/W/sign/DeleteWebSession` | 현재 웹 세션을 끝내고, 진행 중인 QR을 다른 번호로 인증할 수 있게 되돌린다 |
 
-`W/sign` API는 `rm_web_session` 쿠키가 필요하다. 쿠키 값은 응답 본문에 나오지 않는다.
+`W/sign` API는 `__Host-rm_web_session` 쿠키가 필요하다. 쿠키 값은 응답 본문에 나오지 않는다. 이 구간의 404·409 응답은 인증된 요청이므로 `signedIn`이 `true`다.
 
 | `qrState` | 의미 |
 |---|---|
@@ -166,6 +166,10 @@
 | `terms_required` | 처음 가입하면서 필수 약관 둘 모두에 동의하지 않았다 |
 
 처음 온 번호에서 이름이 비어 있으면 HTTP 200, code 101, `signupRequired: true`를 돌려준다. 인증번호는 사용 처리하지 않으므로 같은 `phone`·`code`·`userCode`에 공백을 지운 이름과 `agreeTerms: true`, `agreePrivacy: true`를 붙여 다시 요청한다.
+
+- `DetailQrLogin`은 쿠키가 없거나 유효하지 않은 요청이 이미 `VERIFIED`인 QR을 열면 409 `USED`를 돌려준다. 같은 계정의 유효한 쿠키로 열 때만 `VERIFIED`를 그대로 보여준다.
+- 휴대폰 취소는 현재 세션 계정으로 `VERIFIED`된, 만료 전 QR만 가능하다. `PENDING`·`SCANNED`는 현재 상태로 409, 다른 계정은 `USED`, 만료된 QR은 `EXPIRED`로 409다. 이미 `CANCELED`면 200이다.
+- `DeleteWebSession`의 JSON 본문은 선택이다. 본문이나 `userCode`가 없으면 QR을 되돌리지 않고 현재 웹 세션만 끝낸다.
 
 ## 커서 페이징
 

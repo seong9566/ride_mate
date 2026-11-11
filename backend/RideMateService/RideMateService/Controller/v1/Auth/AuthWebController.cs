@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using RideMateService.Comm;
 using RideMateService.Comm.Dto.v1.Auth.Request;
 using RideMateService.Comm.Dto.v1.Auth.Response;
@@ -112,7 +113,15 @@ public class AuthWebController : ApiControllerBase
     {
         try
         {
-            var model = await _authService.AddWebSessionService(dto, cancellationToken).ConfigureAwait(false);
+            var authentication = await HttpContext.AuthenticateAsync(WebSessionAuthenticationHandler.AuthenticationScheme)
+                .ConfigureAwait(false);
+            int? currentWebSessionId = null;
+            if (authentication.Succeeded
+                && int.TryParse(authentication.Principal?.FindFirstValue("sid"), out var authenticatedSessionId))
+                currentWebSessionId = authenticatedSessionId;
+
+            var model = await _authService.AddWebSessionService(dto, currentWebSessionId, cancellationToken)
+                .ConfigureAwait(false);
             var webSessionToken = model.data?.webSessionToken;
             if (model.code == 200 && !string.IsNullOrEmpty(webSessionToken))
                 SetWebSessionCookie(webSessionToken);
@@ -206,7 +215,8 @@ public class AuthWebController : ApiControllerBase
     [Consumes("application/json")]
     [SwaggerOperation(Summary = "다른 번호로 로그인(휴대폰 웹)")]
     [ProducesResponseType(typeof(ResponseModel<WebQrLoginDto>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> DeleteWebSession([FromBody] DeleteWebSessionDto dto,
+    public async Task<IActionResult> DeleteWebSession(
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] DeleteWebSessionDto? dto,
         CancellationToken cancellationToken)
     {
         try
@@ -245,6 +255,10 @@ public class AuthWebController : ApiControllerBase
 
     private void DeleteWebSessionCookie()
     {
-        Response.Cookies.Delete(WebSessionAuthenticationHandler.CookieName, new CookieOptions { Path = "/" });
+        Response.Cookies.Delete(WebSessionAuthenticationHandler.CookieName, new CookieOptions
+        {
+            Secure = true,
+            Path = "/"
+        });
     }
 }

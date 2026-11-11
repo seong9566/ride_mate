@@ -6,7 +6,7 @@
 
 ## Header
 
-- Authorization(Bearer jwt) : 쿠키(`rm_web_session`)
+- Authorization(Bearer jwt) : 쿠키(`__Host-rm_web_session`)
 - Content-Type : `application/json`
 
 ## Request
@@ -67,4 +67,8 @@ data (object): QR 취소 결과
 2. 요청 없음: 404, code 404, `qrState` `NOT_FOUND`
 3. 이미 사용함·다른 계정: 409, code 409, `qrState` `USED`
 4. 이미 취소됨: 기존 취소 사유를 유지하고 성공으로 본다. 200, code 200
-5. 서버 에러: 500 Internal Server Error (공통 오류 형식)
+5. 만료됨: 409, code 409, `qrState` `EXPIRED`
+6. 본인 확인 전: 이 계정으로 `VERIFIED`가 되기 전(`PENDING`·`SCANNED`)에는 취소할 수 없다. 409, code 409, `qrState`는 지금 상태
+7. 서버 에러: 500 Internal Server Error (공통 오류 형식)
+
+- 휴대폰의 취소 버튼은 허용 화면에만 있으므로, 이 계정으로 본인 확인을 마친 QR만 취소한다.

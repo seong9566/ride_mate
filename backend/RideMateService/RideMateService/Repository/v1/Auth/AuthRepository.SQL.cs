@@ -45,7 +45,7 @@ public partial class AuthRepository
     /// <summary>
     /// device_code 해시로 살아 있는 QR 로그인 요청을 찾아 FOR UPDATE로 잠그고 ID를 돌려준다.
     /// </summary>
-    public async Task<int?> LockQrLoginByDeviceCodeHashAsync(string hash, IDbTransaction transaction,
+    public async Task<(int qrLoginId, int? userId)?> LockQrLoginByDeviceCodeHashAsync(string hash, IDbTransaction transaction,
         CancellationToken cancellationToken = default)
     {
         try
@@ -54,14 +54,16 @@ public partial class AuthRepository
             dp.Add("hash", hash);
 
             var sql = @"
-                SELECT t.QR_LOGIN_ID
+                SELECT t.QR_LOGIN_ID AS QrLoginId,
+                       t.USER_ID AS UserId
                 FROM QR_LOGIN AS t
                 WHERE t.DEVICE_CODE_HASH = @hash
                   AND t.DELETE_YN = FALSE
                 FOR UPDATE";
 
-            return await _dapper.QueryFirstOrDefaultAsync<int?>(
+            var row = await _dapper.QueryFirstOrDefaultAsync<QrLoginLockRow>(
                 new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            return row is null ? null : (row.QrLoginId, row.UserId);
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
         {
@@ -119,6 +121,69 @@ public partial class AuthRepository
                 SELECT t.USER_ID
                 FROM USER_INFO AS t
                 WHERE t.USER_ID = @userId
+                  AND t.DELETE_YN = FALSE
+                FOR UPDATE";
+
+            return await _dapper.QueryFirstOrDefaultAsync<int?>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 전화번호 해시로 살아 있는 계정을 FOR UPDATE 잠그고 ID를 돌려준다.
+    /// </summary>
+    public async Task<int?> LockUserInfoByPhoneHashAsync(string phoneHash, IDbTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("phoneHash", phoneHash);
+
+            var sql = @"
+                SELECT t.USER_ID
+                FROM USER_INFO AS t
+                WHERE t.PHONE_HASH = @phoneHash
+                  AND t.DELETE_YN = FALSE
+                FOR UPDATE";
+
+            return await _dapper.QueryFirstOrDefaultAsync<int?>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 살아 있는 WEB 세션을 PK로 FOR UPDATE 잠그고 ID를 돌려준다.
+    /// </summary>
+    public async Task<int?> LockWebLoginSessionAsync(int loginSessionId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("loginSessionId", loginSessionId);
+
+            var sql = @"
+                SELECT t.LOGIN_SESSION_ID
+                FROM LOGIN_SESSION AS t
+                WHERE t.LOGIN_SESSION_ID = @loginSessionId
+                  AND t.SESSION_TYPE = 'WEB'
                   AND t.DELETE_YN = FALSE
                 FOR UPDATE";
 
@@ -204,8 +269,8 @@ public partial class AuthRepository
     }
 
     /// <summary>
-    /// 같은 계정·기기의 살아 있는 차량 로그인 세션 ID를 잠그지 않고 조회한다.
-    /// 호출 전에 USER_INFO 행을 PK로 FOR UPDATE 잠가 차량 세션 생성 경로를 직렬화해야 한다.
+    /// 같은 계정·기기의 살아 있는 차량 로그인 세션 ID를 FOR UPDATE 잠금 읽기로 조회한다.
+    /// 호출 전에 USER_INFO 행을 PK로 잠가 차량 세션 생성 경로를 직렬화하며, 잠금 읽기라 최신 커밋을 본다.
     /// </summary>
     public async Task<IReadOnlyList<int>> GetCarSessionIdsAsync(int userId, string deviceId, IDbTransaction? transaction = null,
         CancellationToken cancellationToken = default)
@@ -216,48 +281,19 @@ public partial class AuthRepository
             dp.Add("userId", userId);
             dp.Add("deviceId", deviceId);
 
-            // USER_INFO PK 잠금으로 차량 세션 생성 경로가 직렬화돼 있다. 범위 잠금의 갭 락을 피하려고 조회 자체는 잠그지 않는다
+            // USER_INFO PK 잠금으로 같은 계정의 차량 세션 생성 경로가 직렬화돼 있다. 잠금 읽기로 최신 커밋을 본다
             var sql = @"
                 SELECT t.LOGIN_SESSION_ID
                 FROM LOGIN_SESSION AS t
                 WHERE t.USER_ID = @userId
                   AND t.DEVICE_ID = @deviceId
                   AND t.SESSION_TYPE = 'CAR'
-                  AND t.DELETE_YN = FALSE";
+                  AND t.DELETE_YN = FALSE
+                FOR UPDATE";
 
             var ids = await _dapper.QueryAsync<int>(
                 new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
             return ids.ToList();
-        }
-        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
-        {
-            _logService.LogMessage(ex.ToString());
-#if DEBUG
-            _logService.ConsoleWarning(ex.ToString());
-#endif
-            throw;
-        }
-    }
-
-    /// <summary>
-    /// 전화번호 해시가 같은 살아 있는 계정의 ID를 조회한다.
-    /// </summary>
-    public async Task<int?> GetUserIdByPhoneHashAsync(string phoneHash, IDbTransaction? transaction = null,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var dp = new DynamicParameters();
-            dp.Add("phoneHash", phoneHash);
-
-            var sql = @"
-                SELECT t.USER_ID
-                FROM USER_INFO AS t
-                WHERE t.PHONE_HASH = @phoneHash
-                  AND t.DELETE_YN = FALSE";
-
-            return await _dapper.QueryFirstOrDefaultAsync<int?>(
-                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
         {
@@ -358,6 +394,13 @@ public partial class AuthRepository
 #endif
             throw;
         }
+    }
+
+    private sealed class QrLoginLockRow
+    {
+        public int QrLoginId { get; set; }
+
+        public int? UserId { get; set; }
     }
 
     private sealed class WebSessionRow

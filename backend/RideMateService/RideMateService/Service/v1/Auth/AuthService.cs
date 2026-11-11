@@ -27,7 +27,9 @@ public class AuthService : IAuthService
     private const int PhoneVerificationMaxFailCount = 5;
     private const int PhoneVerificationLockMinutes = 10;
     private const int QrLoginExpireMinutes = 3;
-    private const int QrLoginPollSeconds = 5;
+    private const int QrLoginPollSeconds = 3;
+    private const int QrLoginSlowDownSeconds = QrLoginPollSeconds - 1;
+    private const int QrLoginApprovedGraceSeconds = 60;
     private const int QrLoginInsertMaxAttempts = 3;
     private const int WebSessionDays = 90;
     private const string ConsentTermsVersion = "2026-11-11";
@@ -306,6 +308,10 @@ public class AuthService : IAuthService
             await using var transactionScope = transaction.ConfigureAwait(false);
             var qrLoginId = await _authRepository.LockQrLoginByUserCodeHashAsync(CreateUserCodeHash(userCode),
                 transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+            var lockedUserId = webSessionUserId is null
+                ? null
+                : await _authRepository.LockUserInfoAsync(webSessionUserId.Value,
+                    transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
             var qrLogin = qrLoginId is null
                 ? null
                 : await _authRepository.GetQrLoginAsync(qrLoginId.Value, cancellationToken).ConfigureAwait(false);
@@ -341,8 +347,6 @@ public class AuthService : IAuthService
             }
 
             // 4) 웹 세션 계정을 QR에 연결하고 계정 표시 값을 읽는다
-            var lockedUserId = await _authRepository.LockUserInfoAsync(webSessionUserId.Value,
-                transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
             var user = lockedUserId is null
                 ? null
                 : await _authRepository.GetUserInfoAsync(lockedUserId.Value, cancellationToken).ConfigureAwait(false);
@@ -379,13 +383,13 @@ public class AuthService : IAuthService
     /// <summary>
     /// 휴대폰 웹 인증번호 확인·가입
     /// </summary>
-    public Task<ResponseModel<WebQrLoginDto>> AddWebSessionService(AddWebSessionDto dto,
+    public Task<ResponseModel<WebQrLoginDto>> AddWebSessionService(AddWebSessionDto dto, int? currentWebSessionId,
         CancellationToken cancellationToken = default)
     {
-        return RetryOnDeadlockAsync(() => AddWebSessionCoreAsync(dto, cancellationToken));
+        return RetryOnDeadlockAsync(() => AddWebSessionCoreAsync(dto, currentWebSessionId, cancellationToken));
     }
 
-    private async Task<ResponseModel<WebQrLoginDto>> AddWebSessionCoreAsync(AddWebSessionDto dto,
+    private async Task<ResponseModel<WebQrLoginDto>> AddWebSessionCoreAsync(AddWebSessionDto dto, int? currentWebSessionId,
         CancellationToken cancellationToken)
     {
         try
@@ -401,9 +405,21 @@ public class AuthService : IAuthService
             var transaction = await _context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
             await using var transactionScope = transaction.ConfigureAwait(false);
 
-            // 2) 번호의 최근 인증 잠금 확인
+            // 2) 일반 조회보다 먼저 번호 전체 → LOGIN → QR → 계정 → 기존 WEB 세션 순으로 잠근다
             var latestId = await _authRepository.LockLatestPhoneVerificationAsync(phoneHash,
                 transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+            var verificationId = await _authRepository.LockLatestPhoneVerificationByPurposeAsync(phoneHash, "LOGIN",
+                transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+            var qrLoginId = await _authRepository.LockQrLoginByUserCodeHashAsync(CreateUserCodeHash(dto.userCode!),
+                transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+            var userId = await _authRepository.LockUserInfoByPhoneHashAsync(phoneHash,
+                transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+            var lockedWebSessionId = currentWebSessionId is null
+                ? null
+                : await _authRepository.LockWebLoginSessionAsync(currentWebSessionId.Value,
+                    transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+
+            // 3) 잠금 뒤 최신 인증번호와 QR 요청을 EF로 읽어 판정한다
             var latest = latestId is null
                 ? null
                 : await _authRepository.GetPhoneVerificationAsync(latestId.Value, cancellationToken).ConfigureAwait(false);
@@ -414,9 +430,6 @@ public class AuthService : IAuthService
                 return WebError("otp_locked", retryAfter: retryAfter);
             }
 
-            // 3) 로그인용 최근 인증번호 잠금
-            var verificationId = await _authRepository.LockLatestPhoneVerificationByPurposeAsync(phoneHash, "LOGIN",
-                transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
             var verification = verificationId is null
                 ? null
                 : await _authRepository.GetPhoneVerificationAsync(verificationId.Value, cancellationToken).ConfigureAwait(false);
@@ -462,13 +475,10 @@ public class AuthService : IAuthService
                         remainingAttempts: PhoneVerificationMaxFailCount - verification.FailCnt);
             }
 
-            // 6) QR 요청 잠금·상태 판정
-            var qrLoginId = await _authRepository.LockQrLoginByUserCodeHashAsync(CreateUserCodeHash(dto.userCode!),
-                transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
             var qrLogin = qrLoginId is null
                 ? null
                 : await _authRepository.GetQrLoginAsync(qrLoginId.Value, cancellationToken).ConfigureAwait(false);
-            var stateError = GetQrStateError(qrLogin, thisTime);
+            var stateError = GetQrStateError(qrLogin, thisTime, userId);
             if (stateError is not null)
             {
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -476,8 +486,6 @@ public class AuthService : IAuthService
             }
 
             // 7) 계정 확인·가입 — QR 잠금 뒤 USER_INFO를 잠가 전역 잠금 순서를 지킨다
-            var userId = await _authRepository.GetUserIdByPhoneHashAsync(phoneHash,
-                transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
             UserInfo? user;
             if (userId is null)
             {
@@ -543,11 +551,7 @@ public class AuthService : IAuthService
             }
             else
             {
-                var lockedUserId = await _authRepository.LockUserInfoAsync(userId.Value,
-                    transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
-                user = lockedUserId is null
-                    ? null
-                    : await _authRepository.GetUserInfoAsync(lockedUserId.Value, cancellationToken).ConfigureAwait(false);
+                user = await _authRepository.GetUserInfoAsync(userId.Value, cancellationToken).ConfigureAwait(false);
                 if (user is null)
                 {
                     await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -571,7 +575,13 @@ public class AuthService : IAuthService
                 return WebServerError();
             }
 
-            // 9) 새 웹 세션 저장 — 기존 WEB 세션은 끝내지 않는다
+            // 9) 이 브라우저의 기존 WEB 세션을 끝내고 새 웹 세션을 저장한다
+            if (lockedWebSessionId is not null)
+            {
+                await _authRepository.EndLoginSessionsAsync(new[] { lockedWebSessionId.Value }, thisTime, AuditUser,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
             var webSessionToken = Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(32));
             var webSession = new LoginSession
             {
@@ -646,7 +656,7 @@ public class AuthService : IAuthService
             var qrLogin = qrLoginId is null
                 ? null
                 : await _authRepository.GetQrLoginAsync(qrLoginId.Value, cancellationToken).ConfigureAwait(false);
-            var stateError = GetQrStateError(qrLogin, thisTime, userId);
+            var stateError = GetQrStateError(qrLogin, thisTime, userId, signedIn: true);
             if (stateError is not null)
             {
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -657,7 +667,7 @@ public class AuthService : IAuthService
             if (qrLogin!.Status != "VERIFIED" || qrLogin.UserId != userId)
             {
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return QrConflict(qrLogin.Status);
+                return QrConflict(qrLogin.Status, signedIn: true);
             }
 
             qrLogin.Status = "APPROVED";
@@ -730,14 +740,29 @@ public class AuthService : IAuthService
                 });
             }
 
-            // 3) 이미 사용한 요청과 다른 계정이 잡은 요청은 취소하지 않는다
-            if (qrLogin.Status == "USED" || (qrLogin.UserId is not null && qrLogin.UserId != userId))
+            // 3) 만료된 요청은 취소하지 않는다
+            if (qrLogin.ExpireDt <= thisTime)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return QrConflict("EXPIRED", signedIn: true);
+            }
+
+            // 4) 다른 계정이 확인했거나 이미 끝난 요청은 취소하지 않는다
+            if ((qrLogin.UserId is not null && qrLogin.UserId != userId)
+                || qrLogin.Status is "USED" or "APPROVED")
             {
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
                 return QrConflict("USED", signedIn: true);
             }
 
-            // 4) 휴대폰 취소 상태 저장
+            // 5) 아직 본인 확인 전이면 현재 상태를 돌려준다
+            if (qrLogin.Status != "VERIFIED")
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return QrConflict(qrLogin.Status, signedIn: true);
+            }
+
+            // 6) 같은 계정으로 본인 확인한 QR만 휴대폰 취소 상태로 저장한다
             qrLogin.Status = "CANCELED";
             qrLogin.CancelReason = "PHONE";
             qrLogin.UpdateDt = thisTime;
@@ -766,18 +791,18 @@ public class AuthService : IAuthService
     /// <summary>
     /// 휴대폰 웹 세션 종료
     /// </summary>
-    public Task<ResponseModel<WebQrLoginDto>> DeleteWebSessionService(DeleteWebSessionDto dto,
+    public Task<ResponseModel<WebQrLoginDto>> DeleteWebSessionService(DeleteWebSessionDto? dto,
         CancellationToken cancellationToken = default)
     {
         return RetryOnDeadlockAsync(() => DeleteWebSessionCoreAsync(dto, cancellationToken));
     }
 
-    private async Task<ResponseModel<WebQrLoginDto>> DeleteWebSessionCoreAsync(DeleteWebSessionDto dto,
+    private async Task<ResponseModel<WebQrLoginDto>> DeleteWebSessionCoreAsync(DeleteWebSessionDto? dto,
         CancellationToken cancellationToken)
     {
         try
         {
-            if (dto is null || dto.userCode?.Length > 64 || !TryGetWebClaims(out var userId, out var loginSessionId))
+            if (dto?.userCode?.Length > 64 || !TryGetWebClaims(out var userId, out var loginSessionId))
                 return WebError("invalid_request");
 
             DateTime thisTime = NowToSecond();
@@ -786,13 +811,19 @@ public class AuthService : IAuthService
             string? qrState = null;
 
             // 1) 요청한 QR이 이 계정의 VERIFIED 상태면 SCANNED로 되돌린다
-            if (!string.IsNullOrEmpty(dto.userCode))
+            int? qrLoginId = null;
+            if (!string.IsNullOrEmpty(dto?.userCode))
             {
-                var qrLoginId = await _authRepository.LockQrLoginByUserCodeHashAsync(CreateUserCodeHash(dto.userCode),
+                qrLoginId = await _authRepository.LockQrLoginByUserCodeHashAsync(CreateUserCodeHash(dto.userCode),
                     transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
-                var qrLogin = qrLoginId is null
-                    ? null
-                    : await _authRepository.GetQrLoginAsync(qrLoginId.Value, cancellationToken).ConfigureAwait(false);
+            }
+
+            var lockedLoginSessionId = await _authRepository.LockWebLoginSessionAsync(loginSessionId,
+                transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+
+            if (qrLoginId is not null)
+            {
+                var qrLogin = await _authRepository.GetQrLoginAsync(qrLoginId.Value, cancellationToken).ConfigureAwait(false);
                 if (qrLogin is not null && qrLogin.ExpireDt > thisTime
                     && qrLogin.Status == "VERIFIED" && qrLogin.UserId == userId)
                 {
@@ -811,10 +842,10 @@ public class AuthService : IAuthService
             }
 
             // 2) sid가 가리키는 WEB 세션만 끝낸다
-            var session = await _authRepository.GetWebLoginSessionAsync(loginSessionId, cancellationToken).ConfigureAwait(false);
-            if (session is not null && session.UserId == userId)
+            if (lockedLoginSessionId is not null)
             {
-                await _authRepository.EndLoginSessionsAsync(new[] { loginSessionId }, thisTime, AuditUser, cancellationToken)
+                await _authRepository.EndLoginSessionsAsync(new[] { lockedLoginSessionId.Value }, thisTime, AuditUser,
+                        cancellationToken)
                     .ConfigureAwait(false);
             }
 
@@ -884,11 +915,11 @@ public class AuthService : IAuthService
             var transaction = await _context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
             await using var transactionScope = transaction.ConfigureAwait(false);
 
-            var qrLoginId = await _authRepository.LockQrLoginByDeviceCodeHashAsync(deviceCodeHash,
+            var qrLoginLock = await _authRepository.LockQrLoginByDeviceCodeHashAsync(deviceCodeHash,
                 transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
-            var qrLogin = qrLoginId is null
+            var qrLogin = qrLoginLock is null
                 ? null
-                : await _authRepository.GetQrLoginAsync(qrLoginId.Value, cancellationToken).ConfigureAwait(false);
+                : await _authRepository.GetQrLoginAsync(qrLoginLock.Value.qrLoginId, cancellationToken).ConfigureAwait(false);
             if (qrLogin is null || qrLogin.DeviceId != deviceId)
             {
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -1095,6 +1126,10 @@ public class AuthService : IAuthService
         // 2) 번호의 최근 인증 잠금 확인
         var latestId = await _authRepository.LockLatestPhoneVerificationAsync(phoneHash,
             transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+        var verificationId = await _authRepository.LockLatestPhoneVerificationByPurposeAsync(phoneHash, "LOGIN",
+            transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+        var userId = await _authRepository.LockUserInfoByPhoneHashAsync(phoneHash,
+            transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
         var latest = latestId is null
             ? null
             : await _authRepository.GetPhoneVerificationAsync(latestId.Value, cancellationToken).ConfigureAwait(false);
@@ -1105,9 +1140,7 @@ public class AuthService : IAuthService
             return TokenError("otp_locked", "verification is temporarily locked", retryAfter: retryAfter);
         }
 
-        // 3) 로그인용 최근 인증번호 잠금
-        var verificationId = await _authRepository.LockLatestPhoneVerificationByPurposeAsync(phoneHash, "LOGIN",
-            transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+        // 3) 로그인용 최근 인증번호 확인
         var verification = verificationId is null
             ? null
             : await _authRepository.GetPhoneVerificationAsync(verificationId.Value, cancellationToken).ConfigureAwait(false);
@@ -1170,8 +1203,6 @@ public class AuthService : IAuthService
         }
 
         // 7) 계정 확인 — 가입은 휴대폰 웹에서 처리한다
-        var userId = await _authRepository.GetUserIdByPhoneHashAsync(phoneHash,
-            transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
         if (userId is null)
         {
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -1216,11 +1247,17 @@ public class AuthService : IAuthService
         var transaction = await _context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         await using var transactionScope = transaction.ConfigureAwait(false);
 
-        var qrLoginId = await _authRepository.LockQrLoginByDeviceCodeHashAsync(deviceCodeHash,
+        var qrLoginLock = await _authRepository.LockQrLoginByDeviceCodeHashAsync(deviceCodeHash,
             transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
-        var qrLogin = qrLoginId is null
+        if (qrLoginLock?.userId is not null)
+        {
+            await _authRepository.LockUserInfoAsync(qrLoginLock.Value.userId.Value,
+                transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+        }
+
+        var qrLogin = qrLoginLock is null
             ? null
-            : await _authRepository.GetQrLoginAsync(qrLoginId.Value, cancellationToken).ConfigureAwait(false);
+            : await _authRepository.GetQrLoginAsync(qrLoginLock.Value.qrLoginId, cancellationToken).ConfigureAwait(false);
         if (qrLogin is null || qrLogin.DeviceId != deviceId)
         {
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -1228,7 +1265,7 @@ public class AuthService : IAuthService
         }
 
         // 3) 폴링 간격 확인
-        if (qrLogin.LastPollDt is not null && thisTime < qrLogin.LastPollDt.Value.AddSeconds(QrLoginPollSeconds))
+        if (qrLogin.LastPollDt is not null && thisTime < qrLogin.LastPollDt.Value.AddSeconds(QrLoginSlowDownSeconds))
         {
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
             return TokenError("slow_down", "authorization request is being polled too quickly");
@@ -1251,6 +1288,12 @@ public class AuthService : IAuthService
         // 5) 승인된 요청이면 차량 세션을 만들고 QR을 사용 완료로 바꾼다
         if (qrLogin.Status == "APPROVED")
         {
+            if (qrLogin.ExpireDt.AddSeconds(QrLoginApprovedGraceSeconds) <= thisTime)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return TokenError("expired_token", "device code has expired");
+            }
+
             if (qrLogin.UserId is null)
             {
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -1508,20 +1551,20 @@ public class AuthService : IAuthService
     }
 
     private static ResponseModel<WebQrLoginDto>? GetQrStateError(QrLogin? qrLogin, DateTime thisTime,
-        int? webSessionUserId = null)
+        int? webSessionUserId = null, bool signedIn = false)
     {
         if (qrLogin is null)
         {
             return new ResponseModel<WebQrLoginDto>
             {
                 message = "잘못된 요청입니다.",
-                data = new WebQrLoginDto { qrState = "NOT_FOUND", signedIn = false },
+                data = new WebQrLoginDto { qrState = "NOT_FOUND", signedIn = signedIn },
                 code = 404
             };
         }
 
         if (qrLogin.Status is "USED" or "APPROVED")
-            return QrConflict("USED");
+            return QrConflict("USED", signedIn);
 
         if (qrLogin.Status == "CANCELED")
         {
@@ -1532,18 +1575,17 @@ public class AuthService : IAuthService
                 {
                     qrState = "CANCELED",
                     cancelReason = qrLogin.CancelReason,
-                    signedIn = false
+                    signedIn = signedIn
                 },
                 code = 409
             };
         }
 
         if (qrLogin.ExpireDt <= thisTime)
-            return QrConflict("EXPIRED");
+            return QrConflict("EXPIRED", signedIn);
 
-        if (qrLogin.Status == "VERIFIED" && webSessionUserId is not null
-            && qrLogin.UserId != webSessionUserId)
-            return QrConflict("USED");
+        if (qrLogin.Status == "VERIFIED" && qrLogin.UserId != webSessionUserId)
+            return QrConflict("USED", signedIn);
 
         return null;
     }

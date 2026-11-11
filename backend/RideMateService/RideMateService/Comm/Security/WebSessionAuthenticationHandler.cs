@@ -14,7 +14,7 @@ namespace RideMateService.Comm.Security;
 public class WebSessionAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
     public const string AuthenticationScheme = "WebSession";
-    public const string CookieName = "rm_web_session";
+    public const string CookieName = "__Host-rm_web_session";
 
     private readonly IAuthRepository _authRepository;
     private readonly IHashService _hashService;

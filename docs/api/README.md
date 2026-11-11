@@ -20,9 +20,9 @@
 | Auth | `GET /api/v1/Auth/W/DetailQrLogin` QR 로그인 진입(휴대폰 웹) | 불필요 | [DetailQrLogin](Auth/W/DetailQrLogin.md) |
 | Auth | `POST /api/v1/Auth/W/AddPhoneVerification` 로그인 인증번호 발송(휴대폰 웹) | 불필요 | [AddPhoneVerification](Auth/W/AddPhoneVerification.md) |
 | Auth | `POST /api/v1/Auth/W/AddWebSession` 인증번호 확인과 가입(휴대폰 웹) | 불필요 | [AddWebSession](Auth/W/AddWebSession.md) |
-| Auth | `POST /api/v1/Auth/W/sign/AddQrApproval` QR 로그인 허용(휴대폰 웹) | 쿠키(`rm_web_session`) | [AddQrApproval](Auth/W/AddQrApproval.md) |
-| Auth | `DELETE /api/v1/Auth/W/sign/DeleteQrLogin` QR 로그인 취소(휴대폰 웹) | 쿠키(`rm_web_session`) | [DeleteQrLogin](Auth/W/DeleteQrLogin.md) |
-| Auth | `DELETE /api/v1/Auth/W/sign/DeleteWebSession` 다른 번호로 로그인(휴대폰 웹) | 쿠키(`rm_web_session`) | [DeleteWebSession](Auth/W/DeleteWebSession.md) |
+| Auth | `POST /api/v1/Auth/W/sign/AddQrApproval` QR 로그인 허용(휴대폰 웹) | 쿠키(`__Host-rm_web_session`) | [AddQrApproval](Auth/W/AddQrApproval.md) |
+| Auth | `DELETE /api/v1/Auth/W/sign/DeleteQrLogin` QR 로그인 취소(휴대폰 웹) | 쿠키(`__Host-rm_web_session`) | [DeleteQrLogin](Auth/W/DeleteQrLogin.md) |
+| Auth | `DELETE /api/v1/Auth/W/sign/DeleteWebSession` 다른 번호로 로그인(휴대폰 웹) | 쿠키(`__Host-rm_web_session`) | [DeleteWebSession](Auth/W/DeleteWebSession.md) |
 
 ## 공통 오류 형식
 

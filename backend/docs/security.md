@@ -28,7 +28,7 @@
 - `PHONE_HASH`는 숫자만 남긴 전화번호를 HMAC 입력으로 쓴다. `USER_INFO`와 `PHONE_VERIFICATION`에서 같은 규칙을 쓴다.
 - `CODE_HASH`는 `"otp:" + 숫자만 남긴 전화번호 + ":" + 6자리 인증번호`를 HMAC 입력으로 쓴다.
 - `QR_LOGIN.DEVICE_CODE_HASH`는 `"qr-device:" + device_code`, `USER_CODE_HASH`는 `"qr-user:" + user_code`를 HMAC 입력으로 쓴다. 두 코드 원문은 DB나 로그에 남기지 않는다.
-- QR 로그인은 3분 동안 유효하고 차량은 5초 간격으로 승인 상태를 조회한다. 차와 휴대폰에는 같은 숫자 4자리 `match_code`를 보여준다.
+- QR 로그인은 3분 동안 유효하고 차량은 3초 간격으로 승인 상태를 조회한다. 초 단위로 내린 서버 시각이 마지막 조회 시각 + 2초보다 이르면 `slow_down`이며, 승인된 QR은 만료 시각 뒤 60초까지 차량이 토큰으로 바꿀 수 있다. 차와 휴대폰에는 같은 숫자 4자리 `match_code`를 보여준다.
 - `device_code`는 QR에 넣지 않고 발급받은 차량만 보관한다. 승인 뒤에도 이 값을 받은 기기만 차량 토큰을 받을 수 있다.
 - 문자 발송은 `ISmsSender`로 분리한다. 현재 구현은 실제로 발송하지 않는 개발용이며, Development 환경에서만 가린 전화번호와 인증번호가 든 메시지를 콘솔 로그에 남긴다. 그 밖의 환경에서는 발송 구현이 없다는 사실만 기록하고 메시지는 남기지 않는다.
 - 실제 문자 사업자를 연결하기 전에 발송 남용 방어를 더한다: IP·기기별 발송 한도와 번호당 시간·일 한도. 지금은 같은 번호 1분에 한 번뿐이라 번호를 바꿔 가며 부르면 발송 비용을 막을 수 없다.
@@ -37,10 +37,12 @@
 ### 휴대폰 웹 세션
 
 - 휴대폰 웹 로그인 상태는 `LOGIN_SESSION.SESSION_TYPE = 'WEB'` 행으로 보관한다. 토큰은 32바이트 난수의 base64url 값이고 DB에는 `Hmac("web-session:" + token)`만 둔다.
-- 토큰은 `rm_web_session` 쿠키로만 전달한다. 쿠키는 `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, `Max-Age=90일`이고 응답 본문에는 넣지 않는다.
+- 토큰은 `__Host-rm_web_session` 쿠키로만 전달한다. 쿠키는 `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, `Max-Age=90일`이고 `Domain`을 두지 않으며 응답 본문에는 넣지 않는다.
 - WEB 세션은 발급 시점부터 90일 동안 유효하다. 사용해도 `EXPIRE_DT`나 쿠키 수명을 늘리지 않으며, 휴대폰 여러 대의 WEB 세션을 함께 유지할 수 있다.
+- 같은 브라우저에서 새 WEB 세션을 만들 때 유효한 기존 세션 쿠키가 있으면 그 세션을 같은 트랜잭션에서 끝낸다.
 - `WebSession` 인증 스킴이 쿠키 해시로 만료되지 않은 WEB 세션과 살아 있는 계정을 조회한다. `/W/sign/` 경로는 이 스킴을, `/M/sign/` 경로는 기존 차량 JWT를 요구한다. 인증 실패 본문은 둘 다 같은 401 공통 형식이다.
 - `SameSite=Lax` 쿠키를 안정적으로 유지하려면 휴대폰 웹을 API와 같은 사이트에 배포해야 한다. 같은 도메인의 하위 주소를 쓰거나 웹 서버가 `/api`를 프록시한다. [ADR-0016]
+- 실기기로 확인할 때는 Secure 쿠키라 HTTPS(또는 터널)가 필요하다. `http://localhost`만 예외다.
 - 처음 가입할 때 서비스 이용약관(`TERMS`)과 개인정보 수집·이용(`PRIVACY`) 동의를 각각 `CONSENT`에 쌓는다. 두 행은 인증번호 행을 가리키며 `VERIFY_METHOD = 'PHONE_OTP'`로 기록한다.
 
 | | access 토큰 | refresh 토큰 |

@@ -6,7 +6,7 @@ QR 주소를 열고 현재 상태를 확인한다. 유효한 웹 세션 쿠키�
 
 ## Header
 
-- Authorization(Bearer jwt) : 불필요. `rm_web_session` 쿠키는 선택
+- Authorization(Bearer jwt) : 불필요. `__Host-rm_web_session` 쿠키는 선택
 
 ## Request
 
@@ -68,7 +68,7 @@ data (object): QR 진행 상태와 휴대폰 화면 표시 값
 ## 예외
 
 1. 요청 없음: `userCode`에 해당하는 QR이 없다. 404, code 404, `qrState` `NOT_FOUND`
-2. 이미 끝남: 이미 허용·사용됐거나 다른 웹 세션 계정이 잡았다. 409, code 409, `qrState` `USED`
+2. 이미 끝남: 이미 허용·사용됐거나, 다른 계정이 본인 확인(`VERIFIED`)을 마친 QR이다. 쿠키 없이 열었을 때도 같다. 409, code 409, `qrState` `USED`
 3. 취소됨: 차량 또는 휴대폰에서 취소했다. 409, code 409, `qrState` `CANCELED`
 4. 만료됨: QR의 3분 유효 시간이 지났다. 409, code 409, `qrState` `EXPIRED`
 5. 요청 검증 실패: 값이 없거나 64자를 넘는다. 400 (공통 오류 형식)

@@ -6,12 +6,12 @@
 
 ## Header
 
-- Authorization(Bearer jwt) : 쿠키(`rm_web_session`)
+- Authorization(Bearer jwt) : 쿠키(`__Host-rm_web_session`)
 - Content-Type : `application/json`
 
 ## Request
 
-JSON 본문이다.
+JSON 본문이다. 본문 없이 불러도 된다(`userCode` 없음과 같다).
 
 - userCode (string): 되돌릴 QR의 코드. 최대 64자 — 선택
 
@@ -29,7 +29,7 @@ data (object): 세션 종료와 QR 되돌림 결과
 - signedIn (boolean): `false`
 - signupRequired (boolean): `false`
 
-성공하면 `rm_web_session` 쿠키를 지운다.
+성공하면 `__Host-rm_web_session` 쿠키를 지운다.
 
 **\<Success>**
 

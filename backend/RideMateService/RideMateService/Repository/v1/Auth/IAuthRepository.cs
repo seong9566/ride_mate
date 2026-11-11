@@ -88,7 +88,7 @@ public interface IAuthRepository
     /// <summary>
     /// device_code 해시로 살아 있는 QR 로그인 요청을 찾아 FOR UPDATE로 잠그고 ID를 돌려준다.
     /// </summary>
-    Task<int?> LockQrLoginByDeviceCodeHashAsync(string hash, IDbTransaction transaction,
+    Task<(int qrLoginId, int? userId)?> LockQrLoginByDeviceCodeHashAsync(string hash, IDbTransaction transaction,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -104,6 +104,18 @@ public interface IAuthRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 전화번호 해시로 살아 있는 계정을 FOR UPDATE 잠그고 ID를 돌려준다.
+    /// </summary>
+    Task<int?> LockUserInfoByPhoneHashAsync(string phoneHash, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 살아 있는 WEB 세션을 PK로 FOR UPDATE 잠그고 ID를 돌려준다.
+    /// </summary>
+    Task<int?> LockWebLoginSessionAsync(int loginSessionId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 전화번호 해시로 살아 있는 가장 최근 휴대폰 인증번호를 찾아 FOR UPDATE로 잠그고 ID를 돌려준다.
     /// </summary>
     Task<int?> LockLatestPhoneVerificationAsync(string phoneHash, IDbTransaction transaction,
@@ -116,16 +128,10 @@ public interface IAuthRepository
         IDbTransaction transaction, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 같은 계정·기기의 살아 있는 차량 로그인 세션 ID를 잠그지 않고 조회한다.
-    /// 호출 전에 USER_INFO 행을 PK로 FOR UPDATE 잠가 차량 세션 생성 경로를 직렬화해야 한다.
+    /// 같은 계정·기기의 살아 있는 차량 로그인 세션 ID를 FOR UPDATE 잠금 읽기로 조회한다.
+    /// 호출 전에 USER_INFO 행을 PK로 잠가 차량 세션 생성 경로를 직렬화하며, 잠금 읽기라 최신 커밋을 본다.
     /// </summary>
     Task<IReadOnlyList<int>> GetCarSessionIdsAsync(int userId, string deviceId, IDbTransaction? transaction = null,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// 전화번호 해시가 같은 살아 있는 계정의 ID를 조회한다.
-    /// </summary>
-    Task<int?> GetUserIdByPhoneHashAsync(string phoneHash, IDbTransaction? transaction = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

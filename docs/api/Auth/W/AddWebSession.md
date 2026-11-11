@@ -43,7 +43,7 @@ data (object): 웹 로그인과 QR 본인 확인 결과
 - matchCode (string): 차와 비교할 숫자 4자리
 - expiresIn (integer): QR 만료까지 남은 초
 
-성공하면 응답의 `Set-Cookie`에 `rm_web_session`이 설정된다. 세션 토큰은 JSON에 들어가지 않는다.
+성공하면 응답의 `Set-Cookie`에 `__Host-rm_web_session`이 설정된다. 세션 토큰은 JSON에 들어가지 않는다.
 
 **\<Success>**
 

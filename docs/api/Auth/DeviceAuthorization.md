@@ -28,7 +28,7 @@ device_id=3f2b8c1e-9a4d-4e7b-b1c2-7d9e0f6a5b43
 - verification_uri (string): QR 로그인 기본 주소
 - verification_uri_complete (string): `user_code`를 `code` query로 포함한 완성 주소
 - expires_in (integer): QR 로그인 유효 시간(초). 180
-- interval (integer): [토큰 발급](Token.md)의 `device_code` 방식을 조회할 최소 간격(초). 5
+- interval (integer): [토큰 발급](Token.md)의 `device_code` 방식을 조회할 최소 간격(초). 3
 - match_code (string): 차와 휴대폰에서 비교하는 숫자 4자리 문자열
 
 **\<Success>**
@@ -40,7 +40,7 @@ device_id=3f2b8c1e-9a4d-4e7b-b1c2-7d9e0f6a5b43
   "verification_uri": "http://localhost:3000/qr",
   "verification_uri_complete": "http://localhost:3000/qr?code=AAAAAAAAAAAAAAAAAAAAAA",
   "expires_in": 180,
-  "interval": 5,
+  "interval": 3,
   "match_code": "0427"
 }
 ```

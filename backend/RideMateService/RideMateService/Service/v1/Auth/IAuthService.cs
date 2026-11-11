@@ -27,7 +27,7 @@ public interface IAuthService
     /// <summary>
     /// 휴대폰 웹 인증번호 확인·가입
     /// </summary>
-    Task<ResponseModel<WebQrLoginDto>> AddWebSessionService(AddWebSessionDto dto,
+    Task<ResponseModel<WebQrLoginDto>> AddWebSessionService(AddWebSessionDto dto, int? currentWebSessionId,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -45,7 +45,7 @@ public interface IAuthService
     /// <summary>
     /// 휴대폰 웹 세션 종료
     /// </summary>
-    Task<ResponseModel<WebQrLoginDto>> DeleteWebSessionService(DeleteWebSessionDto dto,
+    Task<ResponseModel<WebQrLoginDto>> DeleteWebSessionService(DeleteWebSessionDto? dto,
         CancellationToken cancellationToken = default);
 
     /// <summary>
