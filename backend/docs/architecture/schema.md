@@ -57,6 +57,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 - 계정·인증: `USER_INFO`, `LOGIN_SESSION`, `PHONE_VERIFICATION`, `QR_LOGIN`, `CONSENT`
 - 아이·시간표: `CHILD`, `ACADEMY`, `TIMETABLE`, `TIMETABLE_DAY`, `TIMETABLE_EXCEPTION`
 - 기준 데이터: `AREA`, `PICKUP_SPOT`, `PICKUP_SPOT_BLOCK`, `ACADEMY_PICKUP_SPOT`, `LOOP_ROUTE`, `RESTRICTED_ZONE`, `PARKING_LOT`, `HOLIDAY`
+- 도로 소통 수집: `TRAFFIC_LINK`, `TRAFFIC_COLLECT_RUN`, `TRAFFIC_SPEED`
 - 픽업 진행: `PICKUP_PLAN`, `PICKUP_SESSION`, `PICKUP_EVENT`
 
 ## 계정·인증
@@ -440,6 +441,66 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 
 - 살아 있는 행 UNIQUE: `(HOLIDAY_DATE, ACTIVE_FLAG)`
 
+## 도로 소통 수집
+
+대치동·평촌 학원가의 도로 소통 이력을 n8n 수집기가 적재한다. 감사 컬럼은 `CREATE_USER = SYSTEM`, `UPDATE_USER = SYSTEM`으로 넣는다.
+
+코드 값: `SOURCE`는 `TOPIS`·`GITS`, `AREA_CODE`는 `DAECHI`·`PYEONGCHON`, `STATUS`는 `OK`·`PARTIAL`·`NO_KEY`·`FAILED`다.
+
+### TRAFFIC_LINK — 수집 대상 링크
+
+| 컬럼 | 타입 | NULL | 설명 |
+|---|---|---|---|
+| `TRAFFIC_LINK_ID` | INT | N | PK |
+| `SOURCE` | VARCHAR(20) | N | 소스 |
+| `AREA_CODE` | VARCHAR(20) | N | 학원가 |
+| `LINK_ID` | VARCHAR(20) | N | 소스의 링크 ID(TOPIS 링크 ID와 GITS 링크 ID는 체계가 다르다) |
+| `ROUTE_ID` | VARCHAR(20) | Y | GITS 도로 ID. 5분 수집에서 도로 단위로 부를 때 쓴다. TOPIS는 NULL |
+| `ROAD_NAME` | VARCHAR(100) | N | 도로명 |
+| `ST_NODE_NAME`·`ED_NODE_NAME` | VARCHAR(100) | N | 시작·끝 지점명 |
+| `AXIS_DIR` | VARCHAR(20) | Y | 방향(TOPIS `axis_dir`, GITS `routeWay`) |
+| `DISTANCE_M` | INT | N | 링크 길이(m) |
+| `CENTER_DIST_M` | INT | Y | 학원가 중심에서 링크까지 최단 거리(m). 좌표가 있는 TOPIS만 채운다 |
+
+- 살아 있는 행 UNIQUE: `(SOURCE, LINK_ID, ACTIVE_FLAG)`. 목록을 다시 만들 때 이 값으로 같은 링크를 찾아 덮어쓰고, 결과에서 빠진 링크는 삭제 표시한다.
+- 인덱스: `(SOURCE, AREA_CODE)`
+- CHECK: `DISTANCE_M >= 0 AND (CENTER_DIST_M IS NULL OR CENTER_DIST_M >= 0)`
+- 좌표는 저장하지 않는다.
+
+### TRAFFIC_COLLECT_RUN — 수집 회차(소스별)
+
+| 컬럼 | 타입 | NULL | 설명 |
+|---|---|---|---|
+| `COLLECT_RUN_ID` | INT | N | PK |
+| `SOURCE` | VARCHAR(20) | N | 소스 |
+| `RUN_DT` | DATETIME | N | 회차 시각(KST, 5분 경계) |
+| `STATUS` | VARCHAR(20) | N | `OK`·`PARTIAL`·`NO_KEY`·`FAILED` |
+| `LINK_COUNT` | INT | N | 대상 링크 수 |
+| `SAVED_COUNT` | INT | N | 저장한 행 수 |
+| `ERROR_MESSAGE` | VARCHAR(500) | Y | 실패 요약. 키·URL을 넣지 않는다 |
+
+- UNIQUE: `(SOURCE, RUN_DT)`
+- CHECK: `LINK_COUNT >= 0 AND SAVED_COUNT BETWEEN 0 AND LINK_COUNT`
+- 수집 공백 = 수집 시간대 안의 5분 칸 중 그 소스의 행이 없는 칸.
+- `NO_KEY`는 키가 비어 호출하지 않은 회차, `FAILED`는 저장한 행이 0인 회차, `PARTIAL`은 일부 링크만 저장한 회차다.
+
+### TRAFFIC_SPEED — 5분 소통 이력
+
+| 컬럼 | 타입 | NULL | 설명 |
+|---|---|---|---|
+| `TRAFFIC_SPEED_ID` | INT | N | PK |
+| `TRAFFIC_LINK_ID` | INT | N | FK → TRAFFIC_LINK |
+| `COLLECT_RUN_ID` | INT | N | FK → TRAFFIC_COLLECT_RUN |
+| `COLLECTED_DT` | DATETIME | N | 회차 시각(5분 경계). 한 회차의 행은 모두 같은 값이다 |
+| `SOURCE_COLLECTED_DT` | DATETIME | Y | 소스가 준 수집 시각(GITS `collDate`). TOPIS는 NULL |
+| `SPEED_KMH` | SMALLINT | N | 속도(TOPIS `prcs_spd`, GITS `spd`). 소수로 오므로(예 77.4) 정수로 반올림한다 |
+| `TRAVEL_SEC` | INT | N | 여행시간 초(TOPIS `prcs_trv_time`, GITS `trvlTime`을 초로 맞춘 값). 소수면 반올림한다 |
+
+- UNIQUE: `(TRAFFIC_LINK_ID, COLLECTED_DT)`. 같은 회차가 두 번 돌아도 중복으로 쌓이지 않는다. FK 인덱스를 겸한다.
+- 인덱스: `(COLLECT_RUN_ID)`, `(COLLECTED_DT)`
+- CHECK: `SPEED_KMH >= 0 AND TRAVEL_SEC >= 0`
+- T18의 요일·시간대 집계는 `DAYOFWEEK(COLLECTED_DT)`·`TIME(COLLECTED_DT)`로 한다.
+
 ## 픽업 진행
 
 명세서의 "오늘 계획"이 `PICKUP_PLAN`, "세션"이 `PICKUP_SESSION`이다. 계획은 배정과 차량의 진행 상태를 갖고, 세션은 아이에게 보낸 링크 한 건이다.
@@ -626,6 +687,6 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | 실시간 주차대수의 범위 | 시영 주차장만 제공한다. 강남구 운영 공영주차장이 포함되는지 |
 | 장소 검색 API | 어느 지도 사업자를 쓰는지. `PLACE_ID`의 형식과 대소문자 구분이 달라진다. 도보 경로는 카카오맵 `v2/routing/walk`로 정했지만 장소 검색 사업자는 아직 정하지 않았다 |
 | 아이 도보 속도 | 보행자 경로 API가 실패했을 때 `WALK_MIN` 추정에 쓰는 설정값. `DepartureGuide:ChildWalkKmh` 4.0(가정)으로 뒀다 |
-| 교통 소통 정보의 저장 | 서버 5분 캐시다. DB 테이블 없이 메모리 캐시로 둔다고 가정했다 |
+| 교통 소통 정보의 저장 | 이력은 `TRAFFIC_*` 테이블에 쌓는다(n8n 수집기, 대치동 TOPIS·평촌 GITS). 서버가 실시간 값을 따로 호출·캐시할지, 최신 회차를 읽을지는 T18에서 정한다. 서버가 따로 부르면 같은 키의 일일 한도를 나눠 쓴다 |
 | 잠금 순서의 실제 검증 | 이 문서의 잠금 순서는 실행해 보지 않았다. 구현할 때 같은 시간표로 계획 생성과 탑승 처리를 동시에 보내 교착과 정원 초과가 없는지 확인한다 |
 | DB 시간대 | 서버 코드와 DB의 현재 시각이 같은 시간대여야 한다. 배포처가 정해지면 맞춘다 |

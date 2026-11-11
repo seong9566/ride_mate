@@ -19,5 +19,27 @@ services:
       interval: 5s
       timeout: 5s
       retries: 24
+
+  n8n:
+    image: n8nio/n8n:2.47.3
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports: ["127.0.0.1:5678:5678"]
+    volumes:
+      - n8n-data:/home/node/.n8n
+    environment:
+      TZ: Asia/Seoul
+      GENERIC_TIMEZONE: Asia/Seoul
+      TOPIS_API_KEY: "${TOPIS_API_KEY:-}"
+      GITS_API_KEY: "${GITS_API_KEY:-}"
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      EXECUTIONS_DATA_SAVE_ON_SUCCESS: none
+      EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS: "false"
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: "168"
+      N8N_DIAGNOSTICS_ENABLED: "false"
 volumes:
   ridemate-mysql-data:
+  n8n-data:
