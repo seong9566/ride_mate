@@ -9,8 +9,11 @@ on:
       - "backend/RideMateService/**"
       - "backend/docker-compose.yml"
       - ".github/workflows/backend-deploy.yml"
-  # deploy.env만 바꿨을 때 손으로 다시 띄운다
+  # 손으로 다시 띄울 때. 워크플로 파일이 기본 브랜치(main)에 들어간 뒤부터 쓸 수 있다
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: backend-deploy
@@ -43,6 +46,14 @@ jobs:
           curl -fsS --retry 30 --retry-all-errors --retry-delay 2 -o /dev/null "http://$addr/swagger/index.html"
           docker logs ridemate-api --tail 30
 
+      - name: 실패 진단
+        if: failure()
+        working-directory: backend
+        run: |
+          docker compose -p backend --env-file "$ENV_FILE" --profile deploy ps -a || true
+          docker logs ridemate-api --tail 100 || true
+
+      # 실패하면 직전 이미지를 남겨 되돌릴 수 있게 하고, 이 프로젝트 이미지만 지운다
       - name: 쓰지 않는 이미지 정리
-        if: always()
-        run: docker image prune -f
+        if: success()
+        run: docker image prune -f --filter label=com.docker.compose.project=backend

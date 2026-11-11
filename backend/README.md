@@ -122,10 +122,10 @@ dotnet run --project RideMateService --launch-profile http # http://localhost:51
 
 API 서버를 컨테이너로 띄우고 Tailscale Funnel로 공개 HTTPS 주소를 붙입니다. 차량 앱과 아이 휴대폰은 tailnet에 들어올 수 없으므로 Funnel(공개)을 씁니다. 명령은 `backend/`에서 실행합니다.
 
-1. 배포용 비밀값 파일 `~/.ridemate/deploy.env`를 만듭니다. `.env`를 복사하고(`MYSQL_*`가 같아야 같은 MySQL 컨테이너를 씁니다) `.env.example`의 배포 항목을 채웁니다. `PUBLIC_BASE_URL`은 4단계에서 주소를 확인한 뒤 채웁니다. 자동 배포도 이 파일을 읽습니다.
+1. 배포용 비밀값 파일 `~/.ridemate/deploy.env`를 만듭니다. `.env`를 복사하고(`MYSQL_*`가 같아야 같은 MySQL 컨테이너를 씁니다) `.env.example`의 배포 항목을 채웁니다. `PUBLIC_BASE_URL`은 4단계에서 주소를 확인한 뒤 채웁니다. 자동 배포도 이 파일을 읽습니다. `MYSQL_*`를 바꿀 때는 `.env`와 함께 바꿉니다(어긋나면 MySQL 컨테이너가 번갈아 재생성됩니다). 수동 배포는 `backend` 브랜치 체크아웃에서만 합니다.
 2. 서버를 띄웁니다. 컨테이너 시간대는 KST(`TZ=Asia/Seoul`)입니다.
    ```bash
-   docker compose --env-file ~/.ridemate/deploy.env --profile deploy up -d --build
+   docker compose --env-file ~/.ridemate/deploy.env --profile deploy up -d --build api
    curl -s --retry 15 --retry-all-errors --retry-delay 1 -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/swagger/index.html   # 200
    docker logs ridemate-api --tail 50
    ```
@@ -135,7 +135,7 @@ API 서버를 컨테이너로 띄우고 Tailscale Funnel로 공개 HTTPS 주소�
    tailscale funnel --bg 8080
    tailscale funnel status    # https://<기기>.<tailnet>.ts.net
    ```
-5. `deploy.env`의 `PUBLIC_BASE_URL`에 4단계 주소를 넣고 `docker compose --env-file ~/.ridemate/deploy.env --profile deploy up -d`로 다시 띄웁니다. `docker exec ridemate-api printenv QrLogin__VerificationUri`가 localhost가 아니라 공개 주소인지 확인합니다.
+5. `deploy.env`의 `PUBLIC_BASE_URL`에 4단계 주소를 넣고 `docker compose --env-file ~/.ridemate/deploy.env --profile deploy up -d api`로 다시 띄웁니다. `docker exec ridemate-api printenv QrLogin__VerificationUri`가 localhost가 아니라 공개 주소인지 확인합니다.
 6. 맥이 잠들지 않게 하고, Docker Desktop과 Tailscale이 로그인할 때 자동으로 실행되게 합니다. 컨테이너는 `restart: unless-stopped`라 Docker가 뜨면 같이 뜹니다. FileVault가 켜져 있으면 재부팅 뒤 직접 로그인해야 Docker가 뜹니다.
 7. 휴대폰 LTE(와이파이 끔)로 `https://<기기>.<tailnet>.ts.net/swagger`가 열리는지 확인합니다.
 
@@ -145,7 +145,7 @@ API 서버를 컨테이너로 띄우고 Tailscale Funnel로 공개 HTTPS 주소�
 
 ### 자동 배포
 
-`backend` 브랜치에 push되면(`backend-dev` → `backend` PR 머지) `.github/workflows/backend-deploy.yml`이 맥의 self-hosted runner에서 API 컨테이너를 다시 빌드해 띄우고 Swagger 응답으로 기동을 확인합니다. `backend/RideMateService/`, `docker-compose.yml`, 워크플로 파일이 바뀐 push에만 돕니다. `deploy.env`만 바꿨으면 Actions 탭에서 `backend-deploy`를 `backend` 브랜치로 직접 실행합니다.
+`backend` 브랜치에 push되면(`backend-dev` → `backend` PR 머지) `.github/workflows/backend-deploy.yml`이 맥의 self-hosted runner에서 API 컨테이너를 다시 빌드해 띄우고 Swagger 응답으로 기동을 확인합니다. `backend/RideMateService/`, `docker-compose.yml`, 워크플로 파일이 바뀐 push에만 돕니다. `deploy.env`만 바꿨으면 마지막 실행을 다시 돌립니다: `gh run rerun $(gh run list -w backend-deploy -b backend -L 1 --json databaseId -q ".[0].databaseId")`. Actions 탭의 직접 실행(`workflow_dispatch`)은 워크플로 파일이 `main`에 들어간 뒤부터 됩니다.
 
 - runner는 맥의 `~/actions-runner-ridemate`에 있고, 이름 `stecdevmac-ridemate`, 라벨 `ridemate-deploy`로 이 repo에 등록돼 있습니다. 로그인 사용자의 LaunchAgent로 돌므로 맥이 로그인 상태여야 합니다.
 - 상태 확인: `cd ~/actions-runner-ridemate && ./svc.sh status`. 다시 설치할 때는 repo Settings → Actions → Runners → New self-hosted runner의 안내를 따르고 `--labels ridemate-deploy`를 붙입니다.
