@@ -24,14 +24,24 @@ public partial class QrLogin
     public string UserCodeHash { get; set; } = null!;
 
     /// <summary>
+    /// 차·휴대폰에 함께 보이는 숫자 4자리
+    /// </summary>
+    public string MatchCode { get; set; } = null!;
+
+    /// <summary>
     /// 차량 앱 설치 번호
     /// </summary>
     public string DeviceId { get; set; } = null!;
 
     /// <summary>
-    /// QR 로그인 상태 (PENDING, APPROVED, USED)
+    /// QR 로그인 상태 (PENDING, SCANNED, VERIFIED, APPROVED, USED, CANCELED)
     /// </summary>
     public string Status { get; set; } = null!;
+
+    /// <summary>
+    /// 취소 사유 (USER, DRIVING, PHONE)
+    /// </summary>
+    public string? CancelReason { get; set; }
 
     /// <summary>
     /// 인증한 운전자 계정 ID
@@ -42,6 +52,11 @@ public partial class QrLogin
     /// QR 로그인 만료 일시
     /// </summary>
     public DateTime ExpireDt { get; set; }
+
+    /// <summary>
+    /// 차량이 마지막으로 결과를 물은 일시
+    /// </summary>
+    public DateTime? LastPollDt { get; set; }
 
     /// <summary>
     /// 생성 일시

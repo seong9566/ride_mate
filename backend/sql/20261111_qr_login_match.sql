@@ -1,0 +1,17 @@
+-- T09 QR 로그인: 숫자 확인·취소 사유·폴링 시각, 운전자 이름과 호칭 통합(CALL_NAME 삭제)
+-- 정본: backend/docs/architecture/schema.md · ADR-0016
+
+-- QR_LOGIN — 차·휴대폰에 같은 4자리 숫자, 취소 사유, slow_down 판단용 마지막 폴링 시각
+ALTER TABLE QR_LOGIN
+    ADD COLUMN MATCH_CODE    CHAR(4)     NOT NULL COMMENT '차·휴대폰에 함께 보이는 숫자 4자리' AFTER USER_CODE_HASH,
+    ADD COLUMN CANCEL_REASON VARCHAR(20) NULL COMMENT '취소 사유 (USER, DRIVING, PHONE)' AFTER STATUS,
+    ADD COLUMN LAST_POLL_DT  DATETIME    NULL COMMENT '차량이 마지막으로 결과를 물은 일시' AFTER EXPIRE_DT,
+    MODIFY COLUMN STATUS VARCHAR(20) NOT NULL COMMENT 'QR 로그인 상태 (PENDING, SCANNED, VERIFIED, APPROVED, USED, CANCELED)';
+
+-- USER_INFO — 아이에게 보이는 호칭은 운전자 이름(USER_NAME)으로 통합한다
+ALTER TABLE USER_INFO
+    DROP COLUMN CALL_NAME;
+
+-- CONSENT — 가입 때 받는 필수 약관 두 종류를 동의 종류에 더한다(값만 늘고 타입은 그대로)
+ALTER TABLE CONSENT
+    MODIFY COLUMN CONSENT_TYPE VARCHAR(20) NOT NULL COMMENT '동의 종류 (TERMS, PRIVACY, GUARDIAN, CHILD_INFO, ARRIVAL_LOG)';
