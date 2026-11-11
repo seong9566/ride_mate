@@ -210,6 +210,13 @@ public partial class PickupService
                 string token;
                 if (session is null)
                 {
+                    // 다시 알림은 세션을 만들지 않는다. 세션이 없으면 보낸 링크가 없는 것이다
+                    if (eventType == EventRemindSent)
+                    {
+                        await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return LinkConflict(ReasonLinkNotSent);
+                    }
+
                     var nonce = PickupLinkToken.NewNonce();
                     token = PickupLinkToken.Create(_hashService, pickupPlanId, nonce);
                     session = new PickupSession
