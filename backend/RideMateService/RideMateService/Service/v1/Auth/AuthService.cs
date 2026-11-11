@@ -19,7 +19,7 @@ using RideMateService.Repository.v1.Auth;
 
 namespace RideMateService.Service.v1.Auth;
 
-public class AuthService : IAuthService
+public partial class AuthService : IAuthService
 {
     private const int PhoneVerificationExpireMinutes = 3;
     private const int PhoneVerificationResendSeconds = 60;

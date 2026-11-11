@@ -67,4 +67,10 @@ public interface IAuthService
     /// 이 차에 로그인한 계정 목록
     /// </summary>
     Task<ResponseModel<List<GetLoginSessionList>>> GetLoginSessionListService(string deviceId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 보호자 인증번호 발송
+    /// </summary>
+    Task<ResponseModel<GuardianVerificationResultDto>> AddGuardianVerificationService(
+        CancellationToken cancellationToken = default);
 }
