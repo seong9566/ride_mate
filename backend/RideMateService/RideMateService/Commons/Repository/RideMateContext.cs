@@ -1460,7 +1460,7 @@ public partial class RideMateContext : DbContext
                 .HasColumnName("UPDATE_USER");
             entity.Property(e => e.UserName)
                 .HasMaxLength(50)
-                .HasComment("운전자 실명")
+                .HasComment("운전자 이름")
                 .HasColumnName("USER_NAME");
             entity.Property(e => e.WakeBeforeMin)
                 .HasComment("출발 전 깨우는 시간(분)")

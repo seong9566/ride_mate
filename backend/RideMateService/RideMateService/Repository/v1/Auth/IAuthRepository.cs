@@ -26,7 +26,7 @@ public interface IAuthRepository
         IDbTransaction transaction, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 계정의 초기 설정이 필요한지 조회한다. 실명이 비었거나 살아 있는 아이가 없으면 true, 계정이 없거나 삭제됐으면 null
+    /// 계정의 초기 설정이 필요한지 조회한다. 운전자 이름이 비었거나 살아 있는 아이가 없으면 true, 계정이 없거나 삭제됐으면 null
     /// </summary>
     Task<bool?> GetSetupRequiredAsync(int userId, IDbTransaction? transaction = null,
         CancellationToken cancellationToken = default);

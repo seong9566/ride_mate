@@ -69,7 +69,7 @@
 }
 ```
 
-- `session_id`는 `LOGIN_SESSION_ID`다. `setup_required`는 그 계정의 실명이 비었거나 살아 있는 아이가 없으면 `true`다.
+- `session_id`는 `LOGIN_SESSION_ID`다. `setup_required`는 그 계정의 운전자 이름이 비었거나 살아 있는 아이가 없으면 `true`다.
 - 실패(400)도 감싸지 않고 `{ "error": "...", "error_description": "..." }`를 돌려준다. `error_description`은 영어 한 줄이고 앱은 `error` 값으로 분기한다.
 
 | `error` | 상황 |
