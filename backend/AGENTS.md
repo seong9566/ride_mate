@@ -54,7 +54,7 @@
 - 실행: `dotnet run --project RideMateService --launch-profile http` → `http://localhost:5167/swagger`
 - 서버는 DB 연결 문자열이 없으면 뜨지 않는다. 새로 클론했으면 `db-schema-change` 스킬의 2단계(로컬 MySQL 준비)를 먼저 한다.
 - 작업을 끝내기 전에 빌드가 경고 0으로 통과해야 한다.
-- 엔드포인트·DTO를 바꿨으면 서버를 띄워 Swagger에서 그 API를 호출해 응답을 확인하고, `update-api-spec` 스킬로 명세와 API 문서를 같은 PR에 넣는다. 응답 `code`·`message`·오류 상황만 바꿨어도 API 문서를 같은 PR에서 고친다.
+- 엔드포인트·DTO를 바꿨으면 서버를 띄워 Swagger에서 그 API를 호출해 응답을 확인하고, `update-api-spec` 스킬로 `openapi.json`을 같은 PR에 넣고 Notion API 문서(정본)를 고친다. 응답 `code`·`message`·오류 상황만 바꿨어도 Notion API 문서를 고친다.
 - 확인 호출은 로컬 서버(`localhost`)와 로컬 Docker DB를 대상으로 할 때만 POST·PATCH·DELETE를 승인 없이 쓴다. 이 경우에 한해 전역 규칙 "검증 호출은 GET만"보다 이 문서가 우선한다. 배포된 서버나 원격 DB에는 GET만 쓰고, 쓰기가 필요하면 사용자 승인을 받는다.
 - 서버를 띄우기 전에 `lsof -ti :5167`이 비어 있는지 본다. 이미 쓰이고 있으면 그 프로세스를 종료하지 않는다. `dotnet run --project RideMateService --urls http://localhost:<빈 포트>`로 띄우거나 사용자에게 알린다.
 - 자신이 띄운 서버만, 띄울 때 기록한 PID로 종료한다. 포트로 찾은 PID나 `pkill`처럼 이름으로 종료하지 않는다.

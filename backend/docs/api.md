@@ -188,6 +188,6 @@
 
 ## API 명세
 
-- 앱↔서버 계약은 루트 `docs/api/openapi.json`이다. 모빌리티 앱은 이 파일을 보고 개발한다.
-- API마다 `docs/api/{도메인}/{액션}.md`를 둔다. 양식은 Header·Request·Response·Error·예외 다섯 절이고, 템플릿은 `update-api-spec` 스킬의 `templates/api-doc.md`다.
-- 라우트·DTO를 바꾼 작업은 같은 PR에서 명세와 API 문서를 갱신한다. 응답 `code`·`message`·오류 상황만 바꾼 작업도 API 문서를 갱신한다. 절차는 `update-api-spec` 스킬을 따른다.
+- API 문서의 정본은 Notion "라이드메이트 API 문서"(https://app.notion.com/p/415aa638eaf880808d84c4ffba30bb51)다. 목차 페이지에 API 목록·공통 규칙·공통 오류 형식이 있고, API마다 하위 페이지(Header·Request·Response·Error·예외 다섯 절)가 있다. 레포에는 API별 문서를 두지 않는다.
+- 필드 이름·타입의 기계 정본은 루트 `docs/api/openapi.json`(서버 Swagger 출력)이다. Notion 문서와 다르면 `openapi.json`이 맞고 Notion을 고친다.
+- 라우트·DTO를 바꾼 작업은 같은 PR에서 `openapi.json`을 갱신하고 Notion 문서를 고친다. 응답 `code`·`message`·오류 상황만 바꾼 작업도 Notion 문서를 고친다. 절차는 `update-api-spec` 스킬을 따른다.
