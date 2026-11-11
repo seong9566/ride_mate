@@ -289,6 +289,86 @@ public partial class AuthService : IAuthService
         };
     }
 
+    private enum PhoneVerificationCheckOutcome
+    {
+        Matched,
+        NotRequested,
+        Locked,
+        Expired,
+        Mismatch,
+        ServerError
+    }
+
+    // Verification은 Matched일 때만, RetryAfter는 Locked일 때만, RemainingAttempts는 Mismatch일 때만 채운다
+    private sealed record PhoneVerificationCheck(PhoneVerificationCheckOutcome Outcome,
+        PhoneVerification? Verification = null, int? RetryAfter = null, int? RemainingAttempts = null);
+
+    // 인증번호 확인 공통 — 번호 단위 잠금·대기 중인 인증번호·만료·불일치(실패 횟수 기록, 5회째 잠금)를 판정한다.
+    // 호출한 쪽이 latestId(번호 전체의 마지막 행)·verificationId(용도별 마지막 행)를 FOR UPDATE로 잡은 뒤 부른다.
+    // Matched만 트랜잭션을 열어 둔 채 돌려주고, 나머지는 이 메서드가 롤백(불일치는 실패 횟수를 커밋)한 뒤 돌려준다.
+    // 응답으로 바꾸는 일은 호출한 쪽이 한다
+    private async Task<PhoneVerificationCheck> CheckPhoneVerificationAsync(int? latestId, int? verificationId,
+        string phoneDigits, string code, DateTime thisTime, IDbContextTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        var latest = latestId is null
+            ? null
+            : await _authRepository.GetPhoneVerificationAsync(latestId.Value, cancellationToken).ConfigureAwait(false);
+        if (latest?.LockUntilDt > thisTime)
+        {
+            var retryAfter = RemainingSeconds(latest.LockUntilDt.Value, thisTime);
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return new PhoneVerificationCheck(PhoneVerificationCheckOutcome.Locked, RetryAfter: retryAfter);
+        }
+
+        var verification = verificationId is null
+            ? null
+            : await _authRepository.GetPhoneVerificationAsync(verificationId.Value, cancellationToken).ConfigureAwait(false);
+        if (verification is null || verification.VerifyDt is not null)
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return new PhoneVerificationCheck(PhoneVerificationCheckOutcome.NotRequested);
+        }
+
+        // 다른 용도의 행이 더 최근이어도 이 행이 잠겼으면 거절한다
+        if (verification.LockUntilDt > thisTime)
+        {
+            var retryAfter = RemainingSeconds(verification.LockUntilDt.Value, thisTime);
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return new PhoneVerificationCheck(PhoneVerificationCheckOutcome.Locked, RetryAfter: retryAfter);
+        }
+
+        if (verification.ExpireDt <= thisTime)
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return new PhoneVerificationCheck(PhoneVerificationCheckOutcome.Expired);
+        }
+
+        if (verification.CodeHash != CreateCodeHash(phoneDigits, code))
+        {
+            verification.FailCnt = (sbyte)(verification.FailCnt + 1);
+            var isLocked = verification.FailCnt >= PhoneVerificationMaxFailCount;
+            if (isLocked)
+                verification.LockUntilDt = thisTime.AddMinutes(PhoneVerificationLockMinutes);
+            verification.UpdateDt = thisTime;
+            verification.UpdateUser = AuditUser;
+            if (!await _authRepository.UpdatePhoneVerificationAsync(verification, cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new PhoneVerificationCheck(PhoneVerificationCheckOutcome.ServerError);
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return isLocked
+                ? new PhoneVerificationCheck(PhoneVerificationCheckOutcome.Locked,
+                    RetryAfter: PhoneVerificationLockMinutes * 60)
+                : new PhoneVerificationCheck(PhoneVerificationCheckOutcome.Mismatch,
+                    RemainingAttempts: PhoneVerificationMaxFailCount - verification.FailCnt);
+        }
+
+        return new PhoneVerificationCheck(PhoneVerificationCheckOutcome.Matched, Verification: verification);
+    }
+
     /// <summary>
     /// 휴대폰 웹 QR 로그인 진입
     /// </summary>
@@ -425,62 +505,25 @@ public partial class AuthService : IAuthService
                 : await _authRepository.LockWebLoginSessionAsync(currentWebSessionId.Value,
                     transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
 
-            // 3) 잠금 뒤 최신 인증번호와 QR 요청을 EF로 읽어 판정한다
-            var latest = latestId is null
-                ? null
-                : await _authRepository.GetPhoneVerificationAsync(latestId.Value, cancellationToken).ConfigureAwait(false);
-            if (latest?.LockUntilDt > thisTime)
+            // 3)~5) 잠금 뒤 최신 인증번호를 EF로 읽어 잠금·만료·불일치를 판정한다(공통 로직)
+            var check = await CheckPhoneVerificationAsync(latestId, verificationId, phoneDigits, dto.code!, thisTime,
+                transaction, cancellationToken).ConfigureAwait(false);
+            if (check.Outcome != PhoneVerificationCheckOutcome.Matched)
             {
-                var retryAfter = RemainingSeconds(latest.LockUntilDt.Value, thisTime);
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return WebError("otp_locked", retryAfter: retryAfter);
-            }
-
-            var verification = verificationId is null
-                ? null
-                : await _authRepository.GetPhoneVerificationAsync(verificationId.Value, cancellationToken).ConfigureAwait(false);
-            if (verification is null || verification.VerifyDt is not null)
-            {
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return WebError("otp_not_requested");
-            }
-
-            if (verification.LockUntilDt > thisTime)
-            {
-                var retryAfter = RemainingSeconds(verification.LockUntilDt.Value, thisTime);
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return WebError("otp_locked", retryAfter: retryAfter);
-            }
-
-            // 4) 인증번호 만료 확인
-            if (verification.ExpireDt <= thisTime)
-            {
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return WebError("otp_expired");
-            }
-
-            // 5) 인증번호 불일치 기록
-            if (verification.CodeHash != CreateCodeHash(phoneDigits, dto.code!))
-            {
-                verification.FailCnt = (sbyte)(verification.FailCnt + 1);
-                var isLocked = verification.FailCnt >= PhoneVerificationMaxFailCount;
-                if (isLocked)
-                    verification.LockUntilDt = thisTime.AddMinutes(PhoneVerificationLockMinutes);
-                verification.UpdateDt = thisTime;
-                verification.UpdateUser = AuditUser;
-                if (!await _authRepository.UpdatePhoneVerificationAsync(verification, cancellationToken).ConfigureAwait(false))
+                return check.Outcome switch
                 {
-                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return WebServerError();
-                }
-
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-                return isLocked
-                    ? WebError("otp_locked", retryAfter: PhoneVerificationLockMinutes * 60)
-                    : WebError("otp_mismatch",
-                        remainingAttempts: PhoneVerificationMaxFailCount - verification.FailCnt);
+                    PhoneVerificationCheckOutcome.Locked => WebError("otp_locked", retryAfter: check.RetryAfter),
+                    PhoneVerificationCheckOutcome.NotRequested => WebError("otp_not_requested"),
+                    PhoneVerificationCheckOutcome.Expired => WebError("otp_expired"),
+                    PhoneVerificationCheckOutcome.Mismatch =>
+                        WebError("otp_mismatch", remainingAttempts: check.RemainingAttempts),
+                    _ => WebServerError()
+                };
             }
 
+            var verification = check.Verification!;
+
+            // QR 요청을 EF로 읽어 판정한다
             var qrLogin = qrLoginId is null
                 ? null
                 : await _authRepository.GetQrLoginAsync(qrLoginId.Value, cancellationToken).ConfigureAwait(false);
