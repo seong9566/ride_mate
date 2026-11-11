@@ -107,7 +107,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 - 로그아웃하면 `DELETE_YN`을 켠다. refresh 토큰과 쿠키 인증은 `DELETE_YN = FALSE`이고 `EXPIRE_DT`가 지나지 않은 행만 통과시킨다.
 - refresh 토큰을 쓰면 같은 행을 고친다. 새 값은 세션과 낸 값으로 계산하므로(`security.md`) 같은 값을 내면 늘 같은 새 값이 나온다. 지금 값이면 `PREV_TOKEN_HASH`에 지금 값을, `TOKEN_HASH`에 새 값을, `ROTATE_DT`에 지금을 넣는다. `PREV_TOKEN_HASH`와 같고 `ROTATE_DT`가 24시간 안이면 지금 값과 같은 새 값을 다시 주고 `TOKEN_HASH`·`PREV_TOKEN_HASH`·`ROTATE_DT`는 그대로 둔다(계산한 값이 `TOKEN_HASH`와 다르면 거절한다). 둘 다 아니면 거절한다. 어느 쪽이든 `EXPIRE_DT`는 지금 + 90일, `LAST_USED_DT`는 지금으로 고치고, 이 처리는 그 행을 `FOR UPDATE`로 잠그고 한다.
 - `WEB` 행은 `DEVICE_ID`가 빈 문자열이고 `PREV_TOKEN_HASH`·`ROTATE_DT`를 쓰지 않는다.
-- 인덱스: `(USER_ID, DEVICE_ID)`, `(PREV_TOKEN_HASH)`
+- 인덱스: `(USER_ID, DEVICE_ID)`, `(PREV_TOKEN_HASH)`, `(DEVICE_ID, SESSION_TYPE)`(차 계정 목록)
 
 ### PHONE_VERIFICATION — 휴대폰 인증번호
 

@@ -16,7 +16,7 @@ form 필드다. 이름은 OAuth 규약대로 snake_case다.
 - grant_type (string): 발급 방식. `otp`(인증번호 로그인), `urn:ietf:params:oauth:grant-type:device_code`(QR 로그인), `refresh_token`(교체) — 필수
 - phone (string): 숫자만 쓴 휴대폰 번호. 형식 `^01[016789][0-9]{7,8}$` — `grant_type`이 `otp`이면 필수
 - code (string): [인증번호 발송](AddPhoneVerification.md)으로 받은 숫자 6자리 — `grant_type`이 `otp`이면 필수
-- device_id (string): 앱이 처음 실행할 때 만든 설치 번호(UUID 등, 차대번호 아님). 로그인마다 같은 값. 1~100자 — `grant_type`이 `otp` 또는 `urn:ietf:params:oauth:grant-type:device_code`이면 필수
+- device_id (string): 앱이 처음 실행할 때 CSPRNG로 만든 UUID v4 설치 번호(하드웨어 ID·차대번호 금지, 로그·분석 도구로 보내지 않음). 로그인마다 같은 값. 1~100자 — `grant_type`이 `otp` 또는 `urn:ietf:params:oauth:grant-type:device_code`이면 필수
 - device_code (string): [QR 로그인 발급](DeviceAuthorization.md)에서 차량이 받은 값. 최대 128자 — `grant_type`이 `urn:ietf:params:oauth:grant-type:device_code`이면 필수
 - refresh_token (string): 갖고 있는 refresh 토큰 — `grant_type`이 `refresh_token`이면 필수
 

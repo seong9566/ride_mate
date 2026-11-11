@@ -1,4 +1,6 @@
+using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using RideMateService.Comm;
 using RideMateService.Comm.Dto.v1.Auth.Request;
 using RideMateService.Comm.Dto.v1.Auth.Response;
@@ -133,6 +135,40 @@ public class AuthController : ApiControllerBase
         try
         {
             var model = await _authService.DeleteQrLoginService(dto, cancellationToken).ConfigureAwait(false);
+            return ToActionResult(model);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // 앱이 요청을 끊었다. 오류로 기록하지 않는다
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
+
+    /// <summary>
+    /// 이 차에 로그인한 계정 목록
+    /// </summary>
+    [Produces("application/json")]
+    [HttpGet]
+    [Route("v1/Auth/M/GetLoginSessionList")]
+    [EnableRateLimiting(LoginSessionListRateLimit.PolicyName)]
+    [SwaggerOperation(Summary = "이 차에 로그인한 계정 목록")]
+    [ProducesResponseType(typeof(ResponseModel<List<GetLoginSessionList>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(void), StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> GetLoginSessionList([FromQuery][Required][StringLength(100, MinimumLength = 1)] string deviceId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _authService.GetLoginSessionListService(deviceId, cancellationToken).ConfigureAwait(false);
             return ToActionResult(model);
         }
         catch (Exception) when (cancellationToken.IsCancellationRequested)

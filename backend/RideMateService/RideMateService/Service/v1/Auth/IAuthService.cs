@@ -62,4 +62,9 @@ public interface IAuthService
     /// 차량 로그아웃
     /// </summary>
     Task<ResponseModel<bool>> DeleteLoginSessionService(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 이 차에 로그인한 계정 목록
+    /// </summary>
+    Task<ResponseModel<List<GetLoginSessionList>>> GetLoginSessionListService(string deviceId, CancellationToken cancellationToken = default);
 }

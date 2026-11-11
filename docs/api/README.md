@@ -17,6 +17,7 @@
 | Auth | `POST /api/v1/Auth/M/AddPhoneVerification` 로그인 인증번호 발송 | 불필요 | [AddPhoneVerification](Auth/AddPhoneVerification.md) |
 | Auth | `DELETE /api/v1/Auth/M/DeleteQrLogin` QR 로그인 취소(차량) | 불필요 | [DeleteQrLogin](Auth/DeleteQrLogin.md) |
 | Auth | `DELETE /api/v1/Auth/M/sign/DeleteLoginSession` 차량 로그아웃 | Bearer | [DeleteLoginSession](Auth/DeleteLoginSession.md) |
+| Auth | `GET /api/v1/Auth/M/GetLoginSessionList` 이 차에 로그인한 계정 목록 | 불필요 | [GetLoginSessionList](Auth/GetLoginSessionList.md) |
 | Auth | `GET /api/v1/Auth/W/DetailQrLogin` QR 로그인 진입(휴대폰 웹) | 불필요 | [DetailQrLogin](Auth/W/DetailQrLogin.md) |
 | Auth | `POST /api/v1/Auth/W/AddPhoneVerification` 로그인 인증번호 발송(휴대폰 웹) | 불필요 | [AddPhoneVerification](Auth/W/AddPhoneVerification.md) |
 | Auth | `POST /api/v1/Auth/W/AddWebSession` 인증번호 확인과 가입(휴대폰 웹) | 불필요 | [AddWebSession](Auth/W/AddWebSession.md) |

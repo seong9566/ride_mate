@@ -14,7 +14,7 @@
 JSON 본문이다.
 
 - deviceCode (string): QR 발급 때 차량이 받은 `device_code`. 1~128자 — 필수
-- deviceId (string): QR 발급 때 보낸 차량 앱 설치 번호. 1~100자 — 필수
+- deviceId (string): QR 발급 때 보낸 설치 번호(앱이 처음 실행할 때 CSPRNG로 만든 UUID v4, 하드웨어 ID·차대번호 금지, 로그·분석 도구로 보내지 않음). 1~100자 — 필수
 - reason (string): 취소 사유. `USER` 또는 `DRIVING` — 필수
 
 ```json

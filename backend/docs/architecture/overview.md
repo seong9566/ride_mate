@@ -16,6 +16,7 @@ RideMateService/
 │   ├── DateOnlyHandler.cs        # Dapper DateOnly 핸들러
 │   ├── SignRouteConvention.cs    # /sign/ 구간 경로에 인증 요구를 거는 엔드포인트 규약
 │   ├── SignRouteOperationFilter.cs # Swagger에 /sign/ 구간 작업만 Bearer 표시
+│   ├── LoginSessionListRateLimit.cs # 차 계정 목록 API의 요청 빈도 제한 값·파티션 키(등록은 Extensions)
 │   ├── Security/                 # 해시·전화번호 암호화·토큰 서비스와 설정 클래스
 │   ├── Sms/                      # ISmsSender, 개발용 DevSmsSender
 │   ├── Logger/                   # ILogService, LogService
@@ -70,6 +71,7 @@ Controller ──▶ Service ──▶ Repository ──▶ DbContext / IDbConne
 12. CORS (허용 오리진이 없으면 기동 실패)
 13. `AddControllers` + `RunActionFilter` + `AddNewtonsoftJson`
 14. `AddAuthorization`
+15. 요청 빈도 제한 (`AddRateLimitPolicies()` — 차 계정 목록 정책. 파티션 키가 클라이언트 IP라 2번 ForwardedHeaders에 기댄다)
 
 미들웨어 순서 — 바꾸면 조용히 오작동한다:
 
@@ -81,7 +83,8 @@ Controller ──▶ Service ──▶ Repository ──▶ DbContext / IDbConne
 6. `UseCors()`
 7. `UseAuthentication()`
 8. `UseAuthorization()`
-9. `MapGet("/")` → `/swagger` 리다이렉트, `MapControllers().RequireAuthForSignRoutes()` — 경로에 `/sign/` 구간이 있는 엔드포인트에 인증을 요구한다. 별도 미들웨어는 없다
+9. `UseRateLimiter()` — `UseRouting()` 뒤여야 엔드포인트별 정책(`[EnableRateLimiting]`)이 붙는다
+10. `MapGet("/")` → `/swagger` 리다이렉트, `MapControllers().RequireAuthForSignRoutes()` — 경로에 `/sign/` 구간이 있는 엔드포인트에 인증을 요구한다. 별도 미들웨어는 없다
 
 - 꺼져 있어도 에러가 나지 않는 기능(스케줄러·워커)은 ON/OFF 상태를 기동 로그에 남긴다.
 
