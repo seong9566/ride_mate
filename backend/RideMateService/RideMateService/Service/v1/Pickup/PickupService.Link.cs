@@ -330,7 +330,7 @@ public partial class PickupService
                     return new ResponseModel<PickupLinkSendDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
                 }
 
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
                 pickupEventId = pickupEvent.PickupEventId;
 
                 // 트랜잭션 2가 추적 중인 옛 인스턴스 대신 DB의 현재 행(그사이 익명화된 DELETE_YN 등)을 읽게 비운다

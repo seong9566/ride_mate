@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace RideMateService.Service.v1.Pickup;
 
 /// <summary>
@@ -10,7 +12,7 @@ public static class PickupLinkMessage
     /// </summary>
     public static string Link(string userName, DateTime etaDt, string spotName, string url)
     {
-        return $"[라이드메이트] {userName} 차 {etaDt:HH:mm} 도착! {spotName}에서 만나\n{url}";
+        return $"[라이드메이트] {userName} 차 {etaDt.ToString("HH:mm", CultureInfo.InvariantCulture)} 도착! {spotName}에서 만나\n{url}";
     }
 
     /// <summary>

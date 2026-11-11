@@ -85,7 +85,7 @@ builder.Services.AddDomainModules();
 
 builder.Services.AddCommonInfrastructure();
 builder.Services.AddMapInfrastructure(builder.Configuration);
-builder.Services.AddSmsInfrastructure(builder.Configuration);
+builder.Services.AddSmsInfrastructure(builder.Configuration, builder.Environment);
 #endregion
 
 #region Dapper 타입 핸들러
