@@ -189,7 +189,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `USER_ID` | INT | N | FK → USER_INFO |
 | `CHILD_NAME` | VARCHAR(50) | N | 이름(화면 입력은 1~10자) |
 | `PHONE_ENC` | VARBINARY(255) | N | 휴대폰 번호(숫자만). 암호화해서 저장한다 |
-| `PHONE_HASH` | CHAR(64) | Y | 휴대폰 번호의 HMAC. 같은 번호가 이미 등록됐는지, 부모 번호와 같은지 비교한다. NULL은 이 칸을 넣기 전에 만든 행뿐이다 |
+| `PHONE_HASH` | CHAR(64) | Y | 휴대폰 번호의 HMAC. 같은 번호가 이미 등록됐는지, 부모 번호와 같은지 비교한다. NULL은 이 칸을 넣기 전에 만든 행이거나 삭제한 행이다 |
 | `SEND_CHANNEL` | VARCHAR(20) | N | `SMS`, `ALIMTALK`. 처음 값 `SMS` |
 
 - 살아 있는 행 UNIQUE: `(PHONE_HASH, ACTIVE_FLAG)`. 값이 NULL인 행은 걸리지 않는다.
@@ -284,7 +284,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | 2 | `TIMETABLE_EXCEPTION` | `DELETE_YN`을 켠다 |
 | 3 | `TIMETABLE_DAY` | `DELETE_YN`을 켠다 |
 | 4 | `TIMETABLE` | `DELETE_YN`을 켜고 `DISPLAY_NAME`을 빈 문자열로 바꾼다 |
-| 5 | `CHILD` | `DELETE_YN`을 켜고 `CHILD_NAME`을 빈 문자열로, `PHONE_ENC`를 빈 값으로 바꾼다 |
+| 5 | `CHILD` | `DELETE_YN`을 켜고 `CHILD_NAME`을 빈 문자열로, `PHONE_ENC`를 빈 값으로, `PHONE_HASH`를 NULL로 바꾼다 |
 | 6 | `LOGIN_SESSION`, `QR_LOGIN` | `DELETE_YN`을 켠다. `QR_LOGIN`은 `USER_ID`를 NULL로 바꾼다 |
 | 7 | `PHONE_VERIFICATION` | 그 번호의 행에서 `PHONE_HASH`·`CODE_HASH`를 빈 문자열로 바꾸고 `DELETE_YN`을 켠다. 남겨 두면 `CONSENT`를 거쳐 삭제된 계정의 번호 해시로 이어진다 |
 | 8 | `USER_INFO` | `DELETE_YN`을 켜고 `PHONE_ENC`를 빈 값으로, `PHONE_HASH`·`USER_NAME`을 빈 문자열로, 차 정보·목적지를 NULL로 바꾼다 |
