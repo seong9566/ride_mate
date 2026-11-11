@@ -22,4 +22,16 @@ public interface IScheduleService
     /// </summary>
     Task<ResponseModel<ScheduleDayDto>> UpdateScheduleDayPickupService(UpdateScheduleDayPickupDto dto,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 시간표 삭제
+    /// </summary>
+    Task<ResponseModel<DeleteScheduleResultDto>> DeleteScheduleService(DeleteScheduleDto dto,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 시간표 편집
+    /// </summary>
+    Task<ResponseModel<AddScheduleResultDto>> UpdateScheduleService(UpdateScheduleDto dto,
+        CancellationToken cancellationToken = default);
 }

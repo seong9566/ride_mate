@@ -89,6 +89,136 @@ public partial class ScheduleRepository
     }
 
     /// <summary>
+    /// 시간표를 지운다. 날짜별 예외 → 요일 → 시간표 순으로 표마다 UPDATE 한 번씩 DELETE_YN을 켜고, 시간표의 DISPLAY_NAME은 빈 문자열로 바꾼다.
+    /// 시간표 행이 바뀌지 않았으면 false를 돌려준다.
+    /// </summary>
+    public async Task<bool> DeleteScheduleAsync(int timetableId, IReadOnlyCollection<int> timetableDayIds,
+        DateTime updateDt, string updateUser, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // schema.md "아이·계정 삭제" 2~4행 순서다. 삭제된 행은 ACTIVE_FLAG가 NULL이라 살아 있는 행 UNIQUE에 걸리지 않는다
+            if (timetableDayIds.Count > 0)
+            {
+                await _context.TimetableExceptions
+                    .Where(x => timetableDayIds.Contains(x.TimetableDayId)
+                                && x.DeleteYn == false)
+                    .ExecuteUpdateAsync(setters => setters
+                        .SetProperty(x => x.DeleteYn, true)
+                        .SetProperty(x => x.UpdateDt, updateDt)
+                        .SetProperty(x => x.UpdateUser, updateUser), cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            await _context.TimetableDays
+                .Where(x => x.TimetableId == timetableId
+                            && x.DeleteYn == false)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.DeleteYn, true)
+                    .SetProperty(x => x.UpdateDt, updateDt)
+                    .SetProperty(x => x.UpdateUser, updateUser), cancellationToken)
+                .ConfigureAwait(false);
+
+            var affected = await _context.Timetables
+                .Where(x => x.TimetableId == timetableId
+                            && x.DeleteYn == false)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.DeleteYn, true)
+                    .SetProperty(x => x.DisplayName, string.Empty)
+                    .SetProperty(x => x.UpdateDt, updateDt)
+                    .SetProperty(x => x.UpdateUser, updateUser), cancellationToken)
+                .ConfigureAwait(false);
+
+            return affected > 0;
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw; // Service가 500으로 바꾼다
+        }
+    }
+
+    /// <summary>
+    /// 시간표를 편집한다. 뺀 요일의 날짜별 예외 → 뺀 요일 → 되살릴 요일 → 새 요일 → 시간표 순으로 쓴다.
+    /// 되살린 요일은 픽업 스위치를 켜고 LAST_PICKUP_DATE는 그대로 둔다. 시간표 행이 바뀌지 않았으면 false를 돌려준다.
+    /// </summary>
+    public async Task<bool> UpdateScheduleAsync(int timetableId, int academyId, string displayName, TimeSpan endTime,
+        IReadOnlyCollection<int> deleteDayIds, IReadOnlyCollection<int> reviveDayIds, IReadOnlyCollection<TimetableDay> newDays,
+        DateTime updateDt, string updateUser, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // 뺀 요일은 삭제와 같이 날짜별 예외 → 요일 순으로 지운다. 삭제된 행은 ACTIVE_FLAG가 NULL이라 살아 있는 행 UNIQUE에 걸리지 않는다
+            if (deleteDayIds.Count > 0)
+            {
+                await _context.TimetableExceptions
+                    .Where(x => deleteDayIds.Contains(x.TimetableDayId)
+                                && x.DeleteYn == false)
+                    .ExecuteUpdateAsync(setters => setters
+                        .SetProperty(x => x.DeleteYn, true)
+                        .SetProperty(x => x.UpdateDt, updateDt)
+                        .SetProperty(x => x.UpdateUser, updateUser), cancellationToken)
+                    .ConfigureAwait(false);
+
+                await _context.TimetableDays
+                    .Where(x => x.TimetableId == timetableId
+                                && deleteDayIds.Contains(x.TimetableDayId)
+                                && x.DeleteYn == false)
+                    .ExecuteUpdateAsync(setters => setters
+                        .SetProperty(x => x.DeleteYn, true)
+                        .SetProperty(x => x.UpdateDt, updateDt)
+                        .SetProperty(x => x.UpdateUser, updateUser), cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            // 다시 넣은 요일은 새 행을 만들지 않고 삭제 표시된 행을 되살린다(schema.md TIMETABLE 절)
+            if (reviveDayIds.Count > 0)
+            {
+                await _context.TimetableDays
+                    .Where(x => x.TimetableId == timetableId
+                                && reviveDayIds.Contains(x.TimetableDayId)
+                                && x.DeleteYn == true)
+                    .ExecuteUpdateAsync(setters => setters
+                        .SetProperty(x => x.DeleteYn, false)
+                        .SetProperty(x => x.PickupYn, true)
+                        .SetProperty(x => x.UpdateDt, updateDt)
+                        .SetProperty(x => x.UpdateUser, updateUser), cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            if (newDays.Count > 0)
+            {
+                await _context.TimetableDays.AddRangeAsync(newDays, cancellationToken).ConfigureAwait(false);
+                await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            var affected = await _context.Timetables
+                .Where(x => x.TimetableId == timetableId
+                            && x.DeleteYn == false)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.AcademyId, academyId)
+                    .SetProperty(x => x.DisplayName, displayName)
+                    .SetProperty(x => x.EndTime, endTime)
+                    .SetProperty(x => x.UpdateDt, updateDt)
+                    .SetProperty(x => x.UpdateUser, updateUser), cancellationToken)
+                .ConfigureAwait(false);
+
+            return affected > 0;
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw; // Service가 500으로 바꾼다
+        }
+    }
+
+    /// <summary>
     /// 시간표와 그 요일 행을 한 번에 등록한다. 저장 뒤 model의 시간표 ID가 채워진다.
     /// </summary>
     public async Task<bool> AddTimetableAsync(Timetable model, IEnumerable<TimetableDay> days,
