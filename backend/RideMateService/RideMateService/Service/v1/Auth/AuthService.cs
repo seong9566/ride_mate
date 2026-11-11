@@ -180,98 +180,12 @@ public partial class AuthService : IAuthService
     {
         try
         {
-            DateTime thisTime = NowToSecond(); // DB DATETIME은 초 단위로 반올림해 저장하므로 기준 시각도 초 단위로 맞춘다
-
             // 1) 입력 검증 — API 모델 검증을 거치지 않은 호출도 같은 규칙으로 거절한다
             if (dto is null || !IsValidPhone(dto.phone))
                 return new ResponseModel<PhoneVerificationResultDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
 
-            var phoneDigits = dto.phone!;
-            var phoneHash = CreatePhoneHash(phoneDigits);
-            var code = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
-            var codeHash = CreateCodeHash(phoneDigits, code);
-
-            // 2) 최근 발송 잠금 — 용도와 관계없이 같은 번호의 마지막 행을 기준으로 제한한다
-            var transaction = await _context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-            await using var transactionScope = transaction.ConfigureAwait(false);
-
-            var latestId = await _authRepository.LockLatestPhoneVerificationAsync(phoneHash,
-                transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
-            var latest = latestId is null
-                ? null
-                : await _authRepository.GetPhoneVerificationAsync(latestId.Value, cancellationToken).ConfigureAwait(false);
-
-            // 3) 잠금 확인
-            if (latest?.LockUntilDt > thisTime)
-            {
-                var retryAfter = RemainingSeconds(latest.LockUntilDt.Value, thisTime);
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return new ResponseModel<PhoneVerificationResultDto>
-                {
-                    message = "잘못된 요청입니다.",
-                    data = new PhoneVerificationResultDto { expiresIn = 0, retryAfter = retryAfter },
-                    code = 102
-                };
-            }
-
-            // 4) 재발송 간격 확인
-            if (latest?.CreateDt > thisTime.AddSeconds(-PhoneVerificationResendSeconds))
-            {
-                var retryAfter = Math.Max(1,
-                    RemainingSeconds(latest.CreateDt.AddSeconds(PhoneVerificationResendSeconds), thisTime));
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return new ResponseModel<PhoneVerificationResultDto>
-                {
-                    message = "잘못된 요청입니다.",
-                    data = new PhoneVerificationResultDto { expiresIn = 0, retryAfter = retryAfter },
-                    code = 101
-                };
-            }
-
-            // 5) 최근 미완료 인증의 실패 횟수 이어받기
-            var failCount = latest is not null
-                            && latest.VerifyDt is null
-                            && latest.LockUntilDt is null
-                            && latest.CreateDt > thisTime.AddMinutes(-PhoneVerificationCarryMinutes)
-                ? latest.FailCnt
-                : (sbyte)0;
-
-            // 6) 새 인증번호 저장
-            var verification = new PhoneVerification
-            {
-                Purpose = "LOGIN",
-                PhoneHash = phoneHash,
-                CodeHash = codeHash,
-                ExpireDt = thisTime.AddMinutes(PhoneVerificationExpireMinutes),
-                FailCnt = failCount,
-                CreateDt = thisTime,
-                CreateUser = AuditUser,
-                UpdateDt = thisTime,
-                UpdateUser = AuditUser,
-                DeleteYn = false
-            };
-
-            if (!await _authRepository.AddPhoneVerificationAsync(verification, cancellationToken).ConfigureAwait(false))
-            {
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return new ResponseModel<PhoneVerificationResultDto>
-                    { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
-            }
-
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-
-            // 7) DB 반영 뒤 문자 발송 — 커밋한 뒤에는 요청이 끊겨도 보낸다(행만 남고 1분 동안 다시 받지 못하는 일을 막는다)
-            await _smsSender.SendAsync(phoneDigits,
-                "[라이드메이트] 인증번호 " + code + " (3분 안에 입력해 주세요)", CancellationToken.None).ConfigureAwait(false);
-
-            // 8) 응답
-            return new ResponseModel<PhoneVerificationResultDto>
-            {
-                message = "요청이 정상 처리되었습니다.",
-                data = new PhoneVerificationResultDto
-                    { expiresIn = PhoneVerificationExpireMinutes * 60, retryAfter = PhoneVerificationResendSeconds },
-                code = 200
-            };
+            return await SendPhoneVerificationCoreAsync(dto.phone!, CreatePhoneHash(dto.phone!), "LOGIN",
+                code => "[라이드메이트] 인증번호 " + code + " (3분 안에 입력해 주세요)", cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested && !IsDeadlock(ex)) // 요청 취소·교착은 그대로 올려보낸다
         {
@@ -282,6 +196,97 @@ public partial class AuthService : IAuthService
             return new ResponseModel<PhoneVerificationResultDto>
                 { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
         }
+    }
+
+    // 인증번호 발송 공통 — 용도(LOGIN·GUARDIAN)만 다르고 잠금·재발송 간격·저장·발송 규칙은 같다.
+    // 예외는 호출한 Core의 catch가 500으로 바꾸고, 교착은 그대로 올려보낸다(위 주석 참고)
+    private async Task<ResponseModel<PhoneVerificationResultDto>> SendPhoneVerificationCoreAsync(string phoneDigits,
+        string phoneHash, string purpose, Func<string, string> createSmsMessage, CancellationToken cancellationToken)
+    {
+        DateTime thisTime = NowToSecond(); // DB DATETIME은 초 단위로 반올림해 저장하므로 기준 시각도 초 단위로 맞춘다
+        var code = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
+        var codeHash = CreateCodeHash(phoneDigits, code);
+
+        // 2) 최근 발송 잠금 — 용도와 관계없이 같은 번호의 마지막 행을 기준으로 제한한다
+        var transaction = await _context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transactionScope = transaction.ConfigureAwait(false);
+
+        var latestId = await _authRepository.LockLatestPhoneVerificationAsync(phoneHash,
+            transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+        var latest = latestId is null
+            ? null
+            : await _authRepository.GetPhoneVerificationAsync(latestId.Value, cancellationToken).ConfigureAwait(false);
+
+        // 3) 잠금 확인
+        if (latest?.LockUntilDt > thisTime)
+        {
+            var retryAfter = RemainingSeconds(latest.LockUntilDt.Value, thisTime);
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return new ResponseModel<PhoneVerificationResultDto>
+            {
+                message = "잘못된 요청입니다.",
+                data = new PhoneVerificationResultDto { expiresIn = 0, retryAfter = retryAfter },
+                code = 102
+            };
+        }
+
+        // 4) 재발송 간격 확인
+        if (latest?.CreateDt > thisTime.AddSeconds(-PhoneVerificationResendSeconds))
+        {
+            var retryAfter = Math.Max(1,
+                RemainingSeconds(latest.CreateDt.AddSeconds(PhoneVerificationResendSeconds), thisTime));
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return new ResponseModel<PhoneVerificationResultDto>
+            {
+                message = "잘못된 요청입니다.",
+                data = new PhoneVerificationResultDto { expiresIn = 0, retryAfter = retryAfter },
+                code = 101
+            };
+        }
+
+        // 5) 최근 미완료 인증의 실패 횟수 이어받기
+        var failCount = latest is not null
+                        && latest.VerifyDt is null
+                        && latest.LockUntilDt is null
+                        && latest.CreateDt > thisTime.AddMinutes(-PhoneVerificationCarryMinutes)
+            ? latest.FailCnt
+            : (sbyte)0;
+
+        // 6) 새 인증번호 저장
+        var verification = new PhoneVerification
+        {
+            Purpose = purpose,
+            PhoneHash = phoneHash,
+            CodeHash = codeHash,
+            ExpireDt = thisTime.AddMinutes(PhoneVerificationExpireMinutes),
+            FailCnt = failCount,
+            CreateDt = thisTime,
+            CreateUser = AuditUser,
+            UpdateDt = thisTime,
+            UpdateUser = AuditUser,
+            DeleteYn = false
+        };
+
+        if (!await _authRepository.AddPhoneVerificationAsync(verification, cancellationToken).ConfigureAwait(false))
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return new ResponseModel<PhoneVerificationResultDto>
+                { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        // 7) DB 반영 뒤 문자 발송 — 커밋한 뒤에는 요청이 끊겨도 보낸다(행만 남고 1분 동안 다시 받지 못하는 일을 막는다)
+        await _smsSender.SendAsync(phoneDigits, createSmsMessage(code), CancellationToken.None).ConfigureAwait(false);
+
+        // 8) 응답
+        return new ResponseModel<PhoneVerificationResultDto>
+        {
+            message = "요청이 정상 처리되었습니다.",
+            data = new PhoneVerificationResultDto
+                { expiresIn = PhoneVerificationExpireMinutes * 60, retryAfter = PhoneVerificationResendSeconds },
+            code = 200
+        };
     }
 
     /// <summary>
