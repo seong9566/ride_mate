@@ -19,7 +19,7 @@ RideMateService/
 │   ├── LoginSessionListRateLimit.cs # 차 계정 목록 API의 요청 빈도 제한 값·파티션 키(등록은 Extensions)
 │   ├── Security/                 # 해시·전화번호 암호화·토큰 서비스와 설정 클래스
 │   ├── Map/                      # 외부 지도 API(카카오 도보 경로) 호출과 거리 계산
-│   ├── Sms/                      # ISmsSender, 개발용 DevSmsSender
+│   ├── Sms/                      # ISmsSender, 개발용 DevSmsSender, 솔라피 SolapiSmsSender
 │   ├── Logger/                   # ILogService, LogService
 │   └── Dto/v1/{도메인}/Request|Response/
 ├── Commons/

@@ -17,9 +17,9 @@ public class DevSmsSender : ISmsSender
     }
 
     /// <summary>
-    /// Development 환경에서는 가린 번호와 메시지를 콘솔에 남기고, 그 밖의 환경에서는 미설정 사실만 기록한다.
+    /// Development 환경에서는 가린 번호와 메시지를 콘솔에 남기고, 그 밖의 환경에서는 미설정 사실만 기록한다. 항상 Success = true, ResultCode = DEV를 돌려준다.
     /// </summary>
-    public Task SendAsync(string phoneDigits, string message, CancellationToken cancellationToken = default)
+    public Task<SmsSendResult> SendAsync(string phoneDigits, string message, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -33,6 +33,6 @@ public class DevSmsSender : ISmsSender
             _logService.LogMessage("SMS sender is not configured");
         }
 
-        return Task.CompletedTask;
+        return Task.FromResult(new SmsSendResult(true, "DEV"));
     }
 }

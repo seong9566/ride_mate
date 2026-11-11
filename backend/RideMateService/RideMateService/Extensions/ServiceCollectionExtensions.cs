@@ -75,8 +75,38 @@ public static class InfrastructureExtensions
     {
         services.AddTransient<ILogService, LogService>();
         services.AddHttpContextAccessor();
-        // 문자 사업자가 정해지면 구현체만 바꾼다
-        services.AddSingleton<ISmsSender, DevSmsSender>();
+        return services;
+    }
+
+    /// <summary>
+    /// 문자 발송기를 등록한다. Sms:Provider가 비었거나 Dev이면 실제로 발송하지 않는 DevSmsSender를, Solapi이면 5초 타임아웃의 typed HttpClient인 SolapiSmsSender를 등록한다.
+    /// Solapi인데 Sms:Solapi의 ApiKey·ApiSecret·Sender가 비었거나 Sender가 숫자만이 아니거나, Provider가 그 밖의 값이면 기동할 때 InvalidOperationException을 던진다.
+    /// </summary>
+    public static IServiceCollection AddSmsInfrastructure(this IServiceCollection services, IConfiguration configuration)
+    {
+        var provider = configuration["Sms:Provider"];
+        if (string.IsNullOrWhiteSpace(provider) || provider.Trim().Equals("Dev", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddSingleton<ISmsSender, DevSmsSender>();
+            return services;
+        }
+
+        if (!provider.Trim().Equals("Solapi", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Sms:Provider 설정이 올바르지 않습니다. (Dev 또는 Solapi)");
+
+        var solapi = configuration.GetSection("Sms:Solapi");
+        RequireText(solapi, "ApiKey");
+        RequireText(solapi, "ApiSecret");
+        var sender = RequireText(solapi, "Sender");
+        if (!sender.All(char.IsAsciiDigit))
+            throw new InvalidOperationException($"{solapi.Path}:Sender 설정은 숫자만 써야 합니다.");
+
+        services.Configure<SolapiOptions>(solapi);
+        services.AddHttpClient<ISmsSender, SolapiSmsSender>(client =>
+        {
+            client.BaseAddress = new Uri("https://api.solapi.com/");
+            client.Timeout = TimeSpan.FromSeconds(5);
+        });
         return services;
     }
 
@@ -134,7 +164,7 @@ public static class InfrastructureExtensions
     {
         var value = section[name];
         if (string.IsNullOrWhiteSpace(value))
-            throw new InvalidOperationException($"{section.Key}:{name} 설정이 비어 있습니다.");
+            throw new InvalidOperationException($"{section.Path}:{name} 설정이 비어 있습니다.");
         return value;
     }
 
