@@ -806,6 +806,99 @@
           }
         ]
       }
+    },
+    "/api/v1/User/M/sign/UpdateHome": {
+      "patch": {
+        "tags": [
+          "User"
+        ],
+        "summary": "집 저장",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_User_Request_UpdateHomeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_User_Response_HomeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/User/M/sign/UpdateVehicle": {
+      "patch": {
+        "tags": [
+          "User"
+        ],
+        "summary": "차 정보 저장",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_User_Request_UpdateVehicleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_User_Response_VehicleDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/User/M/sign/UpdateSetupComplete": {
+      "patch": {
+        "tags": [
+          "User"
+        ],
+        "summary": "초기 설정 완료",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_User_Response_SetupCompleteDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -1694,6 +1787,101 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_Dto_v1_User_Request_UpdateHomeDto": {
+        "required": [
+          "address"
+        ],
+        "type": "object",
+        "properties": {
+          "address": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "lat": {
+            "maximum": 90,
+            "minimum": -90,
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "lng": {
+            "maximum": 180,
+            "minimum": -180,
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_User_Request_UpdateVehicleDto": {
+        "type": "object",
+        "properties": {
+          "carModel": {
+            "type": "string",
+            "nullable": true
+          },
+          "carColor": {
+            "pattern": "^(WHITE|BLACK|GRAY|ETC)$",
+            "type": "string",
+            "nullable": true
+          },
+          "carNoLast4": {
+            "pattern": "^[0-9]{4}$",
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_User_Response_HomeDto": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "lat": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "lng": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_User_Response_SetupCompleteDto": {
+        "type": "object",
+        "properties": {
+          "setupDoneDt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_User_Response_VehicleDto": {
+        "type": "object",
+        "properties": {
+          "carModel": {
+            "type": "string",
+            "nullable": true
+          },
+          "carColor": {
+            "type": "string",
+            "nullable": true
+          },
+          "carNoLast4": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Auth_Response_GuardianVerificationCheckDto": {
         "type": "object",
         "properties": {
@@ -1856,6 +2044,60 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_User_Response_HomeDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_User_Response_HomeDto"
+          },
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_User_Response_SetupCompleteDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_User_Response_SetupCompleteDto"
+          },
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_User_Response_VehicleDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_User_Response_VehicleDto"
+          },
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_ResponseModel_System_Boolean": {
         "type": "object",
         "properties": {
@@ -1949,6 +2191,9 @@
     },
     {
       "name": "Schedule"
+    },
+    {
+      "name": "User"
     }
   ]
 }
