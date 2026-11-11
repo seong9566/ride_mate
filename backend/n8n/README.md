@@ -36,7 +36,7 @@ docker compose restart n8n
 docker compose logs n8n --since 1m | grep "published workflows"
 ```
 
-마지막 명령에 `2 published workflows`가 보여야 한다. CLI로 `publish:workflow`를 해도 떠 있는 n8n은 스케줄을 다시 읽지 않으므로 반드시 재시작한다(2026-11-11 실측: 재시작 전까지 회차가 기록되지 않았다). 링크 목록 만들기(`topisLinkBuild01`, `gitsLinkBuild001`)는 수동 워크플로라 활성화하지 않는다. 화면에서 실행하거나 아래 "5분 수집"의 `n8n execute` 명령에서 id만 바꿔 실행한다.
+마지막 명령에 `2 published workflows`가 보여야 한다(재시작 직후라 아직 안 보이면 몇 초 뒤 다시 확인한다). CLI로 `publish:workflow`를 해도 떠 있는 n8n은 스케줄을 다시 읽지 않으므로 반드시 재시작한다(2026-11-11 실측: 재시작 전까지 회차가 기록되지 않았다). 링크 목록 만들기(`topisLinkBuild01`, `gitsLinkBuild001`)는 수동 워크플로라 활성화하지 않는다. 화면에서 실행하거나 아래 "5분 수집"의 `n8n execute` 명령에서 id만 바꿔 실행한다.
 
 ## API 키
 
