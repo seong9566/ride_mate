@@ -32,10 +32,11 @@ for f in n8n/workflows/*.json; do
 done
 docker compose exec -T n8n n8n publish:workflow --id=topisCollect0001
 docker compose exec -T n8n n8n publish:workflow --id=gitsCollect00001
-docker compose exec -T n8n n8n list:workflow --active=true
+docker compose restart n8n
+docker compose logs n8n --since 1m | grep "published workflows"
 ```
 
-마지막 명령에 `topisCollect0001`과 `gitsCollect00001`이 보여야 한다. 링크 목록 만들기(`topisLinkBuild01`, `gitsLinkBuild001`)는 수동 워크플로라 활성화하지 않는다. 화면에서 실행하거나 아래 "5분 수집"의 `n8n execute` 명령에서 id만 바꿔 실행한다.
+마지막 명령에 `2 published workflows`가 보여야 한다. CLI로 `publish:workflow`를 해도 떠 있는 n8n은 스케줄을 다시 읽지 않으므로 반드시 재시작한다(2026-11-11 실측: 재시작 전까지 회차가 기록되지 않았다). 링크 목록 만들기(`topisLinkBuild01`, `gitsLinkBuild001`)는 수동 워크플로라 활성화하지 않는다. 화면에서 실행하거나 아래 "5분 수집"의 `n8n execute` 명령에서 id만 바꿔 실행한다.
 
 ## API 키
 
@@ -139,11 +140,12 @@ docker compose exec -T -e N8N_RUNNERS_BROKER_PORT=5691 n8n n8n execute --id=topi
 
 떠 있는 n8n이 작업 브로커 포트 5679를 쓰므로, `n8n execute`에는 다른 브로커 포트를 줘야 한다. 그렇지 않으면 "port 5679 is already in use"로 실행되지 않는다.
 
-워크플로 JSON을 고쳤으면 다시 가져온 뒤 활성화한다.
+워크플로 JSON을 고쳤으면 다시 가져온 뒤 활성화하고 재시작한다. JSON은 `active: false`로 저장돼 있으므로 수집 워크플로는 가져올 때마다 다시 publish한다.
 
 ```sh
 docker compose exec -T n8n sh -c 'cat > /tmp/wf.json && n8n import:workflow --input=/tmp/wf.json; rc=$?; rm -f /tmp/wf.json; exit $rc' < n8n/workflows/topis-collect.json
 docker compose exec -T n8n n8n publish:workflow --id=topisCollect0001
+docker compose restart n8n
 ```
 
 MySQL 노드의 쿼리 파라미터는 `$1`부터 쿼리에 나오는 순서대로 한 번씩만 쓰고, 값은 `={{ [a, b] }}` 배열로 넘긴다. n8n은 `$n`을 모두 `?`로 바꾸고 값을 번호순으로 채우므로, 순서가 어긋나거나 같은 번호를 두 번 쓰면 값이 엇갈린다. `queryBatching: independently`는 쓰지 않는다(여러 행을 넣을 때 실패한다).
