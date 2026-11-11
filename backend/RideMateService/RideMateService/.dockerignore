@@ -2,4 +2,8 @@ bin/
 obj/
 Dockerfile
 .dockerignore
-appsettings.Development.json
+appsettings.*.json
+.env
+*.user
+.vs/
+.idea/

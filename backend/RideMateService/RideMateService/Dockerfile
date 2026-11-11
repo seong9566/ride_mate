@@ -5,11 +5,9 @@ RUN dotnet restore
 COPY . .
 RUN dotnet publish -c Release -o /app --no-restore
 
+# 베이스 이미지에 tzdata가 있어 TZ 환경변수만 주면 DateTime.Now가 KST가 된다
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
-# 코드가 DateTime.Now(KST)를 쓰므로 TZ 환경변수가 동작하도록 시간대 데이터를 넣는다
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends tzdata \
-    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /app .
+USER $APP_UID
 ENTRYPOINT ["dotnet", "RideMateService.dll"]
