@@ -97,7 +97,7 @@
               "outputPropertyName": "body"
             }
           },
-          "timeout": 10000
+          "timeout": 30000
         }
       },
       "id": "request-road-divisions",
@@ -194,7 +194,7 @@
               "outputPropertyName": "body"
             }
           },
-          "timeout": 10000
+          "timeout": 30000
         }
       },
       "id": "request-road-info-first-pages",
@@ -340,7 +340,7 @@
               "outputPropertyName": "body"
             }
           },
-          "timeout": 10000
+          "timeout": 30000
         }
       },
       "id": "request-road-info-extra-pages",
@@ -467,7 +467,7 @@
               "outputPropertyName": "body"
             }
           },
-          "timeout": 10000
+          "timeout": 30000
         }
       },
       "id": "request-link-load-first-pages",
@@ -613,7 +613,7 @@
               "outputPropertyName": "body"
             }
           },
-          "timeout": 10000
+          "timeout": 30000
         }
       },
       "id": "request-link-load-extra-pages",
@@ -789,7 +789,7 @@
               "outputPropertyName": "body"
             }
           },
-          "timeout": 10000
+          "timeout": 30000
         }
       },
       "id": "request-link-vertices",
@@ -935,7 +935,7 @@
               "outputPropertyName": "body"
             }
           },
-          "timeout": 10000
+          "timeout": 30000
         }
       },
       "id": "request-link-details",
