@@ -5,7 +5,7 @@
 
 ## 결정
 
-- 앱↔서버 API 문서의 정본은 Notion "라이드메이트 API 문서"(https://app.notion.com/p/415aa638eaf880808d84c4ffba30bb51)다. 목차 페이지에 API 목록·공통 규칙·공통 오류 형식을 두고, API마다 하위 페이지(Header·Request·Response·Error·예외)를 둔다.
+- 앱↔서버 API 문서의 정본은 Notion "라이드메이트 API 문서"(https://app.notion.com/p/415aa638eaf880808d84c4ffba30bb51)다. 목차 아래에 화면별 API 호출 순서("로그인"·"회원가입"), API 목록과 API별 하위 페이지("API 상세", Header·Request·Response·Error·예외), 공통 오류 형식을 둔다. 주소·응답 형식 같은 공통 규칙은 레포 `backend/docs/api.md`에 둔다(사용자 결정 2026-11-11).
 - 레포의 API별 문서(`docs/api/Auth/*.md`)와 양식 템플릿(`update-api-spec/templates/api-doc.md`)은 지운다. 양식 규칙은 `update-api-spec` 스킬 본문에 둔다.
 - 필드 이름·타입의 기계 정본은 서버 Swagger 출력인 `docs/api/openapi.json`이다. 둘이 다르면 `openapi.json`이 맞고 Notion을 고친다.
 - API를 바꾸는 PR은 `openapi.json`을 갱신하고, PR을 만들 때 Notion 페이지를 고친다. 고친 페이지 맨 위에는 "머지 대기" 표시를 하고 PR 본문에 고친 페이지를 적는다. 머지하면 표시를 지우고, 머지하지 않고 닫으면 Notion 변경을 되돌린다(사용자 결정 2026-11-11).

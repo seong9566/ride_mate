@@ -69,5 +69,5 @@ description: RideMate 백엔드에 새 도메인(DTO·Repository·Service·Contr
 - [ ] `dotnet build RideMateService.sln -warnaserror`가 경고 0, 오류 0이다.
 - [ ] 새 API의 응답이 `{ message, data, code }` 형태이고, `code`와 HTTP 상태가 `api.md` 표와 맞다.
 - [ ] 새로 만든 파일이 커밋에 들어 있다. `git show --stat --format= HEAD`에 전부 나오고 `git check-ignore -v <파일>`에 걸리지 않는다(도메인 이름이 `Log`·`Debug`·`Release`·`Publish`처럼 `backend/.gitignore`가 무시하는 폴더 이름이면 통째로 빠진다).
-- [ ] `docs/api/openapi.json`에 새 라우트가 들어 있다. Notion 목차 표와 하위 페이지가 있거나(연결된 세션), 남긴 Notion 작업이 결과 보고에 있다(연결되지 않은 환경).
+- [ ] `docs/api/openapi.json`에 새 라우트가 들어 있다. Notion "API 상세" 목록 표와 하위 페이지가 있거나(연결된 세션), 남긴 Notion 작업이 결과 보고에 있다(연결되지 않은 환경).
 - [ ] 변경이 커밋되어 `git status --short`가 비어 있다.
