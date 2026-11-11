@@ -277,4 +277,35 @@ public class AuthController : ApiControllerBase
             return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
         }
     }
+
+    /// <summary>
+    /// 보호자 동의 저장
+    /// </summary>
+    [Produces("application/json")]
+    [HttpPost]
+    [Route("v1/Auth/M/sign/AddConsent")]
+    [Consumes("application/json")]
+    [SwaggerOperation(Summary = "보호자 동의 저장")]
+    [ProducesResponseType(typeof(ResponseModel<bool>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> AddConsent([FromBody] AddConsentDto dto, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _authService.AddConsentService(dto, cancellationToken).ConfigureAwait(false);
+            return ToActionResult(model);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // 앱이 요청을 끊었다. 오류로 기록하지 않는다
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
 }

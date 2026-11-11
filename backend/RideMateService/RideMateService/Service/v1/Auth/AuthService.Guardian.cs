@@ -138,6 +138,90 @@ public partial class AuthService
         }
     }
 
+    /// <summary>
+    /// 보호자 동의 저장
+    /// </summary>
+    public Task<ResponseModel<bool>> AddConsentService(AddConsentDto dto, CancellationToken cancellationToken = default)
+    {
+        return RetryOnDeadlockAsync(() => AddConsentCoreAsync(dto, cancellationToken));
+    }
+
+    // PHONE_VERIFICATION → USER_INFO 순으로 잠근다. 교착은 RetryOnDeadlockAsync가 다시 실행하므로 500으로 바꾸지 않고 올려보낸다
+    private async Task<ResponseModel<bool>> AddConsentCoreAsync(AddConsentDto dto, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // 1) 입력 검증 — 보호자·아이 정보 동의는 필수라서 true만 받는다
+            if (dto is null || dto.guardianYn != true || dto.childInfoYn != true || dto.arrivalLogYn is null)
+                return new ResponseModel<bool> { message = "잘못된 요청입니다.", data = false, code = 400 };
+
+            // 2) 인증 확인 — 잠금 키(PhoneHash)가 필요해 트랜잭션 전에 읽는다
+            var loginUser = await GetLoginUserAsync(cancellationToken).ConfigureAwait(false);
+            if (loginUser is null)
+                return new ResponseModel<bool> { message = "잘못된 요청입니다.", data = false, code = 401 };
+
+            DateTime thisTime = NowToSecond();
+            var transaction = await _context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            await using var transactionScope = transaction.ConfigureAwait(false);
+
+            // 3) 일반 조회보다 먼저 GUARDIAN 인증번호 → 계정 순으로 잠근다
+            var verificationId = await _authRepository.LockLatestPhoneVerificationByPurposeAsync(loginUser.PhoneHash,
+                "GUARDIAN", transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+            var lockedUserId = await _authRepository.LockUserInfoAsync(loginUser.UserId,
+                transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+            var user = lockedUserId is null
+                ? null
+                : await _authRepository.GetUserInfoAsync(lockedUserId.Value, cancellationToken).ConfigureAwait(false);
+            if (user is null) // 잠그는 사이에 계정이 지워졌다
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<bool> { message = "잘못된 요청입니다.", data = false, code = 401 };
+            }
+
+            // 4) 가장 최근 보호자 인증이 성공했고 허용 시간 안인지 본다 — 새 번호를 받아 아직 확인 전이면 그 행이 최근 행이라 거절된다
+            var verification = verificationId is null
+                ? null
+                : await _authRepository.GetPhoneVerificationAsync(verificationId.Value, cancellationToken).ConfigureAwait(false);
+            if (verification?.VerifyDt is not { } verifyDt || verifyDt < thisTime.AddMinutes(-GuardianConsentValidMinutes))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<bool> { message = "보호자 인증이 필요합니다.", data = false, code = 101 };
+            }
+
+            // 5) 동의 기록 — 쌓기만 한다
+            var arrivalLogYn = dto.arrivalLogYn.Value;
+            var consents = new[]
+            {
+                CreateConsent(user.UserId, "GUARDIAN", true, "PHONE_OTP", verification.PhoneVerificationId, thisTime),
+                CreateConsent(user.UserId, "CHILD_INFO", true, "CHECK", null, thisTime),
+                CreateConsent(user.UserId, "ARRIVAL_LOG", arrivalLogYn, "CHECK", null, thisTime)
+            };
+            if (!await _authRepository.AddConsentsAsync(consents, cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<bool> { message = "서버에서 요청을 처리하지 못하였습니다.", data = false, code = 500 };
+            }
+
+            // 6) 도착 기록 사본 — 같은 트랜잭션에서 ARRIVAL_LOG 행과 함께 바꾼다
+            user.ArrivalLogYn = arrivalLogYn;
+            user.UpdateDt = thisTime;
+            user.UpdateUser = AuditUser;
+            if (!await _authRepository.UpdateUserInfoAsync(user, cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<bool> { message = "서버에서 요청을 처리하지 못하였습니다.", data = false, code = 500 };
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return new ResponseModel<bool> { message = "요청이 정상 처리되었습니다.", data = true, code = 200 };
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && !IsDeadlock(ex)) // 요청 취소·교착은 그대로 올려보낸다
+        {
+            LogServiceException(ex);
+            return new ResponseModel<bool> { message = "서버에서 요청을 처리하지 못하였습니다.", data = false, code = 500 };
+        }
+    }
+
     // 로그인한 계정(JWT sub의 사용자) — 클레임이 없거나 계정이 없으면 null. 부른 쪽이 401로 바꾼다
     private async Task<UserInfo?> GetLoginUserAsync(CancellationToken cancellationToken)
     {

@@ -79,4 +79,9 @@ public interface IAuthService
     /// </summary>
     Task<ResponseModel<GuardianVerificationCheckDto>> UpdateGuardianVerificationService(
         UpdateGuardianVerificationDto dto, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 보호자 동의 저장
+    /// </summary>
+    Task<ResponseModel<bool>> AddConsentService(AddConsentDto dto, CancellationToken cancellationToken = default);
 }

@@ -32,6 +32,11 @@ public interface IAuthRepository
     Task<bool> AddUserInfoAsync(UserInfo model, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 운전자 계정 수정
+    /// </summary>
+    Task<bool> UpdateUserInfoAsync(UserInfo model, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 동의 기록을 등록한다.
     /// </summary>
     Task<bool> AddConsentsAsync(IEnumerable<Consent> models, CancellationToken cancellationToken = default);

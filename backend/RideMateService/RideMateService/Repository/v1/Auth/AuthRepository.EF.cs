@@ -113,6 +113,27 @@ public partial class AuthRepository
     }
 
     /// <summary>
+    /// 운전자 계정 수정
+    /// </summary>
+    public async Task<bool> UpdateUserInfoAsync(UserInfo model, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            _context.UserInfos.Update(model);
+
+            return await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false) > 0;
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw; // Service가 500으로 바꾼다
+        }
+    }
+
+    /// <summary>
     /// 동의 기록을 등록한다.
     /// </summary>
     public async Task<bool> AddConsentsAsync(IEnumerable<Consent> models,
