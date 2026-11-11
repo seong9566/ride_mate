@@ -546,6 +546,40 @@
         ]
       }
     },
+    "/api/v1/ChildInfo/M/sign/AddChild": {
+      "post": {
+        "tags": [
+          "ChildInfo"
+        ],
+        "summary": "아이 정보 저장",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_ChildInfo_Request_AddChildDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_ChildInfo_Response_AddChildResultDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/api/v1/Pickup/M/sign/DetailDepartureGuide": {
       "get": {
         "tags": [
@@ -1076,6 +1110,53 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_Dto_v1_ChildInfo_Request_AddChildDto": {
+        "required": [
+          "childName",
+          "phone",
+          "sendChannel"
+        ],
+        "type": "object",
+        "properties": {
+          "childName": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "phone": {
+            "minLength": 1,
+            "pattern": "^01[016789][0-9]{7,8}$",
+            "type": "string"
+          },
+          "sendChannel": {
+            "minLength": 1,
+            "pattern": "^(SMS|ALIMTALK)$",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_ChildInfo_Response_AddChildResultDto": {
+        "type": "object",
+        "properties": {
+          "childSeq": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "childName": {
+            "type": "string",
+            "nullable": true
+          },
+          "phoneMasked": {
+            "type": "string",
+            "nullable": true
+          },
+          "sendChannel": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_Dto_v1_Pickup_Response_DepartureGuideEnforcementDto": {
         "type": "object",
         "properties": {
@@ -1400,6 +1481,24 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_ChildInfo_Response_AddChildResultDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_ChildInfo_Response_AddChildResultDto"
+          },
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_DetailDepartureGuideDto": {
         "type": "object",
         "properties": {
@@ -1498,6 +1597,9 @@
     },
     {
       "name": "AuthWeb"
+    },
+    {
+      "name": "ChildInfo"
     },
     {
       "name": "Pickup"
