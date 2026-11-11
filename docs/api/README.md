@@ -6,4 +6,5 @@
 | `openapi.json` — 서버의 Swagger 출력 | 이 폴더. `backend/scripts/update-api-spec.sh`로만 갱신한다. 손으로 고치지 않는다 |
 
 - 필드 이름과 타입이 Notion 문서와 `openapi.json`에서 다르면 `openapi.json`이 맞다. 다른 것을 발견하면 Notion 문서를 고친다.
+- 주소·응답 형식(`{ message, data, code }`)·응답 code와 HTTP 상태의 대응 같은 공통 규칙은 `backend/docs/api.md`를 따른다.
 - 갱신 절차는 `backend/.agents/skills/update-api-spec/SKILL.md`를 따른다.
