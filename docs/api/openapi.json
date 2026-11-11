@@ -540,6 +540,42 @@
           }
         ]
       }
+    },
+    "/api/v1/Pickup/M/sign/GetRestrictedZoneList": {
+      "get": {
+        "tags": [
+          "Pickup"
+        ],
+        "summary": "학원가 단속 구역 목록",
+        "parameters": [
+          {
+            "name": "version",
+            "in": "query",
+            "schema": {
+              "maxLength": 64,
+              "minLength": 0,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_GetRestrictedZoneList"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -1037,6 +1073,100 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_Dto_v1_Pickup_Response_GetRestrictedZoneList": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "nullable": true
+          },
+          "areas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_RestrictedZoneAreaDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Pickup_Response_RestrictedZoneAreaDto": {
+        "type": "object",
+        "properties": {
+          "areaSeq": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "areaName": {
+            "type": "string",
+            "nullable": true
+          },
+          "zones": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_RestrictedZoneDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Pickup_Response_RestrictedZoneDto": {
+        "type": "object",
+        "properties": {
+          "restrictedZoneSeq": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "zoneType": {
+            "type": "string",
+            "nullable": true
+          },
+          "dayType": {
+            "type": "string",
+            "nullable": true
+          },
+          "activeStartTime": {
+            "type": "string",
+            "nullable": true
+          },
+          "activeEndTime": {
+            "type": "string",
+            "nullable": true
+          },
+          "polygons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_ZonePolygonDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Pickup_Response_ZonePolygonDto": {
+        "type": "object",
+        "properties": {
+          "outer": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_GeoPointDto"
+            },
+            "nullable": true
+          },
+          "holes": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_GeoPointDto"
+              }
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Auth_Response_PhoneVerificationResultDto": {
         "type": "object",
         "properties": {
@@ -1082,6 +1212,24 @@
           },
           "data": {
             "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_DetailDepartureGuideDto"
+          },
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_GetRestrictedZoneList": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_GetRestrictedZoneList"
           },
           "code": {
             "type": "integer",
