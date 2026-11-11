@@ -1,5 +1,7 @@
 using System.Globalization;
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Extensions.Options;
 using RideMateService.Comm;
 using RideMateService.Comm.Dto.v1.Pickup.Request;
@@ -160,6 +162,142 @@ public class PickupService : IPickupService
         }
     }
 
+    /// <summary>
+    /// 학원가 단속 구역 목록
+    /// </summary>
+    public async Task<ResponseModel<GetRestrictedZoneList>> GetRestrictedZoneListService(RestrictedZoneListQueryDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (!int.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("sub"), out var userId))
+                return new ResponseModel<GetRestrictedZoneList> { message = "잘못된 요청입니다.", data = null, code = 401 };
+
+            var userAreas = await _pickupRepository.GetUserAreasAsync(userId, cancellationToken).ConfigureAwait(false);
+            var areaIds = userAreas.Select(a => a.AreaId).ToArray();
+            string version;
+            if (userAreas.Count == 0)
+            {
+                version = ComputeVersion(areaIds, null, null, 0);
+            }
+            else
+            {
+                var versionRow = await _pickupRepository.GetRestrictedZoneVersionAsync(areaIds, cancellationToken)
+                    .ConfigureAwait(false);
+                version = ComputeVersion(areaIds, userAreas.Max(a => a.AreaUpdatedDt), versionRow.MaxDt,
+                    versionRow.LiveCount);
+            }
+
+            if (dto.version == version)
+            {
+                return new ResponseModel<GetRestrictedZoneList>
+                {
+                    message = "요청이 정상 처리되었습니다.",
+                    data = new GetRestrictedZoneList { version = version, areas = null },
+                    code = 101
+                };
+            }
+
+            if (userAreas.Count == 0)
+            {
+                return new ResponseModel<GetRestrictedZoneList>
+                {
+                    message = "요청이 정상 처리되었습니다.",
+                    data = new GetRestrictedZoneList { version = version, areas = new List<RestrictedZoneAreaDto>() },
+                    code = 200
+                };
+            }
+
+            var zoneRows = await _pickupRepository.GetRestrictedZonesAsync(areaIds, cancellationToken)
+                .ConfigureAwait(false);
+            var resultAreas = new List<RestrictedZoneAreaDto>(userAreas.Count);
+            var vertexCount = 0;
+
+            foreach (var area in userAreas)
+            {
+                var areaZoneRows = zoneRows.Where(z => z.AreaId == area.AreaId).ToList();
+                var coordinates = areaZoneRows
+                    .Select(z => ZoneShapeBuilder.FirstCoordinate(z.GeomWkt))
+                    .Where(c => c.HasValue)
+                    .Select(c => c!.Value)
+                    .ToList();
+                var hasOrigin = coordinates.Count > 0;
+                var originLat = hasOrigin ? coordinates.Average(c => c.Lat) : 0;
+                var originLng = hasOrigin ? coordinates.Average(c => c.Lng) : 0;
+                var zones = new List<RestrictedZoneDto>(areaZoneRows.Count);
+
+                foreach (var row in areaZoneRows)
+                {
+                    var zone = new RestrictedZoneDto
+                    {
+                        restrictedZoneSeq = row.RestrictedZoneId,
+                        zoneType = row.ZoneType,
+                        dayType = row.DayType,
+                        activeStartTime = row.ActiveStartTime?.ToString(@"hh\:mm"),
+                        activeEndTime = row.ActiveEndTime?.ToString(@"hh\:mm")
+                    };
+
+                    if (hasOrigin)
+                    {
+                        var shape = ZoneShapeBuilder.Build(row.GeomWkt, row.BufferM, originLat, originLng);
+                        if (shape.FailureReason is not null)
+                        {
+                            _logService.LogMessage($"restricted zone shape failed: id={row.RestrictedZoneId}, reason={shape.FailureReason}");
+                        }
+                        else
+                        {
+                            zone.polygons = shape.Polygons.Select(p => new ZonePolygonDto
+                            {
+                                outer = p.Outer.Select(point => new GeoPointDto
+                                {
+                                    lat = (decimal)point.Lat,
+                                    lng = (decimal)point.Lng
+                                }).ToList(),
+                                holes = p.Holes.Select(hole => hole.Select(point => new GeoPointDto
+                                {
+                                    lat = (decimal)point.Lat,
+                                    lng = (decimal)point.Lng
+                                }).ToList()).ToList()
+                            }).ToList();
+                        }
+                    }
+                    else
+                    {
+                        _logService.LogMessage($"restricted zone shape failed: id={row.RestrictedZoneId}, reason=no-origin");
+                    }
+
+                    vertexCount += zone.polygons.Sum(p => p.outer.Count + p.holes.Sum(h => h.Count));
+                    zones.Add(zone);
+                }
+
+                resultAreas.Add(new RestrictedZoneAreaDto
+                {
+                    areaSeq = area.AreaId,
+                    areaName = area.AreaName,
+                    zones = zones
+                });
+            }
+
+            if (vertexCount > 50000)
+                _logService.LogMessage($"restricted zone list large: zones={zoneRows.Count}, vertices={vertexCount}");
+
+            return new ResponseModel<GetRestrictedZoneList>
+            {
+                message = "요청이 정상 처리되었습니다.",
+                data = new GetRestrictedZoneList { version = version, areas = resultAreas },
+                code = 200
+            };
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 그대로 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return new ResponseModel<GetRestrictedZoneList> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+        }
+    }
+
     // 기본 지점: 우선순위 순으로 아이 도착 시각이 금지 시간 [시작, 종료)에 들지 않는 첫 지점.
     // 금지 시간에 걸려 건너뛴 지점마다 HIGHER_SPOT_BLOCKED를 reasons에 더한다. 쓸 지점이 없으면 null
     private async Task<DepartureGuidePickupDto?> SelectDefaultSpotAsync(TodayPickupRow target, DateOnly date, string dayType,
@@ -267,5 +405,17 @@ public class PickupService : IPickupService
             .ToList();
 
         return points.Count > 0 ? points : null;
+    }
+
+    private static string ComputeVersion(int[] areaIds, DateTime? areaMaxDt, DateTime? zoneMaxDt, int liveCount)
+    {
+        var input = string.Join('|',
+            ZoneShapeBuilder.FormatVersion,
+            string.Join(',', areaIds.OrderBy(x => x)),
+            areaMaxDt?.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture) ?? string.Empty,
+            zoneMaxDt?.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture) ?? string.Empty,
+            liveCount.ToString(CultureInfo.InvariantCulture));
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(input));
+        return Convert.ToHexString(hash).ToLowerInvariant()[..16];
     }
 }
