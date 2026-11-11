@@ -12,15 +12,23 @@
 
 | 도메인 | API | 인증 | 문서 |
 |---|---|---|---|
+| Auth | `POST /api/v1/Auth/M/DeviceAuthorization` QR 로그인 발급 | 불필요 | [DeviceAuthorization](Auth/DeviceAuthorization.md) |
 | Auth | `POST /api/v1/Auth/M/Token` 토큰 발급 | 불필요 | [Token](Auth/Token.md) |
 | Auth | `POST /api/v1/Auth/M/AddPhoneVerification` 로그인 인증번호 발송 | 불필요 | [AddPhoneVerification](Auth/AddPhoneVerification.md) |
+| Auth | `DELETE /api/v1/Auth/M/DeleteQrLogin` QR 로그인 취소(차량) | 불필요 | [DeleteQrLogin](Auth/DeleteQrLogin.md) |
 | Auth | `DELETE /api/v1/Auth/M/sign/DeleteLoginSession` 차량 로그아웃 | Bearer | [DeleteLoginSession](Auth/DeleteLoginSession.md) |
+| Auth | `GET /api/v1/Auth/W/DetailQrLogin` QR 로그인 진입(휴대폰 웹) | 불필요 | [DetailQrLogin](Auth/W/DetailQrLogin.md) |
+| Auth | `POST /api/v1/Auth/W/AddPhoneVerification` 로그인 인증번호 발송(휴대폰 웹) | 불필요 | [AddPhoneVerification](Auth/W/AddPhoneVerification.md) |
+| Auth | `POST /api/v1/Auth/W/AddWebSession` 인증번호 확인과 가입(휴대폰 웹) | 불필요 | [AddWebSession](Auth/W/AddWebSession.md) |
+| Auth | `POST /api/v1/Auth/W/sign/AddQrApproval` QR 로그인 허용(휴대폰 웹) | 쿠키(`__Host-rm_web_session`) | [AddQrApproval](Auth/W/AddQrApproval.md) |
+| Auth | `DELETE /api/v1/Auth/W/sign/DeleteQrLogin` QR 로그인 취소(휴대폰 웹) | 쿠키(`__Host-rm_web_session`) | [DeleteQrLogin](Auth/W/DeleteQrLogin.md) |
+| Auth | `DELETE /api/v1/Auth/W/sign/DeleteWebSession` 다른 번호로 로그인(휴대폰 웹) | 쿠키(`__Host-rm_web_session`) | [DeleteWebSession](Auth/W/DeleteWebSession.md) |
 
 ## 공통 오류 형식
 
 ### 인증 실패 (401)
 
-경로에 `sign` 구간이 있는 API에 토큰이 없거나 위조·만료된 토큰을 보내면 아래 본문이 나간다.
+경로에 `sign` 구간이 있는 API에 차량 JWT 또는 웹 세션 쿠키가 없거나 올바르지 않으면 아래 본문이 나간다.
 
 ```json
 {

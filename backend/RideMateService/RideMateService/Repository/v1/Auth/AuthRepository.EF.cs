@@ -6,6 +6,135 @@ namespace RideMateService.Repository.v1.Auth;
 public partial class AuthRepository
 {
     /// <summary>
+    /// 살아 있는 QR 로그인 요청을 PK로 불러온다(수정 대상)
+    /// </summary>
+    public async Task<QrLogin?> GetQrLoginAsync(int qrLoginId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await _context.QrLogins
+                .FirstOrDefaultAsync(x => x.QrLoginId == qrLoginId
+                                          && x.DeleteYn == false, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw; // Service가 500으로 바꾼다
+        }
+    }
+
+    /// <summary>
+    /// QR 로그인 요청 등록
+    /// </summary>
+    public async Task<bool> AddQrLoginAsync(QrLogin model, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _context.QrLogins.AddAsync(model, cancellationToken).ConfigureAwait(false);
+
+            return await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false) > 0;
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw; // Service가 500으로 바꾼다
+        }
+    }
+
+    /// <summary>
+    /// QR 로그인 요청 수정
+    /// </summary>
+    public async Task<bool> UpdateQrLoginAsync(QrLogin model, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            _context.QrLogins.Update(model);
+
+            return await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false) > 0;
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw; // Service가 500으로 바꾼다
+        }
+    }
+
+    /// <summary>
+    /// 살아 있는 운전자 계정을 PK로 불러온다.
+    /// </summary>
+    public async Task<UserInfo?> GetUserInfoAsync(int userId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await _context.UserInfos
+                .FirstOrDefaultAsync(x => x.UserId == userId
+                                          && x.DeleteYn == false, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw; // Service가 500으로 바꾼다
+        }
+    }
+
+    /// <summary>
+    /// 운전자 계정 등록. 저장 뒤 model의 운전자 계정 ID가 채워진다.
+    /// </summary>
+    public async Task<bool> AddUserInfoAsync(UserInfo model, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _context.UserInfos.AddAsync(model, cancellationToken).ConfigureAwait(false);
+
+            return await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false) > 0;
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw; // Service가 500으로 바꾼다
+        }
+    }
+
+    /// <summary>
+    /// 동의 기록을 등록한다.
+    /// </summary>
+    public async Task<bool> AddConsentsAsync(IEnumerable<Consent> models,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _context.Consents.AddRangeAsync(models, cancellationToken).ConfigureAwait(false);
+
+            return await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false) > 0;
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw; // Service가 500으로 바꾼다
+        }
+    }
+
+    /// <summary>
     /// 살아 있는 휴대폰 인증번호를 PK로 불러온다(수정 대상)
     /// </summary>
     public async Task<PhoneVerification?> GetPhoneVerificationAsync(int phoneVerificationId,

@@ -6,6 +6,36 @@ namespace RideMateService.Repository.v1.Auth;
 public interface IAuthRepository
 {
     /// <summary>
+    /// 살아 있는 QR 로그인 요청을 PK로 불러온다(수정 대상)
+    /// </summary>
+    Task<QrLogin?> GetQrLoginAsync(int qrLoginId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// QR 로그인 요청 등록
+    /// </summary>
+    Task<bool> AddQrLoginAsync(QrLogin model, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// QR 로그인 요청 수정
+    /// </summary>
+    Task<bool> UpdateQrLoginAsync(QrLogin model, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 살아 있는 운전자 계정을 PK로 불러온다.
+    /// </summary>
+    Task<UserInfo?> GetUserInfoAsync(int userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 운전자 계정 등록. 저장 뒤 model의 운전자 계정 ID가 채워진다.
+    /// </summary>
+    Task<bool> AddUserInfoAsync(UserInfo model, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 동의 기록을 등록한다.
+    /// </summary>
+    Task<bool> AddConsentsAsync(IEnumerable<Consent> models, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 살아 있는 휴대폰 인증번호를 PK로 불러온다(수정 대상)
     /// </summary>
     Task<PhoneVerification?> GetPhoneVerificationAsync(int phoneVerificationId,
@@ -45,6 +75,42 @@ public interface IAuthRepository
     // ====== Dapper
 
     /// <summary>
+    /// 토큰 해시로 만료되지 않은 WEB 세션과 살아 있는 계정을 조회한다.
+    /// </summary>
+    Task<(int loginSessionId, int userId)?> GetWebSessionAsync(string tokenHash, DateTime thisTime,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// device_code 해시로 살아 있는 QR 로그인 요청을 찾아 FOR UPDATE로 잠그고 ID를 돌려준다.
+    /// </summary>
+    Task<(int qrLoginId, int? userId)?> LockQrLoginByDeviceCodeHashAsync(string hash, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// user_code 해시로 살아 있는 QR 로그인 요청을 찾아 FOR UPDATE로 잠그고 ID를 돌려준다.
+    /// </summary>
+    Task<int?> LockQrLoginByUserCodeHashAsync(string userCodeHash, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 살아 있는 계정을 PK로 FOR UPDATE 잠그고 ID를 돌려준다. 차량 세션 생성 경로를 계정 단위로 직렬화한다.
+    /// </summary>
+    Task<int?> LockUserInfoAsync(int userId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 전화번호 해시로 살아 있는 계정을 FOR UPDATE 잠그고 ID를 돌려준다.
+    /// </summary>
+    Task<int?> LockUserInfoByPhoneHashAsync(string phoneHash, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 살아 있는 WEB 세션을 PK로 FOR UPDATE 잠그고 ID를 돌려준다.
+    /// </summary>
+    Task<int?> LockWebLoginSessionAsync(int loginSessionId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 전화번호 해시로 살아 있는 가장 최근 휴대폰 인증번호를 찾아 FOR UPDATE로 잠그고 ID를 돌려준다.
     /// </summary>
     Task<int?> LockLatestPhoneVerificationAsync(string phoneHash, IDbTransaction transaction,
@@ -57,15 +123,10 @@ public interface IAuthRepository
         IDbTransaction transaction, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 같은 계정·기기의 살아 있는 차량 로그인 세션 ID를 잠그지 않고 조회한다.
+    /// 같은 계정·기기의 살아 있는 차량 로그인 세션 ID를 FOR UPDATE 잠금 읽기로 조회한다.
+    /// 호출 전에 USER_INFO 행을 PK로 잠가 차량 세션 생성 경로를 직렬화하며, 잠금 읽기라 최신 커밋을 본다.
     /// </summary>
-    Task<IReadOnlyList<int>> GetCarSessionIdsAsync(int userId, string deviceId, IDbTransaction? transaction = null,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// 전화번호 해시가 같은 살아 있는 계정의 ID를 조회한다.
-    /// </summary>
-    Task<int?> GetUserIdByPhoneHashAsync(string phoneHash, IDbTransaction? transaction = null,
+    Task<IReadOnlyList<int>> GetCarSessionIdsAsync(int userId, string deviceId, IDbTransaction transaction,
         CancellationToken cancellationToken = default);
 
     /// <summary>

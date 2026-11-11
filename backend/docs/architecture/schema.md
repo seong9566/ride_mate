@@ -71,7 +71,6 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `PHONE_ENC` | VARBINARY(255) | N | 휴대폰 번호(숫자만). 보호자 인증번호를 보낼 때 쓴다 |
 | `PHONE_HASH` | CHAR(64) | N | 휴대폰 번호의 HMAC. 로그인할 때 계정을 찾는다 |
 | `USER_NAME` | VARCHAR(50) | N | 운전자 이름. 형식 없는 문자열이고, 차량의 계정 목록(RM-V00)에 입력한 그대로 보여준다 [ADR-0014] |
-| `CALL_NAME` | VARCHAR(20) | Y | 아이에게 보이는 호칭(엄마, 아빠). 비어 있으면 화면은 "보호자"로 보여준다 |
 | `CAR_MODEL` | VARCHAR(50) | Y | 차종 |
 | `CAR_COLOR` | VARCHAR(20) | Y | 차 색 |
 | `CAR_NO_LAST4` | CHAR(4) | Y | 차량 번호 뒷자리 |
@@ -82,8 +81,8 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `WAKE_BEFORE_MIN` | TINYINT | N | 쉬는 모드에서 깨우는 시점(출발 몇 분 전, 0이면 출발 시각). 처음 값 5 |
 
 - 살아 있는 행 UNIQUE: `(PHONE_HASH, ACTIVE_FLAG)`
-- 차 정보와 호칭은 아이 화면에 보이는 값인데 명세서에 입력 화면이 없다. 입력처가 정해질 때까지 NULL 허용으로 둔다.
-- 호칭은 자유 입력이다. 코드 값으로 묶지 않는다.
+- 차 정보는 아이 화면에 보이는 값이다. 기획이 확정되지 않아 NULL 허용으로 두고 최초 설정에서 선택 입력으로 받는다.
+- 아이 화면에 보이는 호칭은 따로 두지 않고 운전자 이름(`USER_NAME`)을 쓴다. 가입 화면에서 엄마·아빠·할머니·직접 입력으로 받는다. [ADR-0016]
 - 운전자 이름은 가입할 때 필수로 받는다. 형식은 검사하지 않는다. 앞뒤 공백을 지운 값을 저장하고, 지운 뒤 비었거나 50자(유니코드 코드 포인트 수, MySQL `CHAR_LENGTH` 기준)를 넘으면 거절한다. 입력 화면은 아직 명세서에 없다.
 - `PHONE_ENC`는 AES-256-GCM 암호문이다. 키 버전 1바이트(`0x01`) + nonce 12바이트 + 암호문 + tag 16바이트를 이어 저장한다. [ADR-0013]
 - 삭제(탈퇴)는 아래 "아이·계정 삭제" 순서를 따른다.
@@ -144,13 +143,19 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `DEVICE_CODE_HASH` | CHAR(64) | N | 차량이 보관하는 `device_code`의 HMAC. UNIQUE |
 | `USER_CODE_HASH` | CHAR(64) | N | QR에 담긴 `user_code`의 HMAC. UNIQUE |
 | `DEVICE_ID` | VARCHAR(100) | N | QR을 띄운 차량의 설치 번호 |
-| `STATUS` | VARCHAR(20) | N | `PENDING`(대기), `APPROVED`(휴대폰에서 인증됨), `USED`(차량이 토큰을 받아감) |
-| `USER_ID` | INT | Y | FK → USER_INFO. 인증된 뒤에 채운다 |
-| `EXPIRE_DT` | DATETIME | N | 만료 시각 |
+| `MATCH_CODE` | CHAR(4) | N | 차와 휴대폰에 함께 보이는 숫자 4자리. 다른 사람의 QR인지 운전자가 눈으로 확인한다 |
+| `STATUS` | VARCHAR(20) | N | `PENDING`(대기), `SCANNED`(휴대폰이 QR을 열었다), `VERIFIED`(휴대폰에서 본인 확인을 마쳤고 허용을 기다린다), `APPROVED`(휴대폰에서 허용했다), `USED`(차량이 토큰을 받아갔다), `CANCELED`(취소됐다) |
+| `CANCEL_REASON` | VARCHAR(20) | Y | `CANCELED`일 때만 채운다. `USER`(차에서 취소·새 QR), `DRIVING`(차가 출발해 중단), `PHONE`(휴대폰에서 취소) |
+| `USER_ID` | INT | Y | FK → USER_INFO. 휴대폰에서 본인 확인을 마치면(`VERIFIED`) 채운다 |
+| `EXPIRE_DT` | DATETIME | N | 만료 시각(만든 뒤 3분) |
+| `LAST_POLL_DT` | DATETIME | Y | 차량이 마지막으로 결과를 물은 시각. 폴링 간격(3초)보다 1초 넘게 빨리 다시 물으면 `slow_down`이다 |
 
-- 휴대폰은 `user_code`로 `PENDING` 행을 찾아 `APPROVED`로 바꾼다. 차량은 `device_code`로 그 행을 찾아 결과를 받는다.
+- 상태는 `PENDING` → `SCANNED` → `VERIFIED` → `APPROVED` → `USED`로만 나아간다. 휴대폰에서 "다른 번호로 로그인"을 고르면 `VERIFIED`에서 `SCANNED`로 돌아가고 `USER_ID`를 비운다. `USED` 전이면 어느 상태에서든 `CANCELED`가 될 수 있다.
+- 만료는 상태가 아니라 `EXPIRE_DT`로 판단한다. 만료된 행에서는 휴대폰의 모든 요청을 거절한다. 차량은 `APPROVED`가 아니면 만료 뒤 `expired_token`을 받고, `APPROVED`여도 만료 뒤 60초가 지나면 `expired_token`을 받는다.
+- 휴대폰은 `user_code`로, 차량은 `device_code`로 행을 찾는다.
+- 인증 트랜잭션은 `PHONE_VERIFICATION` → `QR_LOGIN` → `USER_INFO` → `LOGIN_SESSION` 순서로 잠근다. 잠글 행을 모두 `FOR UPDATE`로 잡은 뒤에 일반 조회를 한다(먼저 조회하면 스냅샷이 고정돼 잠근 행의 최신 값을 못 본다).
 - 두 UNIQUE는 삭제된 행까지 포함한다. 만든 값이 겹쳐 중복 키 오류가 나면 Service가 값을 새로 만들어 다시 넣는다.
-- `PENDING`일 때만 `USER_ID`가 비어 있다. 코드 값 조건이라 CHECK로 걸지 않고 Service에서 확인한다.
+- `VERIFIED`·`APPROVED`·`USED`일 때만 `USER_ID`가 있다(`CANCELED`는 취소 전 상태를 따른다). 코드 값 조건이라 CHECK로 걸지 않고 Service에서 확인한다.
 - 차량이 `APPROVED`를 확인하면 `LOGIN_SESSION`을 만들고 `USED`로 바꾼다. 이 트랜잭션은 첫 문장에서 그 행을 `FOR UPDATE`로 잠그고 상태를 다시 읽는다. 이미 `USED`면 거절하므로 한 QR로 두 번 로그인할 수 없다.
 - 토큰을 받아가는 요청의 `DEVICE_ID`가 행의 값과 같아야 한다. QR을 찍어 간 다른 기기는 로그인 토큰을 받을 수 없다.
 
@@ -162,7 +167,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 |---|---|---|---|
 | `CONSENT_ID` | INT | N | PK |
 | `USER_ID` | INT | N | FK → USER_INFO |
-| `CONSENT_TYPE` | VARCHAR(20) | N | `GUARDIAN`(법정대리인 확인), `CHILD_INFO`(필수: 아이 이름·연락처), `ARRIVAL_LOG`(선택: 차량 도착 기록) |
+| `CONSENT_TYPE` | VARCHAR(20) | N | `TERMS`(필수: 서비스 이용약관, 가입 때), `PRIVACY`(필수: 개인정보 수집·이용, 가입 때), `GUARDIAN`(법정대리인 확인), `CHILD_INFO`(필수: 아이 이름·연락처), `ARRIVAL_LOG`(선택: 차량 도착 기록) |
 | `AGREE_YN` | TINYINT(1) | N | 동의 여부 |
 | `TERMS_VERSION` | VARCHAR(20) | N | 동의한 약관·고지 문서의 버전 |
 | `VERIFY_METHOD` | VARCHAR(20) | N | 확인 방법. `PHONE_OTP`(휴대폰 인증), `CHECK`(체크박스) |
@@ -276,7 +281,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | 5 | `CHILD` | `DELETE_YN`을 켜고 `CHILD_NAME`을 빈 문자열로, `PHONE_ENC`를 빈 값으로 바꾼다 |
 | 6 | `LOGIN_SESSION`, `QR_LOGIN` | `DELETE_YN`을 켠다. `QR_LOGIN`은 `USER_ID`를 NULL로 바꾼다 |
 | 7 | `PHONE_VERIFICATION` | 그 번호의 행에서 `PHONE_HASH`·`CODE_HASH`를 빈 문자열로 바꾸고 `DELETE_YN`을 켠다. 남겨 두면 `CONSENT`를 거쳐 삭제된 계정의 번호 해시로 이어진다 |
-| 8 | `USER_INFO` | `DELETE_YN`을 켜고 `PHONE_ENC`를 빈 값으로, `PHONE_HASH`·`USER_NAME`을 빈 문자열로, 호칭·차 정보·목적지를 NULL로 바꾼다 |
+| 8 | `USER_INFO` | `DELETE_YN`을 켜고 `PHONE_ENC`를 빈 값으로, `PHONE_HASH`·`USER_NAME`을 빈 문자열로, 차 정보·목적지를 NULL로 바꾼다 |
 
 - `CONSENT`는 지우지 않는다. 동의를 받았다는 증빙이다. 보관 기간은 정해지지 않았다.
 - 로그아웃은 삭제가 아니다. 그 차량의 `LOGIN_SESSION`만 끝내고 서버의 시간표와 아이 정보는 남는다.
@@ -603,10 +608,10 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 
 | 항목 | 영향 |
 |---|---|
-| QR 로그인의 휴대폰 쪽 흐름 | `device_code`·`user_code`로 나누는 것은 정했다. 휴대폰에서 무엇으로 본인을 확인하는지와 `user_code`의 길이는 정하지 않았다 |
 | 탈퇴 화면 | 명세서에 없다. 개인정보 안내는 "탈퇴 시까지 보관"이다 |
 | 동의 기록 보관 기간 | 계정을 삭제한 뒤 `CONSENT`를 언제까지 두는지 |
-| 차 정보·호칭·운전자 이름의 입력 화면 | 명세서에 입력처가 없다. 운전자 이름은 개인정보 고지(RM-C-P1)의 수집 항목에도 넣어야 한다 |
+| 개인정보 고지의 운전자 이름 | 가입 때 받는 운전자 이름을 개인정보 고지(RM-C-P1)의 수집 항목에 넣어야 한다 |
+| 약관 문서 버전 | `CONSENT.TERMS_VERSION`의 형식이 정해지지 않았다. 지금은 서버 상수로 기록한다 |
 | 같은 아이를 두 계정이 등록하는 경우 | 엄마와 아빠가 각자 등록하면 같은 날 계획이 둘 생긴다 |
 | 픽업 후 목적지를 여러 개 둘지 | 지금은 계정당 하나다. 학원이나 요일마다 다르면 테이블로 나눈다 |
 | 만료까지의 시간 | 배정 도착 시각 + 1시간으로 뒀다. 명세서는 만료 시점을 결정 필요로 적었다 |

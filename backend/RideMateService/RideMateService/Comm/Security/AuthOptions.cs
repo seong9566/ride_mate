@@ -36,3 +36,14 @@ public class CryptoOptions
     /// </summary>
     public string HashKey { get; set; } = string.Empty;
 }
+
+/// <summary>
+/// QR 로그인 설정. 설정 절 "QrLogin".
+/// </summary>
+public class QrLoginOptions
+{
+    /// <summary>
+    /// QR을 연 휴대폰이 접속할 절대 http(s) 주소
+    /// </summary>
+    public string VerificationUri { get; set; } = string.Empty;
+}

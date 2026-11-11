@@ -19,7 +19,7 @@ public partial class Consent
     public int UserId { get; set; }
 
     /// <summary>
-    /// 동의 종류 (GUARDIAN, CHILD_INFO, ARRIVAL_LOG)
+    /// 동의 종류 (TERMS, PRIVACY, GUARDIAN, CHILD_INFO, ARRIVAL_LOG)
     /// </summary>
     public string ConsentType { get; set; } = null!;
 

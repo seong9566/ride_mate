@@ -27,9 +27,23 @@
 - 전화번호는 암호화해 `_ENC` 컬럼에 두고, 계정을 찾는 용도로는 해시를 따로 둔다.
 - `PHONE_HASH`는 숫자만 남긴 전화번호를 HMAC 입력으로 쓴다. `USER_INFO`와 `PHONE_VERIFICATION`에서 같은 규칙을 쓴다.
 - `CODE_HASH`는 `"otp:" + 숫자만 남긴 전화번호 + ":" + 6자리 인증번호`를 HMAC 입력으로 쓴다.
+- `QR_LOGIN.DEVICE_CODE_HASH`는 `"qr-device:" + device_code`, `USER_CODE_HASH`는 `"qr-user:" + user_code`를 HMAC 입력으로 쓴다. 두 코드 원문은 DB나 로그에 남기지 않는다.
+- QR 로그인은 3분 동안 유효하고 차량은 3초 간격으로 승인 상태를 조회한다. 초 단위로 내린 서버 시각이 마지막 조회 시각 + 2초보다 이르면 `slow_down`이며, 승인된 QR은 만료 시각 뒤 60초까지 차량이 토큰으로 바꿀 수 있다. 차와 휴대폰에는 같은 숫자 4자리 `match_code`를 보여준다.
+- `device_code`는 QR에 넣지 않고 발급받은 차량만 보관한다. 승인 뒤에도 이 값을 받은 기기만 차량 토큰을 받을 수 있다.
 - 문자 발송은 `ISmsSender`로 분리한다. 현재 구현은 실제로 발송하지 않는 개발용이며, Development 환경에서만 가린 전화번호와 인증번호가 든 메시지를 콘솔 로그에 남긴다. 그 밖의 환경에서는 발송 구현이 없다는 사실만 기록하고 메시지는 남기지 않는다.
 - 실제 문자 사업자를 연결하기 전에 발송 남용 방어를 더한다: IP·기기별 발송 한도와 번호당 시간·일 한도. 지금은 같은 번호 1분에 한 번뿐이라 번호를 바꿔 가며 부르면 발송 비용을 막을 수 없다.
 - 차량 로그인 토큰은 access와 refresh 둘이다. 발급은 `POST /api/v1/Auth/M/Token`(`api.md`)이다. [ADR-0013]
+
+### 휴대폰 웹 세션
+
+- 휴대폰 웹 로그인 상태는 `LOGIN_SESSION.SESSION_TYPE = 'WEB'` 행으로 보관한다. 토큰은 32바이트 난수의 base64url 값이고 DB에는 `Hmac("web-session:" + token)`만 둔다.
+- 토큰은 `__Host-rm_web_session` 쿠키로만 전달한다. 쿠키는 `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, `Max-Age=90일`이고 `Domain`을 두지 않으며 응답 본문에는 넣지 않는다.
+- WEB 세션은 발급 시점부터 90일 동안 유효하다. 사용해도 `EXPIRE_DT`나 쿠키 수명을 늘리지 않으며, 휴대폰 여러 대의 WEB 세션을 함께 유지할 수 있다.
+- 같은 브라우저에서 새 WEB 세션을 만들 때 유효한 기존 세션 쿠키가 있으면 그 세션을 같은 트랜잭션에서 끝낸다.
+- `WebSession` 인증 스킴이 쿠키 해시로 만료되지 않은 WEB 세션과 살아 있는 계정을 조회한다. `/W/sign/` 경로는 이 스킴을, `/M/sign/` 경로는 기존 차량 JWT를 요구한다. 인증 실패 본문은 둘 다 같은 401 공통 형식이다.
+- `SameSite=Lax` 쿠키를 안정적으로 유지하려면 휴대폰 웹을 API와 같은 사이트에 배포해야 한다. 같은 도메인의 하위 주소를 쓰거나 웹 서버가 `/api`를 프록시한다. [ADR-0016]
+- 실기기로 확인할 때는 Secure 쿠키라 HTTPS(또는 터널)가 필요하다. `http://localhost`만 예외다.
+- 처음 가입할 때 서비스 이용약관(`TERMS`)과 개인정보 수집·이용(`PRIVACY`) 동의를 각각 `CONSENT`에 쌓는다. 두 행은 인증번호 행을 가리키며 `VERIFY_METHOD = 'PHONE_OTP'`로 기록한다.
 
 | | access 토큰 | refresh 토큰 |
 |---|---|---|
@@ -46,10 +60,10 @@
   1. 세션 하나에서 refresh는 한 번에 하나만 보낸다.
   2. 새 refresh 값을 저장하기 전에는 옛 값을 버리지 않는다. 응답을 받지 못했으면 같은 값으로 다시 보낸다(직전 값은 24시간 동안 받아 준다).
   3. refresh(`grant_type=refresh_token`) 요청의 `invalid_grant`만 "로그아웃됨"으로 처리한다. `otp`의 `invalid_grant`는 "대기 중인 인증번호 없음"이라 인증번호를 다시 받게 한다. 네트워크 오류, 5xx, 429는 다시 시도한다.
-- `sign` 구간은 JWT의 서명·만료·발급자·수신자만 검사하고 DB를 조회하지 않는다. 그래서 로그아웃(`DeleteLoginSession`) 뒤에도 그 access 토큰은 만료(최대 1시간)까지 통과한다. 로그아웃은 `LOGIN_SESSION`을 끝내 refresh만 거절시킨다.
-- 인증에 실패한 `sign` 요청은 401이고 본문은 `{ "message": "잘못된 요청입니다.", "data": null, "code": 401 }`이다. 토큰이 없거나 위조·만료여도 같다.
+- `M/sign` 구간은 JWT의 서명·만료·발급자·수신자만 검사하고 DB를 조회하지 않는다. 그래서 로그아웃(`DeleteLoginSession`) 뒤에도 그 access 토큰은 만료(최대 1시간)까지 통과한다. 로그아웃은 `LOGIN_SESSION`을 끝내 refresh만 거절시킨다.
+- 인증에 실패한 `sign` 요청은 401이고 본문은 `{ "message": "잘못된 요청입니다.", "data": null, "code": 401 }`이다. 차량 JWT나 웹 세션 쿠키가 없거나 올바르지 않아도 같다.
 - Service는 `IHttpContextAccessor`의 클레임 `sub`에서 `USER_ID`를 꺼낸다. JwtBearer가 클레임 이름을 바꾸지 않도록 `MapInboundClaims = false`로 둔다.
-- 경로에 `sign` 구간이 있는 API는 `SignRouteConvention`(`app.MapControllers().RequireAuthForSignRoutes()`)이 인증을 요구한다. 최종 경로(클래스와 액션의 `[Route]`를 합친 것)로 판단하므로 액션에 `[Authorize]`를 따로 붙이지 않아도 닫힌다. `sign` 구간 API에 `[AllowAnonymous]`를 붙이면 서버가 기동할 때 `InvalidOperationException`으로 실패한다. Swagger의 Bearer 표시도 같은 규칙으로 `sign` 구간 API에만 붙는다(`SignRouteOperationFilter`).
+- 경로에 `sign` 구간이 있는 API는 `SignRouteConvention`(`app.MapControllers().RequireAuthForSignRoutes()`)이 인증을 요구한다. 최종 경로(클래스와 액션의 `[Route]`를 합친 것)로 판단하므로 액션에 `[Authorize]`를 따로 붙이지 않아도 닫힌다. `W/sign`에는 `WebSession`, 그 밖의 `sign`에는 기본 Bearer 스킴을 붙인다. `sign` 구간 API에 `[AllowAnonymous]`를 붙이면 서버가 기동할 때 `InvalidOperationException`으로 실패한다. Swagger도 같은 규칙으로 쿠키 또는 Bearer 보안 표시를 붙인다(`SignRouteOperationFilter`).
 - 키와 발급자 설정은 다섯 개다. 하나라도 비어 있거나 base64가 아니거나 길이가 맞지 않거나, 세 키 중 둘이 같은 값이면 기동할 때 `InvalidOperationException`으로 실패한다.
 
 | 설정 이름 | 값 |

@@ -304,7 +304,7 @@ public partial class RideMateContext : DbContext
                 .HasColumnName("CONSENT_DT");
             entity.Property(e => e.ConsentType)
                 .HasMaxLength(20)
-                .HasComment("동의 종류 (GUARDIAN, CHILD_INFO, ARRIVAL_LOG)")
+                .HasComment("동의 종류 (TERMS, PRIVACY, GUARDIAN, CHILD_INFO, ARRIVAL_LOG)")
                 .HasColumnName("CONSENT_TYPE");
             entity.Property(e => e.CreateDt)
                 .HasComment("생성 일시")
@@ -1088,6 +1088,10 @@ public partial class RideMateContext : DbContext
             entity.Property(e => e.QrLoginId)
                 .HasComment("QR 로그인 요청 ID")
                 .HasColumnName("QR_LOGIN_ID");
+            entity.Property(e => e.CancelReason)
+                .HasMaxLength(20)
+                .HasComment("취소 사유 (USER, DRIVING, PHONE)")
+                .HasColumnName("CANCEL_REASON");
             entity.Property(e => e.CreateDt)
                 .HasComment("생성 일시")
                 .HasColumnType("datetime")
@@ -1112,9 +1116,18 @@ public partial class RideMateContext : DbContext
                 .HasComment("QR 로그인 만료 일시")
                 .HasColumnType("datetime")
                 .HasColumnName("EXPIRE_DT");
+            entity.Property(e => e.LastPollDt)
+                .HasComment("차량이 마지막으로 결과를 물은 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("LAST_POLL_DT");
+            entity.Property(e => e.MatchCode)
+                .HasMaxLength(4)
+                .IsFixedLength()
+                .HasComment("차·휴대폰에 함께 보이는 숫자 4자리")
+                .HasColumnName("MATCH_CODE");
             entity.Property(e => e.Status)
                 .HasMaxLength(20)
-                .HasComment("QR 로그인 상태 (PENDING, APPROVED, USED)")
+                .HasComment("QR 로그인 상태 (PENDING, SCANNED, VERIFIED, APPROVED, USED, CANCELED)")
                 .HasColumnName("STATUS");
             entity.Property(e => e.UpdateDt)
                 .HasComment("수정 일시")
@@ -1401,10 +1414,6 @@ public partial class RideMateContext : DbContext
             entity.Property(e => e.AutoSendYn)
                 .HasComment("링크 자동 발송 여부")
                 .HasColumnName("AUTO_SEND_YN");
-            entity.Property(e => e.CallName)
-                .HasMaxLength(20)
-                .HasComment("아이에게 보이는 보호자 호칭")
-                .HasColumnName("CALL_NAME");
             entity.Property(e => e.CarColor)
                 .HasMaxLength(20)
                 .HasComment("차 색")

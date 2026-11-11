@@ -29,11 +29,6 @@ public partial class UserInfo
     public string UserName { get; set; } = null!;
 
     /// <summary>
-    /// 아이에게 보이는 보호자 호칭
-    /// </summary>
-    public string? CallName { get; set; }
-
-    /// <summary>
     /// 차종
     /// </summary>
     public string? CarModel { get; set; }
