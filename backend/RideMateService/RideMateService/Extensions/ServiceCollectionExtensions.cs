@@ -6,6 +6,7 @@ using RideMateService.Comm.Map;
 using RideMateService.Comm.Security;
 using RideMateService.Comm.Sms;
 using RideMateService.Repository.v1.Auth;
+using RideMateService.Repository.v1.Pickup;
 using RideMateService.Service.v1.Auth;
 using RideMateService.Service.v1.Pickup;
 
@@ -19,6 +20,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddDomainModules(this IServiceCollection services)
     {
         services.AddAuthModule();
+        services.AddPickupModule();
         // 도메인을 추가하면 여기에 한 줄
         return services;
     }
@@ -27,6 +29,13 @@ public static class ServiceCollectionExtensions
     {
         services.AddTransient<IAuthRepository, AuthRepository>();
         services.AddTransient<IAuthService, AuthService>();
+        return services;
+    }
+
+    private static IServiceCollection AddPickupModule(this IServiceCollection services)
+    {
+        services.AddTransient<IPickupRepository, PickupRepository>();
+        services.AddTransient<IPickupService, PickupService>();
         return services;
     }
 }
