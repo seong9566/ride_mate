@@ -29,6 +29,11 @@ public partial class Child
     public byte[] PhoneEnc { get; set; } = null!;
 
     /// <summary>
+    /// 휴대폰 번호의 HMAC
+    /// </summary>
+    public string? PhoneHash { get; set; }
+
+    /// <summary>
     /// 발송 채널 (SMS, ALIMTALK)
     /// </summary>
     public string SendChannel { get; set; } = null!;
@@ -57,6 +62,11 @@ public partial class Child
     /// 삭제 여부
     /// </summary>
     public bool DeleteYn { get; set; }
+
+    /// <summary>
+    /// 살아 있는 행 표시 (UNIQUE용)
+    /// </summary>
+    public sbyte? ActiveFlag { get; set; }
 
     public virtual ICollection<PickupPlan> PickupPlans { get; set; } = new List<PickupPlan>();
 
