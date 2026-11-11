@@ -37,6 +37,8 @@ RideMateService/
 
 레이어별 세부는 같은 폴더의 `controller.md`·`service.md`·`repository.md`·`dto.md`·`database.md`를 본다.
 
+외부 라이브러리 중 이유가 따로 있는 것: NetTopologySuite — 단속 구역 반경 면 변환(`Service/v1/Pickup/ZoneShapeBuilder.cs`). MySQL이 SRID 4326에서 점만 `ST_Buffer`를 지원하기 때문이다.
+
 ## 계층 의존 방향
 
 ```

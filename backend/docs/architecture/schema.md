@@ -364,6 +364,8 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 
 지도의 빨간 영역 표시와 정차 위치 경고에 쓴다. 픽업 지점을 고르는 1차 필터의 근거이기도 하다.
 
+적재·수정 SQL은 `GEOM`·`BUFFER_M`·시간 컬럼을 바꿀 때 `UPDATE_DT`를 갱신한다. 앱 캐시 버전에 쓰인다.
+
 | 컬럼 | 타입 | NULL | 설명 |
 |---|---|---|---|
 | `RESTRICTED_ZONE_ID` | INT | N | PK |

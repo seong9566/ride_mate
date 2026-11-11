@@ -46,3 +46,37 @@ public class HolidayRow
     public bool YearLoaded { get; set; }
     public bool IsHoliday { get; set; }
 }
+
+/// <summary>
+/// 로그인한 부모가 이용하는 학원가 한 건
+/// </summary>
+public class UserAreaRow
+{
+    public int AreaId { get; set; }
+    public string AreaName { get; set; } = string.Empty;
+    public DateTime AreaUpdatedDt { get; set; }
+}
+
+/// <summary>
+/// 단속 구역 목록 버전 계산에 쓰는 변경 시각과 살아 있는 행 수
+/// </summary>
+public class ZoneVersionRow
+{
+    public DateTime? MaxDt { get; set; }
+    public int LiveCount { get; set; }
+}
+
+/// <summary>
+/// 단속 구역 한 건. GeomWkt는 경도·위도 순서다
+/// </summary>
+public class ZoneRow
+{
+    public int RestrictedZoneId { get; set; }
+    public int AreaId { get; set; }
+    public string ZoneType { get; set; } = string.Empty;
+    public string GeomWkt { get; set; } = string.Empty;
+    public short BufferM { get; set; }
+    public string? DayType { get; set; }
+    public TimeSpan? ActiveStartTime { get; set; }
+    public TimeSpan? ActiveEndTime { get; set; }
+}

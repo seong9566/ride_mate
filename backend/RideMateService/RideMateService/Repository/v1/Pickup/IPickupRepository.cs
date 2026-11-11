@@ -43,4 +43,20 @@ public interface IPickupRepository
     /// </summary>
     Task<List<string>> GetMatchedZoneTypesAsync(int areaId, decimal lat, decimal lng, string dayType, TimeSpan at,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 로그인한 부모가 살아 있는 시간표로 이용하는 학원가를 조회한다
+    /// </summary>
+    Task<List<UserAreaRow>> GetUserAreasAsync(int userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 학원가들의 단속 구역 목록 버전 계산 값을 조회한다
+    /// </summary>
+    Task<ZoneVersionRow> GetRestrictedZoneVersionAsync(int[] areaIds,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 학원가들의 살아 있는 단속 구역을 조회한다
+    /// </summary>
+    Task<List<ZoneRow>> GetRestrictedZonesAsync(int[] areaIds, CancellationToken cancellationToken = default);
 }

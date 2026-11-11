@@ -11,4 +11,10 @@ public interface IPickupService
     /// </summary>
     Task<ResponseModel<DetailDepartureGuideDto>> DetailDepartureGuideService(DepartureGuideQueryDto dto,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 학원가 단속 구역 목록
+    /// </summary>
+    Task<ResponseModel<GetRestrictedZoneList>> GetRestrictedZoneListService(RestrictedZoneListQueryDto dto,
+        CancellationToken cancellationToken = default);
 }

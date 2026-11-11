@@ -306,4 +306,116 @@ public partial class PickupRepository
             throw;
         }
     }
+
+    /// <summary>
+    /// 로그인한 부모가 살아 있는 시간표로 이용하는 학원가를 조회한다
+    /// </summary>
+    public async Task<List<UserAreaRow>> GetUserAreasAsync(int userId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("userId", userId);
+
+            var sql = @"
+                SELECT DISTINCT ar.AREA_ID AS AreaId,
+                                ar.AREA_NAME AS AreaName,
+                                COALESCE(ar.UPDATE_DT, ar.CREATE_DT) AS AreaUpdatedDt
+                FROM CHILD AS c
+                INNER JOIN TIMETABLE AS t
+                        ON t.CHILD_ID = c.CHILD_ID
+                       AND t.DELETE_YN = FALSE
+                INNER JOIN ACADEMY AS a
+                        ON a.ACADEMY_ID = t.ACADEMY_ID
+                       AND a.DELETE_YN = FALSE
+                INNER JOIN AREA AS ar
+                        ON ar.AREA_ID = a.AREA_ID
+                       AND ar.DELETE_YN = FALSE
+                WHERE c.USER_ID = @userId
+                  AND c.DELETE_YN = FALSE
+                ORDER BY ar.AREA_ID";
+
+            var rows = await _dapper.QueryAsync<UserAreaRow>(
+                new CommandDefinition(sql, dp, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            return rows.ToList();
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 학원가들의 단속 구역 목록 버전 계산 값을 조회한다
+    /// </summary>
+    public async Task<ZoneVersionRow> GetRestrictedZoneVersionAsync(int[] areaIds,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("areaIds", areaIds);
+
+            var sql = @"
+                SELECT MAX(COALESCE(z.UPDATE_DT, z.CREATE_DT)) AS MaxDt,
+                       COALESCE(SUM(CASE WHEN z.DELETE_YN = FALSE THEN 1 ELSE 0 END), 0) AS LiveCount
+                FROM RESTRICTED_ZONE AS z
+                WHERE z.AREA_ID IN @areaIds";
+
+            return await _dapper.QuerySingleAsync<ZoneVersionRow>(
+                new CommandDefinition(sql, dp, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 학원가들의 살아 있는 단속 구역을 조회한다
+    /// </summary>
+    public async Task<List<ZoneRow>> GetRestrictedZonesAsync(int[] areaIds,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("areaIds", areaIds);
+
+            var sql = @"
+                SELECT z.RESTRICTED_ZONE_ID AS RestrictedZoneId,
+                       z.AREA_ID AS AreaId,
+                       z.ZONE_TYPE AS ZoneType,
+                       ST_AsText(z.GEOM, 'axis-order=long-lat') AS GeomWkt,
+                       z.BUFFER_M AS BufferM,
+                       z.DAY_TYPE AS DayType,
+                       z.ACTIVE_START_TIME AS ActiveStartTime,
+                       z.ACTIVE_END_TIME AS ActiveEndTime
+                FROM RESTRICTED_ZONE AS z
+                WHERE z.AREA_ID IN @areaIds
+                  AND z.DELETE_YN = FALSE
+                ORDER BY z.AREA_ID, z.RESTRICTED_ZONE_ID";
+
+            var rows = await _dapper.QueryAsync<ZoneRow>(
+                new CommandDefinition(sql, dp, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            return rows.ToList();
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
 }
