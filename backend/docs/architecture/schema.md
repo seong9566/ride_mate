@@ -176,6 +176,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `CONSENT_DT` | DATETIME | N | 동의한 시각 |
 
 - 지금 동의 상태는 그 계정·종류의 가장 최근 행이다. 이 테이블이 정본이다. `USER_INFO.ARRIVAL_LOG_YN`은 화면이 빨리 읽기 위한 사본이고 `ARRIVAL_LOG` 행을 넣는 트랜잭션에서 함께 바꾼다.
+- 초기 설정의 보호자 동의(`GUARDIAN`·`CHILD_INFO`·`ARRIVAL_LOG` 3행)는 그 번호의 가장 최근 `GUARDIAN` 인증번호 행이 인증에 성공한 지 10분 안일 때만 넣는다. 선택 항목에 동의하지 않아도 `ARRIVAL_LOG` 행을 `AGREE_YN = 0`으로 넣는다.
 - 인덱스: `(USER_ID, CONSENT_TYPE, CONSENT_ID)`
 
 ## 아이·시간표
