@@ -261,6 +261,99 @@
         ]
       }
     },
+    "/api/v1/Auth/M/sign/AddGuardianVerification": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "보호자 인증번호 발송",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Auth_Response_GuardianVerificationResultDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/Auth/M/sign/UpdateGuardianVerification": {
+      "patch": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "보호자 인증번호 확인",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Auth_Request_UpdateGuardianVerificationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Auth_Response_GuardianVerificationCheckDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/Auth/M/sign/AddConsent": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "보호자 동의 저장",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Auth_Request_AddConsentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_System_Boolean"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/api/v1/Auth/W/DetailQrLogin": {
       "get": {
         "tags": [
@@ -617,6 +710,26 @@
         },
         "additionalProperties": { }
       },
+      "RideMateService_Comm_Dto_v1_Auth_Request_AddConsentDto": {
+        "required": [
+          "arrivalLogYn",
+          "childInfoYn",
+          "guardianYn"
+        ],
+        "type": "object",
+        "properties": {
+          "guardianYn": {
+            "type": "boolean"
+          },
+          "childInfoYn": {
+            "type": "boolean"
+          },
+          "arrivalLogYn": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_Dto_v1_Auth_Request_AddPhoneVerificationDto": {
         "required": [
           "phone"
@@ -737,6 +850,20 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_Dto_v1_Auth_Request_UpdateGuardianVerificationDto": {
+        "required": [
+          "code"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "minLength": 1,
+            "pattern": "^[0-9]{6}$",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_Dto_v1_Auth_Response_DeviceAuthorizationSuccessDto": {
         "type": "object",
         "properties": {
@@ -779,6 +906,40 @@
             "format": "int32"
           },
           "userName": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Auth_Response_GuardianVerificationCheckDto": {
+        "type": "object",
+        "properties": {
+          "remainingAttempts": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "retryAfter": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Auth_Response_GuardianVerificationResultDto": {
+        "type": "object",
+        "properties": {
+          "expiresIn": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "retryAfter": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "phoneMasked": {
             "type": "string",
             "nullable": true
           }
@@ -1162,6 +1323,42 @@
                 "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_GeoPointDto"
               }
             },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Auth_Response_GuardianVerificationCheckDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Auth_Response_GuardianVerificationCheckDto"
+          },
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Auth_Response_GuardianVerificationResultDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Auth_Response_GuardianVerificationResultDto"
+          },
+          "code": {
+            "type": "integer",
+            "format": "int32",
             "nullable": true
           }
         },
