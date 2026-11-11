@@ -186,7 +186,7 @@
 
 | code | 상황 | HTTP |
 |---|---|---|
-| 200 | 계산했다. 쓸 수 있는 기본 지점이 없으면 `pickup`과 계산 필드가 null이고 `reasons`에 `NO_SPOT_AVAILABLE`이 들어간다 | 200 |
+| 200 | 계산했다. 쓸 수 있는 기본 지점이 없으면 `pickup`과 계산 필드가 null이고 `reasons`에 `NO_SPOT_AVAILABLE`이 들어간다. 학원 좌표가 없으면 `pickup`과 계산 필드가 null이고 `reasons`에 `NO_ACADEMY_LOCATION`이 들어간다(앱이 `pickupLat`·`pickupLng`를 보내도 같다) | 200 |
 | 101 | 오늘 남은 픽업이 없다. `data`는 null이다 | 200 |
 | 400 | 필수 값이 없거나 범위를 벗어났거나 픽업 좌표가 한쪽만 왔거나 형식이 틀린 값(해석할 수 없는 `currentDt`나 숫자)이나 `Z`·오프셋이 붙은 `currentDt`가 왔다 | 400 (`ProblemDetails`) |
 | 401 | 인증 실패 | 401 |
