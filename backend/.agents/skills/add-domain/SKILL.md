@@ -56,7 +56,7 @@ description: RideMate 백엔드에 새 도메인(DTO·Repository·Service·Contr
 4. `RideMateService.csproj`에 11번 항목을 추가한다.
 5. `dotnet build RideMateService.sln -warnaserror`가 경고 0으로 통과하도록 고친다. 세 번 고쳐도 통과하지 못하면 멈추고 남은 오류를 사용자에게 알린다.
 6. 서버를 띄워 Swagger에서 새 API를 호출하고 응답을 확인한다. 로컬 서버와 로컬 DB가 대상일 때만 쓰기 API도 호출한다. 서버를 띄우고 끄는 방법은 `backend/AGENTS.md` §빌드·실행·검증을 따른다. `sign` 구간 API는 `docs/security.md`의 방법으로 받은 access 토큰을 Bearer로 실어 호출한다.
-7. `update-api-spec` 스킬로 `docs/api/openapi.json`을 갱신하고 Notion API 문서(정본)에 새 API 페이지를 쓴다.
+7. `update-api-spec` 스킬로 `docs/api/openapi.json`을 갱신하고 Notion API 문서(정본)에 새 API 페이지를 쓴다. Notion에 연결되지 않은 실행 환경이면 `openapi.json`까지만 하고, 써야 할 Notion 페이지를 결과 보고에 남긴다(Notion은 연결된 세션이 쓴다).
 8. `feat: <한국어 요약>`으로 커밋한다.
 
 ## 완료 조건
@@ -69,5 +69,5 @@ description: RideMate 백엔드에 새 도메인(DTO·Repository·Service·Contr
 - [ ] `dotnet build RideMateService.sln -warnaserror`가 경고 0, 오류 0이다.
 - [ ] 새 API의 응답이 `{ message, data, code }` 형태이고, `code`와 HTTP 상태가 `api.md` 표와 맞다.
 - [ ] 새로 만든 파일이 커밋에 들어 있다. `git show --stat --format= HEAD`에 전부 나오고 `git check-ignore -v <파일>`에 걸리지 않는다(도메인 이름이 `Log`·`Debug`·`Release`·`Publish`처럼 `backend/.gitignore`가 무시하는 폴더 이름이면 통째로 빠진다).
-- [ ] `docs/api/openapi.json`에 새 라우트가 들어 있고, Notion 목차 페이지의 API 목록 표와 그 API의 하위 페이지가 있다.
+- [ ] `docs/api/openapi.json`에 새 라우트가 들어 있다. Notion 목차 표와 하위 페이지가 있거나(연결된 세션), 남긴 Notion 작업이 결과 보고에 있다(연결되지 않은 환경).
 - [ ] 변경이 커밋되어 `git status --short`가 비어 있다.

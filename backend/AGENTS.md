@@ -30,7 +30,7 @@
 | `start-task` | 작업을 시작할 때 — 카드 확인·생성, wip 전환, 브랜치 생성 |
 | `add-domain` | 도메인이나 API를 추가할 때 |
 | `db-schema-change` | 테이블을 만들거나 바꿀 때 |
-| `update-api-spec` | 라우트·DTO나 응답 code·message·오류 상황을 바꾼 뒤 `docs/api/openapi.json`과 API별 문서를 갱신할 때 |
+| `update-api-spec` | 라우트·DTO나 응답 code·message·오류 상황을 바꾼 뒤 `docs/api/openapi.json`과 Notion API 문서(정본)를 갱신할 때 |
 
 - 스킬 정본은 `.agents/skills/<이름>/SKILL.md`다. `.claude/skills/<이름>`은 정본을 가리키는 심볼릭 링크이므로 스킬은 `.agents/skills/`에서만 고친다.
 - 코드 템플릿은 스킬 폴더의 `templates/`에만 둔다. 문서에는 규칙과 템플릿 경로만 쓴다. 레이어 규칙의 정본은 `docs/`다. [ADR-0007]
@@ -69,6 +69,7 @@
   - 카드가 없으면 먼저 만든다. 빈 번호를 `ls`로 확인한다. 쓰인 번호를 재사용하지 않는다.
   - 브랜치 이름에 카드 ID를 넣는다: `feat/T01-<설명>`, `fix/T02-<설명>`.
   - 착수할 때 `wip`, 머지한 뒤 `done`으로 바꾼다.
+- Notion API 문서를 고친 PR은 머지한 뒤 그 페이지들의 "머지 대기" 표시를 지운다. 머지하지 않고 닫으면 Notion 변경을 되돌린다(`update-api-spec` 스킬).
 - 설정·문서 같은 잡일은 카드 없이 `chore/<설명>`·`docs/<설명>` 브랜치로 한다.
 
 ```

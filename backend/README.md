@@ -4,7 +4,7 @@ ASP.NET Core Web API(.NET 10) 서버입니다. DB는 MySQL 8.4를 쓰고, 스키
 
 - 코드 구조와 작업 규칙: [`AGENTS.md`](AGENTS.md), [`docs/`](docs/)
 - 테이블 설계: [`docs/architecture/schema.md`](docs/architecture/schema.md)
-- 앱↔서버 API 명세: 루트 [`docs/api/`](../docs/api/)
+- 앱↔서버 API 명세: 루트 [`docs/api/`](../docs/api/)(`openapi.json`), API 문서 정본은 Notion "라이드메이트 API 문서"(https://app.notion.com/p/415aa638eaf880808d84c4ffba30bb51)
 
 ## 개발 환경
 
