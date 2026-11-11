@@ -47,7 +47,7 @@ data (object): QR 취소 결과
 
 ## Error
 
-- qrState (string): `NOT_FOUND` 또는 `USED`
+- qrState (string): `NOT_FOUND`, `USED`, `EXPIRED`, 또는 본인 확인 전의 지금 상태(`PENDING`·`SCANNED`)
 
 ```json
 {

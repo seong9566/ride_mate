@@ -57,11 +57,6 @@ public interface IAuthRepository
     Task<LoginSession?> GetLoginSessionAsync(int loginSessionId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 살아 있는 휴대폰 웹 로그인 세션을 PK로 불러온다(수정 대상).
-    /// </summary>
-    Task<LoginSession?> GetWebLoginSessionAsync(int loginSessionId, CancellationToken cancellationToken = default);
-
-    /// <summary>
     /// 로그인 세션 수정
     /// </summary>
     Task<bool> UpdateLoginSessionAsync(LoginSession model, CancellationToken cancellationToken = default);
@@ -131,7 +126,7 @@ public interface IAuthRepository
     /// 같은 계정·기기의 살아 있는 차량 로그인 세션 ID를 FOR UPDATE 잠금 읽기로 조회한다.
     /// 호출 전에 USER_INFO 행을 PK로 잠가 차량 세션 생성 경로를 직렬화하며, 잠금 읽기라 최신 커밋을 본다.
     /// </summary>
-    Task<IReadOnlyList<int>> GetCarSessionIdsAsync(int userId, string deviceId, IDbTransaction? transaction = null,
+    Task<IReadOnlyList<int>> GetCarSessionIdsAsync(int userId, string deviceId, IDbTransaction transaction,
         CancellationToken cancellationToken = default);
 
     /// <summary>

@@ -151,8 +151,9 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `LAST_POLL_DT` | DATETIME | Y | 차량이 마지막으로 결과를 물은 시각. 폴링 간격(3초)보다 1초 넘게 빨리 다시 물으면 `slow_down`이다 |
 
 - 상태는 `PENDING` → `SCANNED` → `VERIFIED` → `APPROVED` → `USED`로만 나아간다. 휴대폰에서 "다른 번호로 로그인"을 고르면 `VERIFIED`에서 `SCANNED`로 돌아가고 `USER_ID`를 비운다. `USED` 전이면 어느 상태에서든 `CANCELED`가 될 수 있다.
-- 만료는 상태가 아니라 `EXPIRE_DT`로 판단한다. 만료된 행에서는 휴대폰의 모든 요청을 거절하고, 차량은 `APPROVED`가 아니면 `expired_token`을 받는다.
+- 만료는 상태가 아니라 `EXPIRE_DT`로 판단한다. 만료된 행에서는 휴대폰의 모든 요청을 거절한다. 차량은 `APPROVED`가 아니면 만료 뒤 `expired_token`을 받고, `APPROVED`여도 만료 뒤 60초가 지나면 `expired_token`을 받는다.
 - 휴대폰은 `user_code`로, 차량은 `device_code`로 행을 찾는다.
+- 인증 트랜잭션은 `PHONE_VERIFICATION` → `QR_LOGIN` → `USER_INFO` → `LOGIN_SESSION` 순서로 잠근다. 잠글 행을 모두 `FOR UPDATE`로 잡은 뒤에 일반 조회를 한다(먼저 조회하면 스냅샷이 고정돼 잠근 행의 최신 값을 못 본다).
 - 두 UNIQUE는 삭제된 행까지 포함한다. 만든 값이 겹쳐 중복 키 오류가 나면 Service가 값을 새로 만들어 다시 넣는다.
 - `VERIFIED`·`APPROVED`·`USED`일 때만 `USER_ID`가 있다(`CANCELED`는 취소 전 상태를 따른다). 코드 값 조건이라 CHECK로 걸지 않고 Service에서 확인한다.
 - 차량이 `APPROVED`를 확인하면 `LOGIN_SESSION`을 만들고 `USED`로 바꾼다. 이 트랜잭션은 첫 문장에서 그 행을 `FOR UPDATE`로 잠그고 상태를 다시 읽는다. 이미 `USED`면 거절하므로 한 QR로 두 번 로그인할 수 없다.

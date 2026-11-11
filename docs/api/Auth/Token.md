@@ -105,7 +105,7 @@ HTTP 400이다. 공통 형식으로 감싸지 않는다. 앱은 `error` 값으�
 8. `signup_required`(`otp`): 인증번호는 맞지만 가입한 계정이 없다. 계정을 만들지 않는다(가입은 휴대폰 웹). 400
 9. `authorization_pending`(`device_code`): 아직 승인되지 않았다. `qr_status`가 함께 온다. `interval`(3초) 뒤 다시 조회한다. 400
 10. `slow_down`(`device_code`): 마지막 조회 뒤 2초가 지나기 전에 다시 조회했다(간격 3초에서 1초 여유). 이후 간격을 5초 늘린다(RFC 8628). 400
-11. `expired_token`(`device_code`): 승인되지 않은 채 QR 발급 후 3분이 지났다. 400
+11. `expired_token`(`device_code`): 승인되지 않은 채 QR 발급 후 3분이 지났거나, 승인됐지만 만료 뒤 60초 안에 받아 가지 않았다. 400
 12. `access_denied`(`device_code`): 차량이나 휴대폰에서 QR 로그인을 취소했다. `cancel_reason`이 함께 온다. 400
 13. `invalid_grant`(`device_code`): `device_code`가 틀렸거나 이미 토큰을 받았거나, 발급 때와 다른 `device_id`이거나, 승인된 계정을 확인할 수 없다. 400
 14. 서버 에러: 500 Internal Server Error (공통 오류 형식)
