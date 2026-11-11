@@ -13,16 +13,9 @@ public interface IAuthService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 인증번호 로그인
+    /// 토큰 발급
     /// </summary>
-    Task<ResponseModel<LoginSessionResultDto>> AddLoginSessionService(AddLoginSessionDto dto,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// 토큰 갱신
-    /// </summary>
-    Task<ResponseModel<LoginSessionResultDto>> UpdateLoginSessionService(UpdateLoginSessionDto dto,
-        CancellationToken cancellationToken = default);
+    Task<ResponseModel<TokenAuthResultDto>> TokenAuthService(TokenAuthDto dto, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 차량 로그아웃

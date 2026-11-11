@@ -22,57 +22,21 @@ public class AuthController : ApiControllerBase
     }
 
     /// <summary>
-    /// 인증번호 로그인
+    /// 토큰 발급
     /// </summary>
     [Produces("application/json")]
     [HttpPost]
-    [Route("v1/Auth/M/AddLoginSession")]
-    [Consumes("application/json")]
-    [SwaggerOperation(Summary = "인증번호 로그인")]
-    [ProducesResponseType(typeof(ResponseModel<LoginSessionResultDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ResponseModel<LoginSessionResultDto>), StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> AddLoginSession([FromBody] AddLoginSessionDto dto,
-        CancellationToken cancellationToken)
+    [Route("v1/Auth/M/Token")]
+    [Consumes("application/x-www-form-urlencoded")]
+    [SwaggerOperation(Summary = "토큰 발급")]
+    [ProducesResponseType(typeof(TokenAuthSuccessDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(TokenAuthErrorDto), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> Token([FromForm] TokenAuthDto dto, CancellationToken cancellationToken)
     {
         try
         {
-            var model = await _authService.AddLoginSessionService(dto, cancellationToken).ConfigureAwait(false);
-            Response.Headers.CacheControl = "no-store";
-            return ToActionResult(model);
-        }
-        catch (Exception) when (cancellationToken.IsCancellationRequested)
-        {
-            // 앱이 요청을 끊었다. 오류로 기록하지 않는다
-            return StatusCode(StatusCodes.Status499ClientClosedRequest);
-        }
-        catch (Exception ex)
-        {
-            _logService.LogMessage(ex.ToString());
-#if DEBUG
-            _logService.ConsoleWarning(ex.ToString());
-#endif
-            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
-        }
-    }
-
-    /// <summary>
-    /// 토큰 갱신
-    /// </summary>
-    [Produces("application/json")]
-    [HttpPatch]
-    [Route("v1/Auth/M/UpdateLoginSession")]
-    [Consumes("application/json")]
-    [SwaggerOperation(Summary = "토큰 갱신")]
-    [ProducesResponseType(typeof(ResponseModel<LoginSessionResultDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ResponseModel<LoginSessionResultDto>), StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> UpdateLoginSession([FromBody] UpdateLoginSessionDto dto,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            var model = await _authService.UpdateLoginSessionService(dto, cancellationToken).ConfigureAwait(false);
-            Response.Headers.CacheControl = "no-store";
-            return ToActionResult(model);
+            var model = await _authService.TokenAuthService(dto, cancellationToken).ConfigureAwait(false);
+            return ToTokenActionResult(model);
         }
         catch (Exception) when (cancellationToken.IsCancellationRequested)
         {

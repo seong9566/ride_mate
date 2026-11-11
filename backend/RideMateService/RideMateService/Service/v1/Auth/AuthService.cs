@@ -22,6 +22,8 @@ public class AuthService : IAuthService
     private const int PhoneVerificationCarryMinutes = 10;
     private const int PhoneVerificationMaxFailCount = 5;
     private const int PhoneVerificationLockMinutes = 10;
+    private const string GrantTypeOtp = "otp";
+    private const string GrantTypeRefreshToken = "refresh_token";
     private const string AuditUser = "PARENT";
     private const int DeadlockMaxAttempts = 3;
     private const int RefreshTokenMaxLength = 128; // 실제 값은 43자다. 더 길면 해시·트랜잭션 전에 거절한다
@@ -172,35 +174,22 @@ public class AuthService : IAuthService
     }
 
     /// <summary>
-    /// 인증번호 로그인
+    /// 토큰 발급
     /// </summary>
-    public async Task<ResponseModel<LoginSessionResultDto>> AddLoginSessionService(AddLoginSessionDto dto,
-        CancellationToken cancellationToken = default)
+    public async Task<ResponseModel<TokenAuthResultDto>> TokenAuthService(TokenAuthDto dto, CancellationToken cancellationToken = default)
     {
         try
         {
-            return await RetryOnDeadlockAsync(() => AddLoginSessionAsync(dto, cancellationToken)).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 그대로 올려보낸다
-        {
-            _logService.LogMessage(ex.ToString());
-#if DEBUG
-            _logService.ConsoleWarning(ex.ToString());
-#endif
-            return new ResponseModel<LoginSessionResultDto>
-                { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
-        }
-    }
+            // 1) 입력 검증 — 방식별 필수 값은 Service에서 본다(DTO에 검증 특성을 붙이지 않는다)
+            if (dto is null || string.IsNullOrWhiteSpace(dto.grant_type))
+                return TokenError("invalid_request", "grant_type is required");
 
-    /// <summary>
-    /// 토큰 갱신
-    /// </summary>
-    public async Task<ResponseModel<LoginSessionResultDto>> UpdateLoginSessionService(UpdateLoginSessionDto dto,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            return await UpdateLoginSessionAsync(dto, cancellationToken).ConfigureAwait(false);
+            return dto.grant_type switch
+            {
+                GrantTypeRefreshToken => await RefreshTokenGrantAsync(dto, cancellationToken).ConfigureAwait(false),
+                GrantTypeOtp => await RetryOnDeadlockAsync(() => OtpGrantAsync(dto, cancellationToken)).ConfigureAwait(false),
+                _ => TokenError("unsupported_grant_type", "grant_type is not supported")
+            };
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 그대로 올려보낸다
         {
@@ -208,8 +197,7 @@ public class AuthService : IAuthService
 #if DEBUG
             _logService.ConsoleWarning(ex.ToString());
 #endif
-            return new ResponseModel<LoginSessionResultDto>
-                { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+            return new ResponseModel<TokenAuthResultDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
         }
     }
 
@@ -250,15 +238,17 @@ public class AuthService : IAuthService
         }
     }
 
-    private async Task<ResponseModel<LoginSessionResultDto>> UpdateLoginSessionAsync(UpdateLoginSessionDto dto,
+    private async Task<ResponseModel<TokenAuthResultDto>> RefreshTokenGrantAsync(TokenAuthDto dto,
         CancellationToken cancellationToken)
     {
-        // 입력 검증 — API 모델 검증을 거치지 않은 호출도 같은 규칙으로 거절한다
-        if (dto is null || string.IsNullOrWhiteSpace(dto.refreshToken) || dto.refreshToken.Length > RefreshTokenMaxLength)
-            return Fail("invalid_request");
+        if (string.IsNullOrWhiteSpace(dto.refresh_token))
+            return TokenError("invalid_request", "refresh_token is required");
+
+        if (dto.refresh_token.Length > RefreshTokenMaxLength)
+            return TokenError("invalid_grant", "refresh token is invalid or expired");
 
         DateTime thisTime = DateTime.Now;
-        var requestHash = _hashService.Hmac(dto.refreshToken);
+        var requestHash = _hashService.Hmac(dto.refresh_token);
 
         // 1) 세션 잠금 — 트랜잭션의 첫 문장으로 행을 FOR UPDATE로 잠근다.
         //    예외로 빠져나가면 await using이 트랜잭션을 롤백한다
@@ -271,20 +261,20 @@ public class AuthService : IAuthService
         if (loginSessionId is null)
         {
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            return Fail("invalid_refresh_token");
+            return TokenError("invalid_grant", "refresh token is invalid or expired");
         }
 
         var session = await _authRepository.GetLoginSessionAsync(loginSessionId.Value, cancellationToken).ConfigureAwait(false);
         if (session is null)
         {
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            return Fail("invalid_refresh_token");
+            return TokenError("invalid_grant", "refresh token is invalid or expired");
         }
 
         // 2) refresh 교체 — 새 값은 세션과 낸 값으로 계산하므로 같은 값을 내면 늘 같은 새 값이 나온다.
         //    지금 값이면 직전 값으로 넘기고 계산한 값을 지금 값으로 둔다.
         //    직전 값이면(재시도·늦게 처리된 중복) 계산한 값이 이미 지금 값이므로 행의 값은 그대로 두고 같은 값을 다시 준다
-        var newRefreshToken = _tokenService.DeriveNextRefreshToken(session.LoginSessionId, dto.refreshToken);
+        var newRefreshToken = _tokenService.DeriveNextRefreshToken(session.LoginSessionId, dto.refresh_token);
         var newTokenHash = _hashService.Hmac(newRefreshToken);
 
         if (session.TokenHash == requestHash)
@@ -299,13 +289,13 @@ public class AuthService : IAuthService
             if (newTokenHash != session.TokenHash)
             {
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return Fail("invalid_refresh_token");
+                return TokenError("invalid_grant", "refresh token is invalid or expired");
             }
         }
         else
         {
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            return Fail("invalid_refresh_token");
+            return TokenError("invalid_grant", "refresh token is invalid or expired");
         }
 
         session.ExpireDt = thisTime.AddDays(ITokenService.RefreshTokenDays);
@@ -317,7 +307,7 @@ public class AuthService : IAuthService
         if (!await _authRepository.UpdateLoginSessionAsync(session, cancellationToken).ConfigureAwait(false))
         {
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            return new ResponseModel<LoginSessionResultDto>
+            return new ResponseModel<TokenAuthResultDto>
                 { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
         }
 
@@ -327,42 +317,43 @@ public class AuthService : IAuthService
         if (setupRequired is null)
         {
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            return Fail("invalid_refresh_token");
+            return TokenError("invalid_grant", "refresh token is invalid or expired");
         }
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         // 5) 응답 — 커밋한 뒤에만 토큰을 내준다
-        var result = new LoginSessionResultDto
+        var result = new TokenAuthResultDto
         {
-            accessToken = _tokenService.CreateAccessToken(session.UserId, session.LoginSessionId, session.DeviceId, thisTime),
-            tokenType = "Bearer",
-            expiresIn = ITokenService.AccessTokenSeconds,
-            refreshToken = newRefreshToken,
-            sessionId = session.LoginSessionId,
-            setupRequired = setupRequired.Value
+            success = new TokenAuthSuccessDto
+            {
+                access_token = _tokenService.CreateAccessToken(session.UserId, session.LoginSessionId, session.DeviceId, thisTime),
+                token_type = "Bearer",
+                expires_in = ITokenService.AccessTokenSeconds,
+                refresh_token = newRefreshToken,
+                session_id = session.LoginSessionId,
+                setup_required = setupRequired.Value
+            }
         };
 
-        return new ResponseModel<LoginSessionResultDto>
-            { message = "요청이 정상 처리되었습니다.", data = result, code = 200 };
+        return new ResponseModel<TokenAuthResultDto> { message = "요청이 정상 처리되었습니다.", data = result, code = 200 };
     }
 
-    private async Task<ResponseModel<LoginSessionResultDto>> AddLoginSessionAsync(AddLoginSessionDto dto,
+    private async Task<ResponseModel<TokenAuthResultDto>> OtpGrantAsync(TokenAuthDto dto,
         CancellationToken cancellationToken)
     {
-        // 1) 입력 검증 — API 모델 검증을 거치지 않은 호출도 같은 규칙으로 거절한다
-        if (dto is null
-            || !IsValidPhone(dto.phone)
-            || !IsValidCode(dto.code)
-            || string.IsNullOrWhiteSpace(dto.deviceId)
-            || dto.deviceId.Length > 100)
-            return Fail("invalid_request");
-
         DateTime thisTime = NowToSecond(); // DB DATETIME은 초 단위로 반올림해 저장하므로 기준 시각도 초 단위로 맞춘다
+
+        // 1) 입력 검증
+        if (!IsValidPhone(dto.phone)
+            || !IsValidCode(dto.code)
+            || string.IsNullOrWhiteSpace(dto.device_id)
+            || dto.device_id.Length > 100)
+            return TokenError("invalid_request", "otp request is invalid");
 
         var phoneDigits = dto.phone!;
         var code = dto.code!;
-        var deviceId = dto.deviceId!;
+        var deviceId = dto.device_id!;
         var phoneHash = CreatePhoneHash(phoneDigits);
 
         var transaction = await _context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
@@ -378,7 +369,7 @@ public class AuthService : IAuthService
         {
             var retryAfter = RemainingSeconds(latest.LockUntilDt.Value, thisTime);
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            return Fail("otp_locked", retryAfter: retryAfter);
+            return TokenError("otp_locked", "verification is temporarily locked", retryAfter: retryAfter);
         }
 
         // 3) 로그인용 최근 인증번호 잠금
@@ -390,7 +381,7 @@ public class AuthService : IAuthService
         if (verification is null || verification.VerifyDt is not null)
         {
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            return Fail("otp_not_requested");
+            return TokenError("invalid_grant", "no pending verification code");
         }
 
         // 다른 용도의 행이 더 최근이어도 이 행이 잠겼으면 거절한다
@@ -398,14 +389,14 @@ public class AuthService : IAuthService
         {
             var retryAfter = RemainingSeconds(verification.LockUntilDt.Value, thisTime);
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            return Fail("otp_locked", retryAfter: retryAfter);
+            return TokenError("otp_locked", "verification is temporarily locked", retryAfter: retryAfter);
         }
 
         // 4) 만료 확인
         if (verification.ExpireDt <= thisTime)
         {
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            return Fail("otp_expired");
+            return TokenError("otp_expired", "verification code has expired");
         }
 
         // 5) 인증번호 불일치 기록
@@ -421,16 +412,16 @@ public class AuthService : IAuthService
             if (!await _authRepository.UpdatePhoneVerificationAsync(verification, cancellationToken).ConfigureAwait(false))
             {
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return new ResponseModel<LoginSessionResultDto>
+                return new ResponseModel<TokenAuthResultDto>
                     { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
             }
 
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
             return isLocked
-                ? Fail("otp_locked",
+                ? TokenError("otp_locked", "verification is temporarily locked",
                     retryAfter: PhoneVerificationLockMinutes * 60)
-                : Fail("otp_mismatch",
+                : TokenError("otp_mismatch", "verification code is incorrect",
                     remainingAttempts: PhoneVerificationMaxFailCount - verification.FailCnt);
         }
 
@@ -441,7 +432,7 @@ public class AuthService : IAuthService
         if (!await _authRepository.UpdatePhoneVerificationAsync(verification, cancellationToken).ConfigureAwait(false))
         {
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            return new ResponseModel<LoginSessionResultDto>
+            return new ResponseModel<TokenAuthResultDto>
                 { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
         }
 
@@ -451,7 +442,7 @@ public class AuthService : IAuthService
         if (userId is null)
         {
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return Fail("signup_required");
+            return TokenError("signup_required", "account does not exist");
         }
 
         // 8) 같은 기기의 기존 차량 세션 종료
@@ -481,7 +472,7 @@ public class AuthService : IAuthService
         if (!await _authRepository.AddLoginSessionAsync(session, cancellationToken).ConfigureAwait(false))
         {
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            return new ResponseModel<LoginSessionResultDto>
+            return new ResponseModel<TokenAuthResultDto>
                 { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
         }
 
@@ -491,24 +482,26 @@ public class AuthService : IAuthService
         if (setupRequired is null)
         {
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            return Fail("signup_required");
+            return TokenError("invalid_grant", "account is invalid");
         }
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         // 11) 응답 — 커밋한 뒤에만 토큰을 내준다
-        var result = new LoginSessionResultDto
+        var result = new TokenAuthResultDto
         {
-            accessToken = _tokenService.CreateAccessToken(userId.Value, session.LoginSessionId, deviceId, thisTime),
-            tokenType = "Bearer",
-            expiresIn = ITokenService.AccessTokenSeconds,
-            refreshToken = refreshToken,
-            sessionId = session.LoginSessionId,
-            setupRequired = setupRequired.Value
+            success = new TokenAuthSuccessDto
+            {
+                access_token = _tokenService.CreateAccessToken(userId.Value, session.LoginSessionId, deviceId, thisTime),
+                token_type = "Bearer",
+                expires_in = ITokenService.AccessTokenSeconds,
+                refresh_token = refreshToken,
+                session_id = session.LoginSessionId,
+                setup_required = setupRequired.Value
+            }
         };
 
-        return new ResponseModel<LoginSessionResultDto>
-            { message = "요청이 정상 처리되었습니다.", data = result, code = 200 };
+        return new ResponseModel<TokenAuthResultDto> { message = "요청이 정상 처리되었습니다.", data = result, code = 200 };
     }
 
     private string CreatePhoneHash(string phoneDigits)
@@ -581,17 +574,22 @@ public class AuthService : IAuthService
         return (int)Math.Ceiling((until - thisTime).TotalSeconds);
     }
 
-    private static ResponseModel<LoginSessionResultDto> Fail(string error,
+    // OAuth 실패 응답(400). 설명에는 값이나 내부 사정을 넣지 않는다
+    private static ResponseModel<TokenAuthResultDto> TokenError(string error, string errorDescription,
         int? remainingAttempts = null, int? retryAfter = null)
     {
-        return new ResponseModel<LoginSessionResultDto>
+        return new ResponseModel<TokenAuthResultDto>
         {
             message = "잘못된 요청입니다.",
-            data = new LoginSessionResultDto
+            data = new TokenAuthResultDto
             {
-                error = error,
-                remainingAttempts = remainingAttempts,
-                retryAfter = retryAfter
+                error = new TokenAuthErrorDto
+                {
+                    error = error,
+                    error_description = errorDescription,
+                    remaining_attempts = remainingAttempts,
+                    retry_after = retryAfter
+                }
             },
             code = 400
         };

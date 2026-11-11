@@ -12,4 +12,4 @@
 - 클래스에는 `[Route("api")]`만 두고, 버전·도메인은 액션의 `[Route]`에 적는다. 라우트 형태와 액션 이름은 `../api.md`를 따른다.
 - 쿼리스트링은 `[FromQuery]`, 필수면 `[Required]`를 붙인다.
 - `ResponseModel.code` → HTTP 상태 변환은 `ApiControllerBase.ToActionResult()` 한 곳에서만 한다. 새 `code` 값을 쓰면 그 switch에 추가한다.
-- 로그인·토큰 갱신 액션은 토큰이 담길 수 있으므로 `ToActionResult` 전에 `Cache-Control: no-store`를 붙인다.
+- 예외: `Token`은 액션 끝에서 `ToActionResult` 대신 `ToTokenActionResult`를 호출한다. 이 한 곳에서 `ResponseModel<TokenAuthResultDto>`를 OAuth 본문(성공은 `Cache-Control: no-store`와 함께, 실패는 400)으로 바꾼다. `[ProducesResponseType]`에는 Service 반환 타입 대신 실제로 나가는 `TokenAuthSuccessDto`(200)·`TokenAuthErrorDto`(400)를 적는다. 그래야 `openapi.json`이 실제 응답과 맞는다. 요청 본문은 `[Consumes("application/x-www-form-urlencoded")]`와 `[FromForm]`이다.
