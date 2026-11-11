@@ -69,8 +69,7 @@
           "id": "rmMysqlCred00001",
           "name": "ridemate-mysql"
         }
-      },
-      "onError": "continueRegularOutput"
+      }
     },
     {
       "parameters": {
@@ -93,8 +92,7 @@
           "id": "rmMysqlCred00001",
           "name": "ridemate-mysql"
         }
-      },
-      "onError": "continueRegularOutput"
+      }
     },
     {
       "parameters": {
@@ -173,8 +171,7 @@
           "name": "ridemate-mysql"
         }
       },
-      "alwaysOutputData": true,
-      "onError": "continueRegularOutput"
+      "alwaysOutputData": true
     },
     {
       "parameters": {
@@ -316,7 +313,7 @@
       "parameters": {
         "mode": "runOnceForEachItem",
         "language": "javaScript",
-        "jsCode": "const status = Number($json.statusCode);\nconst body = typeof $json.body === 'string' ? $json.body : '';\n\nfunction tagValue(tagName) {\n  const pattern = new RegExp(`<${tagName}(?:\\\\s[^>]*)?>([\\\\s\\\\S]*?)<\\\\/${tagName}>`, 'i');\n  const match = body.match(pattern);\n  if (!match) return null;\n  return match[1]\n    .replace(/^\\s*<!\\[CDATA\\[/, '')\n    .replace(/\\]\\]>\\s*$/, '')\n    .trim();\n}\n\n// TOPIS 속도는 소수로 온다(예: 77.4). 0 이상 숫자를 받아 정수로 반올림한다.\nfunction nonNegativeRounded(value) {\n  if (value == null || !/^\\d+(\\.\\d+)?$/.test(value)) return null;\n  const parsed = Math.round(Number(value));\n  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;\n}\n\nconst code = tagValue('CODE');\nconst safeCode = code && /^[A-Z0-9_-]{1,50}$/.test(code) ? code : null;\nconst speed = nonNegativeRounded(tagValue('prcs_spd'));\nconst travelSec = nonNegativeRounded(tagValue('prcs_trv_time'));\nconst ok = status === 200 && code === 'INFO-000' && speed !== null && travelSec !== null;\nlet reason = null;\n\nif (!ok) {\n  if (status !== 200) {\n    reason = Number.isInteger(status) ? `HTTP_${status}` : 'HTTP_ERROR';\n  } else if (code !== 'INFO-000') {\n    reason = safeCode || (code ? 'RESULT_CODE_INVALID' : 'RESULT_CODE_MISSING');\n  } else {\n    reason = 'INVALID_DATA';\n  }\n}\n\nreturn {\n  json: {\n    trafficLinkId: Number($json.trafficLinkId),\n    ok,\n    speed: ok ? speed : null,\n    travelSec: ok ? travelSec : null,\n    reason,\n  },\n};"
+        "jsCode": "const status = Number($json.statusCode);\nconst body = typeof $json.body === 'string' ? $json.body : '';\n\nfunction tagValue(tagName) {\n  const pattern = new RegExp(`<${tagName}(?:\\\\s[^>]*)?>([\\\\s\\\\S]*?)<\\\\/${tagName}>`, 'i');\n  const match = body.match(pattern);\n  if (!match) return null;\n  return match[1]\n    .replace(/^\\s*<!\\[CDATA\\[/, '')\n    .replace(/\\]\\]>\\s*$/, '')\n    .trim();\n}\n\n// TOPIS 속도는 소수로 온다(예: 77.4). 0 이상 숫자를 받아 정수로 반올림한다.\nfunction nonNegativeRounded(value) {\n  if (value == null || !/^\\d+(\\.\\d+)?$/.test(value)) return null;\n  const parsed = Math.round(Number(value));\n  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;\n}\n\nconst code = tagValue('CODE');\nconst safeCode = code && /^[A-Z0-9_-]{1,50}$/.test(code) ? code : null;\nconst roundedSpeed = nonNegativeRounded(tagValue('prcs_spd'));\n// 0~300km/h 밖은 비정상 값으로 본다(SPEED_KMH는 SMALLINT).\nconst speed = roundedSpeed !== null && roundedSpeed <= 300 ? roundedSpeed : null;\nconst travelSec = nonNegativeRounded(tagValue('prcs_trv_time'));\nconst ok = status === 200 && code === 'INFO-000' && speed !== null && travelSec !== null;\nlet reason = null;\n\nif (!ok) {\n  if (status !== 200) {\n    reason = Number.isInteger(status) ? `HTTP_${status}` : 'HTTP_ERROR';\n  } else if (code !== 'INFO-000') {\n    reason = safeCode || (code ? 'RESULT_CODE_INVALID' : 'RESULT_CODE_MISSING');\n  } else {\n    reason = 'INVALID_DATA';\n  }\n}\n\nreturn {\n  json: {\n    trafficLinkId: Number($json.trafficLinkId),\n    ok,\n    speed: ok ? speed : null,\n    travelSec: ok ? travelSec : null,\n    reason,\n  },\n};"
       },
       "id": "judge-response",
       "name": "응답 판정",
@@ -357,7 +354,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const results = $('응답 판정').all().map((item) => item.json);\nconst reasonCounts = {};\n\nfor (const result of results) {\n  if (result.ok) continue;\n  const reason = result.reason || 'UNKNOWN';\n  reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;\n}\n\nconst errorSummary = Object.entries(reasonCounts)\n  .sort(([left], [right]) => left.localeCompare(right))\n  .map(([reason, count]) => `${reason}: ${count}`)\n  .join('; ')\n  .slice(0, 500);\n\nreturn [{\n  json: {\n    collectRunId: $('링크 목록 준비').first().json.collectRunId,\n    linkCount: $('링크 목록 준비').first().json.linkCount,\n    errorMessageParam: errorSummary || '__NULL__',\n  },\n}];"
+        "jsCode": "const results = $('응답 판정').all().map((item) => item.json);\nconst reasonCounts = {};\n\nfor (const result of results) {\n  if (result.ok) continue;\n  const reason = result.reason || 'UNKNOWN';\n  reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;\n}\n\nconst dbFailed = $input.all().some((item) => item.json.error != null);\nif (dbFailed) reasonCounts.DB_INSERT_FAILED = (reasonCounts.DB_INSERT_FAILED || 0) + 1;\n\nconst errorSummary = Object.entries(reasonCounts)\n  .sort(([left], [right]) => left.localeCompare(right))\n  .map(([reason, count]) => `${reason}: ${count}`)\n  .join('; ')\n  .slice(0, 500);\n\nreturn [{\n  json: {\n    collectRunId: $('링크 목록 준비').first().json.collectRunId,\n    linkCount: $('링크 목록 준비').first().json.linkCount,\n    errorMessageParam: errorSummary || '__NULL__',\n  },\n}];"
       },
       "id": "summarize-results",
       "name": "실패 사유 집계",

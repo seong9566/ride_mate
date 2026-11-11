@@ -1016,7 +1016,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const context = $input.first().json;\n\nreturn [{\n  json: {\n    ...context,\n    ok: true,\n    reason: null,\n    inRadiusLinks: [],\n    inRadiusCount: 0,\n    links: [],\n  },\n}];"
+        "jsCode": "const context = $input.first().json;\n\n// 결과가 0건이면 기존 목록을 지우지 않는다. 샘플 키·도로 이름 오타·접두사 오설정으로 수집 대상이 통째로 사라지는 것을 막는다.\nreturn [{\n  json: {\n    ...context,\n    ok: false,\n    reason: 'NO_LINKS_IN_RESULT',\n    inRadiusLinks: [],\n    inRadiusCount: 0,\n    links: [],\n  },\n}];"
       },
       "id": "prepare-empty-link-details",
       "name": "빈 링크 상세 준비",
@@ -1901,7 +1901,7 @@
       "main": [
         [
           {
-            "node": "정상 링크 적재 준비",
+            "node": "실패 결과",
             "type": "main",
             "index": 0
           }
