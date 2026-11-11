@@ -236,6 +236,122 @@ public class ScheduleService : IScheduleService
         }
     }
 
+    /// <summary>
+    /// 내 시간표 목록
+    /// </summary>
+    public async Task<ResponseModel<List<ScheduleItemDto>>> GetScheduleListService(
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // 1) 인증 확인 — sub 클레임이 없거나 계정이 없으면 거절한다
+            var loginUserId = GetLoginUserId();
+            if (loginUserId is null)
+                return Fail<List<ScheduleItemDto>>(401, "잘못된 요청입니다.");
+
+            var userId = await _scheduleRepository.GetLiveUserIdAsync(loginUserId.Value, cancellationToken)
+                .ConfigureAwait(false);
+            if (userId is null)
+                return Fail<List<ScheduleItemDto>>(401, "잘못된 요청입니다.");
+
+            // 2) 살아 있는 아이가 없으면 빈 목록이다
+            var childId = await _scheduleRepository.GetLiveChildIdAsync(userId.Value,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            var items = childId is null
+                ? new List<ScheduleItemDto>()
+                : await _scheduleRepository.GetScheduleItemsAsync(childId.Value, null,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            return new ResponseModel<List<ScheduleItemDto>>
+            {
+                message = "요청이 정상 처리되었습니다.",
+                data = items,
+                code = 200
+            };
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 그대로 올려보낸다
+        {
+            LogServiceException(ex);
+            return Fail<List<ScheduleItemDto>>(500, "서버에서 요청을 처리하지 못하였습니다.");
+        }
+    }
+
+    /// <summary>
+    /// 요일별 픽업 스위치 변경
+    /// </summary>
+    public Task<ResponseModel<ScheduleDayDto>> UpdateScheduleDayPickupService(UpdateScheduleDayPickupDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        return RetryOnDeadlockAsync(() => UpdateScheduleDayPickupCoreAsync(dto, cancellationToken), cancellationToken);
+    }
+
+    // 교착은 RetryOnDeadlockAsync가 다시 실행하므로 여기서는 500으로 바꾸지 않고 올려보낸다
+    private async Task<ResponseModel<ScheduleDayDto>> UpdateScheduleDayPickupCoreAsync(
+        UpdateScheduleDayPickupDto dto, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // 1) 입력 검증 — API 모델 검증을 거치지 않은 호출도 같은 규칙으로 거절한다
+            if (dto is not { scheduleDaySeq: >= 1, pickupYn: not null })
+                return Fail<ScheduleDayDto>(400, "잘못된 요청입니다.");
+
+            // 2) 인증 확인 — sub 클레임이 없으면 거절하고, 계정이 있는지는 아래 잠금 조회가 확인한다
+            var loginUserId = GetLoginUserId();
+            if (loginUserId is null)
+                return Fail<ScheduleDayDto>(401, "잘못된 요청입니다.");
+
+            DateTime thisTime = NowToSecond();
+            var transaction = await _context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            await using var transactionScope = transaction.ConfigureAwait(false);
+            var dbTransaction = transaction.GetDbTransaction();
+
+            // 3) 다른 조회보다 먼저 계정을 잠가 같은 계정의 동시 요청을 직렬화한다
+            var lockedUserId = await _scheduleRepository.LockUserInfoAsync(loginUserId.Value, dbTransaction,
+                cancellationToken).ConfigureAwait(false);
+            if (lockedUserId is null) // 계정이 없거나 지워졌다
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return Fail<ScheduleDayDto>(401, "잘못된 요청입니다.");
+            }
+
+            // 4) 그 요일이 이 계정 아이의 살아 있는 시간표의 살아 있는 요일인지 확인한다. 아이가 없거나 남의 요일이면 찾을 수 없다
+            var childId = await _scheduleRepository.GetLiveChildIdAsync(lockedUserId.Value, dbTransaction,
+                cancellationToken).ConfigureAwait(false);
+            var day = childId is null
+                ? null
+                : await _scheduleRepository.GetLiveScheduleDayAsync(childId.Value, dto.scheduleDaySeq.Value,
+                    dbTransaction, cancellationToken).ConfigureAwait(false);
+            if (day is null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return Fail<ScheduleDayDto>(404, "대상을 찾을 수 없습니다.");
+            }
+
+            // 5) 픽업 스위치만 바꾼다 — 감사 컬럼은 Service가 채운다
+            if (!await _scheduleRepository.UpdateScheduleDayPickupAsync(day.scheduleDaySeq, dto.pickupYn.Value,
+                    thisTime, AuditUser, cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return Fail<ScheduleDayDto>(500, "서버에서 요청을 처리하지 못하였습니다.");
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+            day.pickupYn = dto.pickupYn.Value;
+            return new ResponseModel<ScheduleDayDto>
+            {
+                message = "요청이 정상 처리되었습니다.",
+                data = day,
+                code = 200
+            };
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && !IsDeadlock(ex)) // 요청 취소·교착은 그대로 올려보낸다
+        {
+            LogServiceException(ex);
+            return Fail<ScheduleDayDto>(500, "서버에서 요청을 처리하지 못하였습니다.");
+        }
+    }
+
     // 로그인한 계정(JWT sub)의 ID — 클레임이 없거나 숫자가 아니면 null. 부른 쪽이 401로 바꾼다
     private int? GetLoginUserId()
     {
@@ -314,7 +430,12 @@ public class ScheduleService : IScheduleService
 
     private static ResponseModel<AddScheduleResultDto> Fail(int code, string message)
     {
-        return new ResponseModel<AddScheduleResultDto> { message = message, data = null, code = code };
+        return Fail<AddScheduleResultDto>(code, message);
+    }
+
+    private static ResponseModel<T> Fail<T>(int code, string message)
+    {
+        return new ResponseModel<T> { message = message, data = default, code = code };
     }
 
     // 교착(MySQL 1213)이면 변경 추적을 비우고 트랜잭션 전체를 다시 실행한다(최대 3번 실행)

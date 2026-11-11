@@ -60,6 +60,35 @@ public partial class ScheduleRepository
     }
 
     /// <summary>
+    /// 살아 있는 요일 행의 픽업 스위치와 수정 감사 컬럼만 바꾼다. 바뀐 행이 없으면 false를 돌려준다.
+    /// </summary>
+    public async Task<bool> UpdateScheduleDayPickupAsync(int scheduleDaySeq, bool pickupYn, DateTime updateDt,
+        string updateUser, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var affected = await _context.TimetableDays
+                .Where(x => x.TimetableDayId == scheduleDaySeq
+                            && x.DeleteYn == false)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.PickupYn, pickupYn)
+                    .SetProperty(x => x.UpdateDt, updateDt)
+                    .SetProperty(x => x.UpdateUser, updateUser), cancellationToken)
+                .ConfigureAwait(false);
+
+            return affected > 0;
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw; // Service가 500으로 바꾼다
+        }
+    }
+
+    /// <summary>
     /// 시간표와 그 요일 행을 한 번에 등록한다. 저장 뒤 model의 시간표 ID가 채워진다.
     /// </summary>
     public async Task<bool> AddTimetableAsync(Timetable model, IEnumerable<TimetableDay> days,

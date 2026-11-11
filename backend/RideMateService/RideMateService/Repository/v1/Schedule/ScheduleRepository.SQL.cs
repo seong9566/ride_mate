@@ -8,6 +8,35 @@ namespace RideMateService.Repository.v1.Schedule;
 public partial class ScheduleRepository
 {
     /// <summary>
+    /// 살아 있는 운전자 계정 ID를 돌려준다. 없으면 null이다. 잠그지 않는 조회라 목록처럼 읽기만 하는 곳에 쓴다.
+    /// </summary>
+    public async Task<int?> GetLiveUserIdAsync(int userId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("userId", userId);
+
+            var sql = @"
+                SELECT t.USER_ID
+                FROM USER_INFO AS t
+                WHERE t.USER_ID = @userId
+                  AND t.DELETE_YN = FALSE";
+
+            return await _dapper.QueryFirstOrDefaultAsync<int?>(
+                new CommandDefinition(sql, dp, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
     /// 살아 있는 운전자 계정을 FOR UPDATE 잠그고 ID를 돌려준다. 같은 계정의 동시 요청을 직렬화한다.
     /// </summary>
     public async Task<int?> LockUserInfoAsync(int userId, IDbTransaction transaction,
@@ -39,9 +68,9 @@ public partial class ScheduleRepository
     }
 
     /// <summary>
-    /// 그 계정의 살아 있는 아이 ID를 돌려준다. 없으면 null이다.
+    /// 그 계정의 살아 있는 아이 ID를 돌려준다. 없으면 null이다. 쓰기 트랜잭션 안에서 부르면 그 트랜잭션을 넘긴다.
     /// </summary>
-    public async Task<int?> GetLiveChildIdAsync(int userId, IDbTransaction transaction,
+    public async Task<int?> GetLiveChildIdAsync(int userId, IDbTransaction? transaction = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -58,6 +87,43 @@ public partial class ScheduleRepository
                 LIMIT 1";
 
             return await _dapper.QueryFirstOrDefaultAsync<int?>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 그 아이의 살아 있는 시간표에 속한 살아 있는 요일 한 건을 돌려준다. 없거나 남의 것이면 null이다.
+    /// </summary>
+    public async Task<ScheduleDayDto?> GetLiveScheduleDayAsync(int childId, int scheduleDaySeq,
+        IDbTransaction transaction, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("childId", childId);
+            dp.Add("scheduleDaySeq", scheduleDaySeq);
+
+            var sql = @"
+                SELECT td.TIMETABLE_DAY_ID AS scheduleDaySeq,
+                       td.DAY_OF_WEEK AS dayOfWeek,
+                       td.PICKUP_YN AS pickupYn
+                FROM TIMETABLE_DAY AS td
+                INNER JOIN TIMETABLE AS t
+                        ON t.TIMETABLE_ID = td.TIMETABLE_ID
+                       AND t.DELETE_YN = FALSE
+                WHERE td.TIMETABLE_DAY_ID = @scheduleDaySeq
+                  AND td.DELETE_YN = FALSE
+                  AND t.CHILD_ID = @childId";
+
+            return await _dapper.QueryFirstOrDefaultAsync<ScheduleDayDto>(
                 new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다

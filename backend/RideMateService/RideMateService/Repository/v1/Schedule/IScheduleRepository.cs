@@ -23,7 +23,18 @@ public interface IScheduleRepository
     Task<bool> AddTimetableAsync(Timetable model, IEnumerable<TimetableDay> days,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// 살아 있는 요일 행의 픽업 스위치와 수정 감사 컬럼만 바꾼다. 바뀐 행이 없으면 false를 돌려준다.
+    /// </summary>
+    Task<bool> UpdateScheduleDayPickupAsync(int scheduleDaySeq, bool pickupYn, DateTime updateDt, string updateUser,
+        CancellationToken cancellationToken = default);
+
     // ====== Dapper
+
+    /// <summary>
+    /// 살아 있는 운전자 계정 ID를 돌려준다. 없으면 null이다. 잠그지 않는 조회라 목록처럼 읽기만 하는 곳에 쓴다.
+    /// </summary>
+    Task<int?> GetLiveUserIdAsync(int userId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 살아 있는 운전자 계정을 FOR UPDATE 잠그고 ID를 돌려준다. 같은 계정의 동시 요청을 직렬화한다.
@@ -32,9 +43,15 @@ public interface IScheduleRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 그 계정의 살아 있는 아이 ID를 돌려준다. 없으면 null이다.
+    /// 그 계정의 살아 있는 아이 ID를 돌려준다. 없으면 null이다. 쓰기 트랜잭션 안에서 부르면 그 트랜잭션을 넘긴다.
     /// </summary>
-    Task<int?> GetLiveChildIdAsync(int userId, IDbTransaction transaction,
+    Task<int?> GetLiveChildIdAsync(int userId, IDbTransaction? transaction = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 그 아이의 살아 있는 시간표에 속한 살아 있는 요일 한 건을 돌려준다. 없거나 남의 것이면 null이다.
+    /// </summary>
+    Task<ScheduleDayDto?> GetLiveScheduleDayAsync(int childId, int scheduleDaySeq, IDbTransaction transaction,
         CancellationToken cancellationToken = default);
 
     /// <summary>

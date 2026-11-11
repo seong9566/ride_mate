@@ -11,4 +11,15 @@ public interface IScheduleService
     /// </summary>
     Task<ResponseModel<AddScheduleResultDto>> AddScheduleService(AddScheduleDto dto,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 내 시간표 목록
+    /// </summary>
+    Task<ResponseModel<List<ScheduleItemDto>>> GetScheduleListService(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 요일별 픽업 스위치 변경
+    /// </summary>
+    Task<ResponseModel<ScheduleDayDto>> UpdateScheduleDayPickupService(UpdateScheduleDayPickupDto dto,
+        CancellationToken cancellationToken = default);
 }
