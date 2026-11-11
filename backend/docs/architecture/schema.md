@@ -198,6 +198,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 - 다른 계정의 살아 있는 아이와 번호가 같으면 등록을 거절한다(두 계정이 같은 아이를 등록하지 못한다).
 - 아이 번호가 부모 번호와 같으면 등록을 거절한다. 같은지는 `PHONE_HASH`끼리 Service에서 비교한다.
 - 화면에 내려줄 때는 Service에서 복호화한 뒤 가운데 자리를 가린다.
+- 아이 등록은 트랜잭션 첫 문장에서 `USER_INFO`를 `FOR UPDATE`로 잠그고 그 뒤에 기존 아이·번호를 조회한다. 계정당 살아 있는 아이 1명은 DB 제약이 아니라 이 잠금으로 지킨다. 아이를 추가하는 다른 경로도 같은 잠금을 먼저 잡는다.
 - 삭제는 아래 "아이·계정 삭제" 순서를 따른다. 복구는 할 수 없다.
 
 ### ACADEMY — 학원
@@ -290,6 +291,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | 8 | `USER_INFO` | `DELETE_YN`을 켜고 `PHONE_ENC`를 빈 값으로, `PHONE_HASH`·`USER_NAME`을 빈 문자열로, 차 정보·목적지를 NULL로 바꾼다 |
 
 - `CONSENT`는 지우지 않는다. 동의를 받았다는 증빙이다. 보관 기간은 정해지지 않았다.
+- 탈퇴를 구현할 때 아이 등록(`USER_INFO` → `CHILD` 순서로 잠금)과 잠금 순서가 맞는지 확인한다.
 - 로그아웃은 삭제가 아니다. 그 차량의 `LOGIN_SESSION`만 끝내고 서버의 시간표와 아이 정보는 남는다.
 
 ## 기준 데이터

@@ -1,7 +1,7 @@
 namespace RideMateService.Comm.Dto.v1.ChildInfo.Response;
 
 /// <summary>
-/// 아이 정보 저장 결과
+/// 아이 정보 저장 결과. 이미 아이가 있어 409일 때는 먼저 저장된 아이 정보가 담긴다
 /// </summary>
 public class AddChildResultDto
 {
@@ -16,7 +16,7 @@ public class AddChildResultDto
     public string childName { get; set; } = string.Empty;
 
     /// <summary>
-    /// 가운데를 가린 번호 (예: 010-****-5678)
+    /// 가운데를 가린 번호 (예: 010-****-5678). 409에서 저장된 번호를 복호화할 수 없으면 빈 문자열
     /// </summary>
     public string phoneMasked { get; set; } = string.Empty;
 

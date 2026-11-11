@@ -1,5 +1,6 @@
 using System.Data;
 using Dapper;
+using RideMateService.Commons.DBModels;
 
 namespace RideMateService.Repository.v1.ChildInfo;
 
@@ -71,9 +72,9 @@ public partial class ChildInfoRepository
     }
 
     /// <summary>
-    /// 그 계정에 살아 있는 아이가 있는지 돌려준다.
+    /// 그 계정의 살아 있는 아이를 돌려준다. 없으면 null이다. 아이 ID·이름·암호화한 번호·발송 채널만 채워진다.
     /// </summary>
-    public async Task<bool> ExistsLiveChildAsync(int userId, IDbTransaction transaction,
+    public async Task<Child?> GetLiveChildAsync(int userId, IDbTransaction transaction,
         CancellationToken cancellationToken = default)
     {
         try
@@ -82,15 +83,18 @@ public partial class ChildInfoRepository
             dp.Add("userId", userId);
 
             var sql = @"
-                SELECT t.CHILD_ID
+                SELECT t.CHILD_ID AS ChildId,
+                       t.CHILD_NAME AS ChildName,
+                       t.PHONE_ENC AS PhoneEnc,
+                       t.SEND_CHANNEL AS SendChannel
                 FROM CHILD AS t
                 WHERE t.USER_ID = @userId
                   AND t.DELETE_YN = FALSE
+                ORDER BY t.CHILD_ID
                 LIMIT 1";
 
-            var childId = await _dapper.QueryFirstOrDefaultAsync<int?>(
+            return await _dapper.QueryFirstOrDefaultAsync<Child>(
                 new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
-            return childId is not null;
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
         {

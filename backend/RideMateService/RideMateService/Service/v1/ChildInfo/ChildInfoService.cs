@@ -48,7 +48,7 @@ public class ChildInfoService : IChildInfoService
     public Task<ResponseModel<AddChildResultDto>> AddChildService(AddChildDto dto,
         CancellationToken cancellationToken = default)
     {
-        return RetryOnDeadlockAsync(() => AddChildCoreAsync(dto, cancellationToken));
+        return RetryOnDeadlockAsync(() => AddChildCoreAsync(dto, cancellationToken), cancellationToken);
     }
 
     // 교착은 RetryOnDeadlockAsync가 다시 실행하므로 여기서는 500으로 바꾸지 않고 올려보낸다
@@ -100,12 +100,24 @@ public class ChildInfoService : IChildInfoService
                 return Fail(102, "아이 번호를 입력해 주세요. 부모님 번호와 같아요");
             }
 
-            // 6) 이 계정에 살아 있는 아이가 이미 있으면 거절한다
-            if (await _childInfoRepository.ExistsLiveChildAsync(lockedUserId.Value, transaction.GetDbTransaction(),
-                    cancellationToken).ConfigureAwait(false))
+            // 6) 이 계정에 살아 있는 아이가 이미 있으면 거절하되, 앱이 "이미 저장됨"을 보여 주도록 그 아이를 담아 돌려준다
+            var existingChild = await _childInfoRepository.GetLiveChildAsync(lockedUserId.Value,
+                transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+            if (existingChild is not null)
             {
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return Fail(409, "이미 등록된 아이가 있습니다.");
+                return new ResponseModel<AddChildResultDto>
+                {
+                    message = "이미 등록된 아이가 있습니다.",
+                    data = new AddChildResultDto
+                    {
+                        childSeq = existingChild.ChildId,
+                        childName = existingChild.ChildName,
+                        phoneMasked = MaskStoredPhone(existingChild.PhoneEnc),
+                        sendChannel = existingChild.SendChannel
+                    },
+                    code = 409
+                };
             }
 
             // 7) 다른 계정의 살아 있는 아이와 번호가 같으면 미리 거절한다 — 정상 거절 경로가 중복 키 예외를 거치지 않게 한다
@@ -203,13 +215,27 @@ public class ChildInfoService : IChildInfoService
         return phoneDigits[..3] + "-****-" + phoneDigits[^4..];
     }
 
+    // 저장된 번호를 복호화해 가린다. 복호화할 수 없는 옛 행이어도 409 응답을 막지 않도록 빈 문자열을 돌려준다
+    private string MaskStoredPhone(byte[] phoneEnc)
+    {
+        try
+        {
+            return MaskPhone(_phoneCryptoService.Decrypt(phoneEnc));
+        }
+        catch (Exception)
+        {
+            return string.Empty;
+        }
+    }
+
     private static ResponseModel<AddChildResultDto> Fail(int code, string message)
     {
         return new ResponseModel<AddChildResultDto> { message = message, data = null, code = code };
     }
 
     // 교착(MySQL 1213)이면 변경 추적을 비우고 트랜잭션 전체를 다시 실행한다(최대 3번 실행)
-    private async Task<ResponseModel<T>> RetryOnDeadlockAsync<T>(Func<Task<ResponseModel<T>>> work)
+    private async Task<ResponseModel<T>> RetryOnDeadlockAsync<T>(Func<Task<ResponseModel<T>>> work,
+        CancellationToken cancellationToken)
     {
         for (var attempt = 1; ; attempt++)
         {
@@ -223,7 +249,7 @@ public class ChildInfoService : IChildInfoService
                 if (attempt < DeadlockMaxAttempts)
                 {
                     // 동시에 진 요청들이 같은 순간에 다시 잠금을 잡지 않도록 무작위로 기다린다
-                    await Task.Delay(Random.Shared.Next(10, 50)).ConfigureAwait(false);
+                    await Task.Delay(Random.Shared.Next(10, 50), cancellationToken).ConfigureAwait(false);
                     continue;
                 }
 

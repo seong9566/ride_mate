@@ -30,6 +30,7 @@ public class ChildInfoController : ApiControllerBase
     [Route("v1/ChildInfo/M/sign/AddChild")]
     [SwaggerOperation(Summary = "아이 정보 저장")]
     [ProducesResponseType(typeof(ResponseModel<AddChildResultDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ResponseModel<AddChildResultDto>), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> AddChild([FromBody] AddChildDto dto, CancellationToken cancellationToken)
     {
         try
