@@ -31,7 +31,7 @@ public class TokenAuthSuccessDto
     public int session_id { get; set; }
 
     /// <summary>
-    /// 초기 설정이 필요한지(실명이 비었거나 아이가 없으면 true)
+    /// 초기 설정이 필요한지(운전자 이름이 비었거나 아이가 없으면 true)
     /// </summary>
     public bool setup_required { get; set; }
 }

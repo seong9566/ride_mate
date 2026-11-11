@@ -24,7 +24,7 @@ public partial class UserInfo
     public string PhoneHash { get; set; } = null!;
 
     /// <summary>
-    /// 운전자 실명
+    /// 운전자 이름
     /// </summary>
     public string UserName { get; set; } = null!;
 
