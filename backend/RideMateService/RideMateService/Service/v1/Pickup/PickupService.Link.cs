@@ -226,6 +226,9 @@ public partial class PickupService
 
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
                 pickupEventId = pickupEvent.PickupEventId;
+
+                // 트랜잭션 2가 추적 중인 옛 인스턴스 대신 DB의 현재 행(그사이 익명화된 DELETE_YN 등)을 읽게 비운다
+                _context.ChangeTracker.Clear();
             }
 
             // 6) 잠금 밖에서 보낸다. 요청이 끊겨도 발송과 결과 기록은 끝까지 한다
