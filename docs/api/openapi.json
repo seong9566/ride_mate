@@ -5,6 +5,55 @@
     "version": "v1"
   },
   "paths": {
+    "/api/v1/Auth/M/DeviceAuthorization": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "QR 로그인 발급",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "device_id": {
+                    "type": "string"
+                  }
+                }
+              },
+              "encoding": {
+                "device_id": {
+                  "style": "form"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Auth_Response_DeviceAuthorizationSuccessDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Auth_Response_TokenAuthErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/Auth/M/Token": {
       "post": {
         "tags": [
@@ -23,6 +72,9 @@
                   "refresh_token": {
                     "type": "string"
                   },
+                  "device_code": {
+                    "type": "string"
+                  },
                   "phone": {
                     "type": "string"
                   },
@@ -39,6 +91,9 @@
                   "style": "form"
                 },
                 "refresh_token": {
+                  "style": "form"
+                },
+                "device_code": {
                   "style": "form"
                 },
                 "phone": {
@@ -107,6 +162,35 @@
         }
       }
     },
+    "/api/v1/Auth/M/DeleteQrLogin": {
+      "delete": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "QR 로그인 취소(차량)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Auth_Request_DeleteQrLoginDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_System_Boolean"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/Auth/M/sign/DeleteLoginSession": {
       "delete": {
         "tags": [
@@ -149,6 +233,66 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_Dto_v1_Auth_Request_DeleteQrLoginDto": {
+        "required": [
+          "deviceCode",
+          "deviceId",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "deviceCode": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "deviceId": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "reason": {
+            "minLength": 1,
+            "pattern": "^(USER|DRIVING)$",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Auth_Response_DeviceAuthorizationSuccessDto": {
+        "type": "object",
+        "properties": {
+          "device_code": {
+            "type": "string",
+            "nullable": true
+          },
+          "user_code": {
+            "type": "string",
+            "nullable": true
+          },
+          "verification_uri": {
+            "type": "string",
+            "nullable": true
+          },
+          "verification_uri_complete": {
+            "type": "string",
+            "nullable": true
+          },
+          "expires_in": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "interval": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "match_code": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_Dto_v1_Auth_Response_PhoneVerificationResultDto": {
         "type": "object",
         "properties": {
@@ -182,6 +326,14 @@
           "retry_after": {
             "type": "integer",
             "format": "int32",
+            "nullable": true
+          },
+          "qr_status": {
+            "type": "string",
+            "nullable": true
+          },
+          "cancel_reason": {
+            "type": "string",
             "nullable": true
           }
         },

@@ -55,7 +55,7 @@
 
 - 주소는 `POST /api/v1/Auth/M/Token`이다. OAuth 토큰 발급이라 `Add` 접두를 쓰지 않는다. 이 API는 DB에 행을 하나 추가하는 것이 아니라 토큰을 발급·교체한다. 인증 구간이 없어(`sign` 아님) Bearer 없이 부른다.
 - 요청 본문은 JSON이 아니라 `application/x-www-form-urlencoded`이고, 필드 이름은 OAuth 규약대로 snake_case다.
-- 지금 지원하는 `grant_type`은 `refresh_token`과 `otp`다. `refresh_token`은 `refresh_token` 값을 함께 보내고, `otp`는 `phone`·`code`·`device_id`를 함께 보낸다. `urn:ietf:params:oauth:grant-type:device_code`는 카드 T09에서 더하며, 그 전에는 `unsupported_grant_type`을 돌려준다.
+- 지원하는 `grant_type`은 `refresh_token`, `otp`, `urn:ietf:params:oauth:grant-type:device_code`다. `refresh_token`은 `refresh_token` 값을, `otp`는 `phone`·`code`·`device_id`를, `device_code` 방식은 `device_code`·`device_id`를 함께 보낸다.
 - 성공(200)은 `{ message, data, code }`로 감싸지 않고 다음 본문을 그대로 돌려준다. `Cache-Control: no-store`가 붙는다.
 
 ```json
@@ -77,14 +77,41 @@
 |---|---|
 | `invalid_request` | `grant_type`이나 그 방식에 필요한 값이 빠졌거나 형식이 틀렸다 |
 | `unsupported_grant_type` | 지원하지 않는 `grant_type` |
-| `invalid_grant` | refresh 토큰이 틀렸거나(128자보다 길어도 같다) 만료됐거나 로그아웃된 세션이거나 계정이 삭제됐다. `otp`에서는 대기 중인 로그인 인증번호가 없거나 인증 뒤 계정을 확인할 수 없다 |
+| `invalid_grant` | refresh 토큰이 틀렸거나(128자보다 길어도 같다) 만료됐거나 로그아웃된 세션이거나 계정이 삭제됐다. `otp`에서는 대기 중인 로그인 인증번호가 없거나 인증 뒤 계정을 확인할 수 없다. `device_code`에서는 코드가 틀렸거나 이미 사용됐거나 발급 차량과 `device_id`가 다르거나 계정을 확인할 수 없다 |
 | `otp_locked` | 인증번호 입력이 잠겼다. `retry_after`에 잠금이 풀리기까지 남은 초가 들어간다 |
 | `otp_expired` | 인증번호가 만료됐다 |
 | `otp_mismatch` | 인증번호가 틀렸다. `remaining_attempts`에 잠기기 전까지 남은 횟수가 들어간다 |
 | `signup_required` | 인증번호는 맞지만 계정이 없다. 휴대폰 웹에서 가입해야 한다 |
+| `authorization_pending` | QR 승인을 기다리는 중이다. `qr_status`에 `PENDING`·`SCANNED`·`VERIFIED` 중 현재 단계가 들어간다 |
+| `slow_down` | 마지막 상태 조회 뒤 5초가 지나기 전에 다시 조회했다 |
+| `expired_token` | 승인되지 않은 채 QR의 3분 유효 시간이 지났다 |
+| `access_denied` | QR 로그인이 취소됐다. `cancel_reason`에 `USER`·`DRIVING`·`PHONE` 중 취소 사유가 들어간다 |
 
 - 서버 오류(500)는 다른 API와 같은 `ProblemDetails`다.
 - `Token`은 요청 DTO에 검증 특성을 붙이지 않아 값이 빠져도 `[ApiController]`의 `ProblemDetails` 400이 아니라 `invalid_request`가 나간다(`architecture/dto.md`).
+
+### QR 로그인 발급 `DeviceAuthorization`
+
+- 주소는 `POST /api/v1/Auth/M/DeviceAuthorization`이고 인증 구간이 없다. 요청은 `application/x-www-form-urlencoded`이며 `device_id`를 보낸다.
+- 이 API도 OAuth 2.0 기기 인증 형식이라 공통 응답으로 감싸지 않는다. 성공에는 `Cache-Control: no-store`가 붙고, 실패는 `Token`과 같은 `{ "error", "error_description" }` 형식이다.
+- 성공 필드는 `device_code`(차량이 보관), `user_code`(QR 주소에 포함), `verification_uri`, `verification_uri_complete`, `expires_in`(180), `interval`(5), `match_code`(숫자 4자리)다.
+
+```json
+{
+  "device_code": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "user_code": "AAAAAAAAAAAAAAAAAAAAAA",
+  "verification_uri": "http://localhost:3000/qr",
+  "verification_uri_complete": "http://localhost:3000/qr?code=AAAAAAAAAAAAAAAAAAAAAA",
+  "expires_in": 180,
+  "interval": 5,
+  "match_code": "0427"
+}
+```
+
+## QR 로그인 취소
+
+- 주소는 `DELETE /api/v1/Auth/M/DeleteQrLogin`이고 인증 구간이 없다. JSON 본문으로 `deviceCode`·`deviceId`·`reason`을 보낸다. `reason`은 `USER` 또는 `DRIVING`이다.
+- 성공하거나 이미 취소됐으면 HTTP/code 200과 `data: true`, 요청을 찾을 수 없거나 기기가 다르면 404, 이미 `USED`면 409다.
 
 ## 인증번호 발송
 

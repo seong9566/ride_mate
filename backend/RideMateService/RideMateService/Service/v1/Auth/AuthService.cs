@@ -1,7 +1,10 @@
+using System.Data;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 using MySql.Data.MySqlClient;
 using RideMateService.Comm;
 using RideMateService.Comm.Dto.v1.Auth.Request;
@@ -22,8 +25,12 @@ public class AuthService : IAuthService
     private const int PhoneVerificationCarryMinutes = 10;
     private const int PhoneVerificationMaxFailCount = 5;
     private const int PhoneVerificationLockMinutes = 10;
+    private const int QrLoginExpireMinutes = 3;
+    private const int QrLoginPollSeconds = 5;
+    private const int QrLoginInsertMaxAttempts = 3;
     private const string GrantTypeOtp = "otp";
     private const string GrantTypeRefreshToken = "refresh_token";
+    private const string GrantTypeDeviceCode = "urn:ietf:params:oauth:grant-type:device_code";
     private const string AuditUser = "PARENT";
     private const int DeadlockMaxAttempts = 3;
     private const int RefreshTokenMaxLength = 128; // 실제 값은 43자다. 더 길면 해시·트랜잭션 전에 거절한다
@@ -33,6 +40,7 @@ public class AuthService : IAuthService
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly RideMateContext _context; // 트랜잭션 시작·완료에만 쓴다
     private readonly IHashService _hashService;
+    private readonly QrLoginOptions _qrLoginOptions;
     private readonly ISmsSender _smsSender;
     private readonly ITokenService _tokenService;
 
@@ -41,6 +49,7 @@ public class AuthService : IAuthService
         IHttpContextAccessor httpContextAccessor,
         RideMateContext context,
         IHashService hashService,
+        IOptions<QrLoginOptions> qrLoginOptions,
         ISmsSender smsSender,
         ITokenService tokenService)
     {
@@ -49,8 +58,101 @@ public class AuthService : IAuthService
         this._httpContextAccessor = httpContextAccessor;
         this._context = context;
         this._hashService = hashService;
+        this._qrLoginOptions = qrLoginOptions.Value;
         this._smsSender = smsSender;
         this._tokenService = tokenService;
+    }
+
+    /// <summary>
+    /// QR 로그인 발급
+    /// </summary>
+    public Task<ResponseModel<DeviceAuthorizationResultDto>> DeviceAuthorizationService(DeviceAuthorizationDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        return RetryOnDeadlockAsync(() => DeviceAuthorizationCoreAsync(dto, cancellationToken));
+    }
+
+    private async Task<ResponseModel<DeviceAuthorizationResultDto>> DeviceAuthorizationCoreAsync(DeviceAuthorizationDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // 1) 입력 검증 — OAuth 요청은 DTO 검증 특성 대신 Service에서 오류 본문을 만든다
+            if (dto is null || string.IsNullOrWhiteSpace(dto.device_id) || dto.device_id.Length > 100)
+                return DeviceAuthorizationError("invalid_request", "device_id is required");
+
+            DateTime thisTime = NowToSecond();
+            var deviceId = dto.device_id!;
+
+            // 2) UNIQUE 충돌이면 원문과 해시를 모두 새로 만들어 최대 세 번 등록한다
+            for (var attempt = 1; attempt <= QrLoginInsertMaxAttempts; attempt++)
+            {
+                var deviceCode = _tokenService.CreateRefreshToken();
+                var userCode = Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(16));
+                var matchCode = RandomNumberGenerator.GetInt32(0, 10_000).ToString("D4");
+                var qrLogin = new QrLogin
+                {
+                    DeviceCodeHash = CreateDeviceCodeHash(deviceCode),
+                    UserCodeHash = CreateUserCodeHash(userCode),
+                    MatchCode = matchCode,
+                    DeviceId = deviceId,
+                    Status = "PENDING",
+                    ExpireDt = thisTime.AddMinutes(QrLoginExpireMinutes),
+                    CreateDt = thisTime,
+                    CreateUser = AuditUser,
+                    UpdateDt = thisTime,
+                    UpdateUser = AuditUser,
+                    DeleteYn = false
+                };
+
+                try
+                {
+                    if (!await _authRepository.AddQrLoginAsync(qrLogin, cancellationToken).ConfigureAwait(false))
+                    {
+                        return new ResponseModel<DeviceAuthorizationResultDto>
+                            { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+                    }
+                }
+                catch (Exception ex) when (IsDuplicateKey(ex))
+                {
+                    _context.ChangeTracker.Clear();
+                    if (attempt < QrLoginInsertMaxAttempts)
+                        continue;
+                    throw;
+                }
+
+                // 3) 응답 — QR 주소에는 원문 user_code만 넣고 DB에는 해시만 남긴다
+                var verificationUri = _qrLoginOptions.VerificationUri;
+                var separator = verificationUri.Contains('?') ? "&" : "?";
+                var result = new DeviceAuthorizationResultDto
+                {
+                    success = new DeviceAuthorizationSuccessDto
+                    {
+                        device_code = deviceCode,
+                        user_code = userCode,
+                        verification_uri = verificationUri,
+                        verification_uri_complete = verificationUri + separator + "code=" + Uri.EscapeDataString(userCode),
+                        expires_in = QrLoginExpireMinutes * 60,
+                        interval = QrLoginPollSeconds,
+                        match_code = matchCode
+                    }
+                };
+                return new ResponseModel<DeviceAuthorizationResultDto>
+                    { message = "요청이 정상 처리되었습니다.", data = result, code = 200 };
+            }
+
+            return new ResponseModel<DeviceAuthorizationResultDto>
+                { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && !IsDeadlock(ex)) // 요청 취소·교착은 그대로 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return new ResponseModel<DeviceAuthorizationResultDto>
+                { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+        }
     }
 
     /// <summary>
@@ -188,6 +290,7 @@ public class AuthService : IAuthService
             {
                 GrantTypeRefreshToken => await RefreshTokenGrantAsync(dto, cancellationToken).ConfigureAwait(false),
                 GrantTypeOtp => await RetryOnDeadlockAsync(() => OtpGrantAsync(dto, cancellationToken)).ConfigureAwait(false),
+                GrantTypeDeviceCode => await RetryOnDeadlockAsync(() => DeviceCodeGrantAsync(dto, cancellationToken)).ConfigureAwait(false),
                 _ => TokenError("unsupported_grant_type", "grant_type is not supported")
             };
         }
@@ -198,6 +301,83 @@ public class AuthService : IAuthService
             _logService.ConsoleWarning(ex.ToString());
 #endif
             return new ResponseModel<TokenAuthResultDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+        }
+    }
+
+    /// <summary>
+    /// 차량 QR 로그인 취소
+    /// </summary>
+    public async Task<ResponseModel<bool>> DeleteQrLoginService(DeleteQrLoginDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // 1) 입력 검증 — API 모델 검증을 거치지 않은 호출도 같은 규칙으로 거절한다
+            if (dto is null
+                || string.IsNullOrWhiteSpace(dto.deviceCode)
+                || dto.deviceCode.Length > 128
+                || string.IsNullOrWhiteSpace(dto.deviceId)
+                || dto.deviceId.Length > 100
+                || (dto.reason != "USER" && dto.reason != "DRIVING"))
+                return new ResponseModel<bool> { message = "잘못된 요청입니다.", data = false, code = 400 };
+
+            DateTime thisTime = NowToSecond();
+            var deviceCode = dto.deviceCode!;
+            var deviceId = dto.deviceId!;
+            var reason = dto.reason!;
+            var deviceCodeHash = CreateDeviceCodeHash(deviceCode);
+
+            // 2) QR 요청 잠금 및 차량 확인
+            var transaction = await _context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            await using var transactionScope = transaction.ConfigureAwait(false);
+
+            var qrLoginId = await _authRepository.LockQrLoginByDeviceCodeHashAsync(deviceCodeHash,
+                transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+            var qrLogin = qrLoginId is null
+                ? null
+                : await _authRepository.GetQrLoginAsync(qrLoginId.Value, cancellationToken).ConfigureAwait(false);
+            if (qrLogin is null || qrLogin.DeviceId != deviceId)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<bool> { message = "잘못된 요청입니다.", data = false, code = 404 };
+            }
+
+            // 3) 이미 토큰을 받은 요청은 취소할 수 없다. 이미 취소된 요청은 그대로 성공한다
+            if (qrLogin.Status == "USED")
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<bool> { message = "잘못된 요청입니다.", data = false, code = 409 };
+            }
+
+            if (qrLogin.Status == "CANCELED")
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<bool> { message = "요청이 정상 처리되었습니다.", data = true, code = 200 };
+            }
+
+            // 4) 취소 상태 저장
+            qrLogin.Status = "CANCELED";
+            qrLogin.CancelReason = reason;
+            qrLogin.UpdateDt = thisTime;
+            qrLogin.UpdateUser = AuditUser;
+            if (!await _authRepository.UpdateQrLoginAsync(qrLogin, cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<bool>
+                    { message = "서버에서 요청을 처리하지 못하였습니다.", data = false, code = 500 };
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return new ResponseModel<bool> { message = "요청이 정상 처리되었습니다.", data = true, code = 200 };
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 그대로 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return new ResponseModel<bool>
+                { message = "서버에서 요청을 처리하지 못하였습니다.", data = false, code = 500 };
         }
     }
 
@@ -445,18 +625,149 @@ public class AuthService : IAuthService
             return TokenError("signup_required", "account does not exist");
         }
 
-        // 8) 같은 기기의 기존 차량 세션 종료
-        // 잠그지 않는 조회라도 안전하다: 같은 계정의 차량 세션을 만드는 경로는 지금 otp뿐이고, 같은 번호의 인증번호 행 잠금으로 직렬화된다.
-        // 세션을 만드는 경로(QR 로그인 등)가 늘면 USER_INFO 행을 PK로 FOR UPDATE하는 공통 잠금으로 옮긴다
-        var oldSessionIds = await _authRepository.GetCarSessionIdsAsync(userId.Value, deviceId,
+        // 8)~10) 계정 PK 잠금 뒤 같은 기기의 기존 차량 세션을 끝내고 새 세션을 만든다
+        var sessionResult = await CreateCarSessionAsync(userId.Value, deviceId, thisTime,
+            transaction.GetDbTransaction(), "signup_required", "account does not exist", cancellationToken).ConfigureAwait(false);
+        if (sessionResult.code != 200)
+        {
+            if (sessionResult.data?.error?.error == "signup_required")
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            else
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return sessionResult;
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+        // 11) 응답 — 커밋한 뒤에만 토큰을 내준다
+        return sessionResult;
+    }
+
+    private async Task<ResponseModel<TokenAuthResultDto>> DeviceCodeGrantAsync(TokenAuthDto dto,
+        CancellationToken cancellationToken)
+    {
+        DateTime thisTime = NowToSecond();
+
+        // 1) 입력 검증
+        if (string.IsNullOrWhiteSpace(dto.device_code)
+            || dto.device_code.Length > 128
+            || string.IsNullOrWhiteSpace(dto.device_id)
+            || dto.device_id.Length > 100)
+            return TokenError("invalid_request", "device_code request is invalid");
+
+        var deviceCode = dto.device_code!;
+        var deviceId = dto.device_id!;
+        var deviceCodeHash = CreateDeviceCodeHash(deviceCode);
+
+        // 2) QR 요청 잠금 및 차량 확인
+        var transaction = await _context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transactionScope = transaction.ConfigureAwait(false);
+
+        var qrLoginId = await _authRepository.LockQrLoginByDeviceCodeHashAsync(deviceCodeHash,
             transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+        var qrLogin = qrLoginId is null
+            ? null
+            : await _authRepository.GetQrLoginAsync(qrLoginId.Value, cancellationToken).ConfigureAwait(false);
+        if (qrLogin is null || qrLogin.DeviceId != deviceId)
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return TokenError("invalid_grant", "device code is invalid");
+        }
+
+        // 3) 폴링 간격 확인
+        if (qrLogin.LastPollDt is not null && thisTime < qrLogin.LastPollDt.Value.AddSeconds(QrLoginPollSeconds))
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return TokenError("slow_down", "authorization request is being polled too quickly");
+        }
+
+        // 4) 끝난 요청 확인
+        if (qrLogin.Status == "USED")
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return TokenError("invalid_grant", "device code is invalid");
+        }
+
+        if (qrLogin.Status == "CANCELED")
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return TokenError("access_denied", "authorization request was canceled",
+                cancelReason: qrLogin.CancelReason);
+        }
+
+        // 5) 승인된 요청이면 차량 세션을 만들고 QR을 사용 완료로 바꾼다
+        if (qrLogin.Status == "APPROVED")
+        {
+            if (qrLogin.UserId is null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return TokenError("invalid_grant", "device code is invalid");
+            }
+
+            var sessionResult = await CreateCarSessionAsync(qrLogin.UserId.Value, deviceId, thisTime,
+                transaction.GetDbTransaction(), "invalid_grant", "account is invalid", cancellationToken).ConfigureAwait(false);
+            if (sessionResult.code != 200)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return sessionResult;
+            }
+
+            qrLogin.Status = "USED";
+            qrLogin.UpdateDt = thisTime;
+            qrLogin.UpdateUser = AuditUser;
+            if (!await _authRepository.UpdateQrLoginAsync(qrLogin, cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<TokenAuthResultDto>
+                    { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return sessionResult;
+        }
+
+        // 6) 승인 전에 만료된 요청 확인
+        if (qrLogin.ExpireDt <= thisTime)
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return TokenError("expired_token", "device code has expired");
+        }
+
+        // 7) 진행 중이면 마지막 조회 시각과 현재 단계를 저장한다
+        qrLogin.LastPollDt = thisTime;
+        qrLogin.UpdateDt = thisTime;
+        qrLogin.UpdateUser = AuditUser;
+        if (!await _authRepository.UpdateQrLoginAsync(qrLogin, cancellationToken).ConfigureAwait(false))
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return new ResponseModel<TokenAuthResultDto>
+                { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return TokenError("authorization_pending", "authorization is pending", qrStatus: qrLogin.Status);
+    }
+
+    // 차량 세션 생성은 USER_INFO PK 잠금으로 otp와 QR 경로를 계정 단위로 직렬화한다
+    private async Task<ResponseModel<TokenAuthResultDto>> CreateCarSessionAsync(int userId, string deviceId,
+        DateTime thisTime, IDbTransaction transaction, string missingAccountError, string missingAccountDescription,
+        CancellationToken cancellationToken)
+    {
+        // 1) 계정 잠금
+        var lockedUserId = await _authRepository.LockUserInfoAsync(userId, transaction, cancellationToken).ConfigureAwait(false);
+        if (lockedUserId is null)
+            return TokenError(missingAccountError, missingAccountDescription);
+
+        // 2) 같은 기기의 기존 차량 세션 종료
+        var oldSessionIds = await _authRepository.GetCarSessionIdsAsync(userId, deviceId,
+            transaction, cancellationToken).ConfigureAwait(false);
         await _authRepository.EndLoginSessionsAsync(oldSessionIds, thisTime, AuditUser, cancellationToken).ConfigureAwait(false);
 
-        // 9) 새 차량 세션 저장
+        // 3) 새 차량 세션 저장
         var refreshToken = _tokenService.CreateRefreshToken();
         var session = new LoginSession
         {
-            UserId = userId.Value,
+            UserId = userId,
             SessionType = "CAR",
             TokenHash = _hashService.Hmac(refreshToken),
             DeviceId = deviceId,
@@ -471,28 +782,20 @@ public class AuthService : IAuthService
 
         if (!await _authRepository.AddLoginSessionAsync(session, cancellationToken).ConfigureAwait(false))
         {
-            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
             return new ResponseModel<TokenAuthResultDto>
                 { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
         }
 
-        // 10) 초기 설정 필요 여부 확인
-        var setupRequired = await _authRepository.GetSetupRequiredAsync(userId.Value,
-            transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+        // 4) 초기 설정 필요 여부 확인
+        var setupRequired = await _authRepository.GetSetupRequiredAsync(userId, transaction, cancellationToken).ConfigureAwait(false);
         if (setupRequired is null)
-        {
-            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
             return TokenError("invalid_grant", "account is invalid");
-        }
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-
-        // 11) 응답 — 커밋한 뒤에만 토큰을 내준다
         var result = new TokenAuthResultDto
         {
             success = new TokenAuthSuccessDto
             {
-                access_token = _tokenService.CreateAccessToken(userId.Value, session.LoginSessionId, deviceId, thisTime),
+                access_token = _tokenService.CreateAccessToken(userId, session.LoginSessionId, deviceId, thisTime),
                 token_type = "Bearer",
                 expires_in = ITokenService.AccessTokenSeconds,
                 refresh_token = refreshToken,
@@ -500,8 +803,8 @@ public class AuthService : IAuthService
                 setup_required = setupRequired.Value
             }
         };
-
-        return new ResponseModel<TokenAuthResultDto> { message = "요청이 정상 처리되었습니다.", data = result, code = 200 };
+        return new ResponseModel<TokenAuthResultDto>
+            { message = "요청이 정상 처리되었습니다.", data = result, code = 200 };
     }
 
     private string CreatePhoneHash(string phoneDigits)
@@ -512,6 +815,16 @@ public class AuthService : IAuthService
     private string CreateCodeHash(string phoneDigits, string code)
     {
         return _hashService.Hmac("otp:" + phoneDigits + ":" + code);
+    }
+
+    private string CreateDeviceCodeHash(string deviceCode)
+    {
+        return _hashService.Hmac("qr-device:" + deviceCode);
+    }
+
+    private string CreateUserCodeHash(string userCode)
+    {
+        return _hashService.Hmac("qr-user:" + userCode);
     }
 
     private static bool IsValidPhone(string? phone)
@@ -563,6 +876,17 @@ public class AuthService : IAuthService
         return false;
     }
 
+    private static bool IsDuplicateKey(Exception? ex)
+    {
+        for (; ex is not null; ex = ex.InnerException)
+        {
+            if (ex is MySqlException { Number: 1062 })
+                return true;
+        }
+
+        return false;
+    }
+
     private static DateTime NowToSecond()
     {
         var now = DateTime.Now;
@@ -574,9 +898,29 @@ public class AuthService : IAuthService
         return (int)Math.Ceiling((until - thisTime).TotalSeconds);
     }
 
+    // OAuth 기기 인증 실패 응답(400)
+    private static ResponseModel<DeviceAuthorizationResultDto> DeviceAuthorizationError(string error,
+        string errorDescription)
+    {
+        return new ResponseModel<DeviceAuthorizationResultDto>
+        {
+            message = "잘못된 요청입니다.",
+            data = new DeviceAuthorizationResultDto
+            {
+                error = new TokenAuthErrorDto
+                {
+                    error = error,
+                    error_description = errorDescription
+                }
+            },
+            code = 400
+        };
+    }
+
     // OAuth 실패 응답(400). 설명에는 값이나 내부 사정을 넣지 않는다
     private static ResponseModel<TokenAuthResultDto> TokenError(string error, string errorDescription,
-        int? remainingAttempts = null, int? retryAfter = null)
+        int? remainingAttempts = null, int? retryAfter = null, string? qrStatus = null,
+        string? cancelReason = null)
     {
         return new ResponseModel<TokenAuthResultDto>
         {
@@ -588,7 +932,9 @@ public class AuthService : IAuthService
                     error = error,
                     error_description = errorDescription,
                     remaining_attempts = remainingAttempts,
-                    retry_after = retryAfter
+                    retry_after = retryAfter,
+                    qr_status = qrStatus,
+                    cancel_reason = cancelReason
                 }
             },
             code = 400

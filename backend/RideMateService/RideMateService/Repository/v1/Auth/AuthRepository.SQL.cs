@@ -6,6 +6,68 @@ namespace RideMateService.Repository.v1.Auth;
 public partial class AuthRepository
 {
     /// <summary>
+    /// device_code 해시로 살아 있는 QR 로그인 요청을 찾아 FOR UPDATE로 잠그고 ID를 돌려준다.
+    /// </summary>
+    public async Task<int?> LockQrLoginByDeviceCodeHashAsync(string hash, IDbTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("hash", hash);
+
+            var sql = @"
+                SELECT t.QR_LOGIN_ID
+                FROM QR_LOGIN AS t
+                WHERE t.DEVICE_CODE_HASH = @hash
+                  AND t.DELETE_YN = FALSE
+                FOR UPDATE";
+
+            return await _dapper.QueryFirstOrDefaultAsync<int?>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 살아 있는 계정을 PK로 FOR UPDATE 잠그고 ID를 돌려준다. 차량 세션 생성 경로를 계정 단위로 직렬화한다.
+    /// </summary>
+    public async Task<int?> LockUserInfoAsync(int userId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("userId", userId);
+
+            var sql = @"
+                SELECT t.USER_ID
+                FROM USER_INFO AS t
+                WHERE t.USER_ID = @userId
+                  AND t.DELETE_YN = FALSE
+                FOR UPDATE";
+
+            return await _dapper.QueryFirstOrDefaultAsync<int?>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
     /// 전화번호 해시로 살아 있는 가장 최근 휴대폰 인증번호를 찾아 FOR UPDATE로 잠그고 ID를 돌려준다.
     /// </summary>
     public async Task<int?> LockLatestPhoneVerificationAsync(string phoneHash, IDbTransaction transaction,
@@ -75,6 +137,7 @@ public partial class AuthRepository
 
     /// <summary>
     /// 같은 계정·기기의 살아 있는 차량 로그인 세션 ID를 잠그지 않고 조회한다.
+    /// 호출 전에 USER_INFO 행을 PK로 FOR UPDATE 잠가 차량 세션 생성 경로를 직렬화해야 한다.
     /// </summary>
     public async Task<IReadOnlyList<int>> GetCarSessionIdsAsync(int userId, string deviceId, IDbTransaction? transaction = null,
         CancellationToken cancellationToken = default)
@@ -85,7 +148,7 @@ public partial class AuthRepository
             dp.Add("userId", userId);
             dp.Add("deviceId", deviceId);
 
-            // 잠그지 않는 조회다. 범위를 잠그면 행이 없을 때 갭 락이 남아 동시 로그인의 INSERT와 교착한다
+            // USER_INFO PK 잠금으로 차량 세션 생성 경로가 직렬화돼 있다. 범위 잠금의 갭 락을 피하려고 조회 자체는 잠그지 않는다
             var sql = @"
                 SELECT t.LOGIN_SESSION_ID
                 FROM LOGIN_SESSION AS t

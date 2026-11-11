@@ -37,16 +37,29 @@ public abstract class ApiControllerBase : ControllerBase
     /// </summary>
     protected IActionResult ToTokenActionResult(ResponseModel<TokenAuthResultDto>? model)
     {
-        if (model?.code == 200 && model.data?.success is not null)
+        return ToOAuthActionResult(model?.code, model?.data?.success, model?.data?.error);
+    }
+
+    /// <summary>
+    /// QR 로그인 발급 결과를 OAuth 2.0 기기 인증 본문으로 바꾼다.
+    /// </summary>
+    protected IActionResult ToDeviceAuthorizationActionResult(ResponseModel<DeviceAuthorizationResultDto>? model)
+    {
+        return ToOAuthActionResult(model?.code, model?.data?.success, model?.data?.error);
+    }
+
+    private IActionResult ToOAuthActionResult<TSuccess, TError>(int? code, TSuccess? success, TError? error)
+        where TSuccess : class
+        where TError : class
+    {
+        if (code == 200 && success is not null)
         {
             Response.Headers.CacheControl = "no-store";
-            return Ok(model.data.success);
+            return Ok(success);
         }
 
-        if (model?.code == 400 && model.data?.error is not null)
-        {
-            return BadRequest(model.data.error);
-        }
+        if (code == 400 && error is not null)
+            return BadRequest(error);
 
         return Problem(InternalErrorMessage, statusCode: 500);
     }

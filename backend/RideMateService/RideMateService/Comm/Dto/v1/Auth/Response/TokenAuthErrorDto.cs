@@ -8,7 +8,7 @@ namespace RideMateService.Comm.Dto.v1.Auth.Response;
 public class TokenAuthErrorDto
 {
     /// <summary>
-    /// 오류 코드(invalid_request, unsupported_grant_type, invalid_grant, otp_locked, otp_expired, otp_mismatch, signup_required 등)
+    /// 오류 코드(invalid_request, invalid_grant, authorization_pending, slow_down, expired_token, access_denied 등)
     /// </summary>
     public string error { get; set; } = string.Empty;
 
@@ -28,4 +28,16 @@ public class TokenAuthErrorDto
     /// </summary>
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
     public int? retry_after { get; set; }
+
+    /// <summary>
+    /// QR 로그인 진행 상태
+    /// </summary>
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+    public string? qr_status { get; set; }
+
+    /// <summary>
+    /// QR 로그인 취소 사유
+    /// </summary>
+    [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+    public string? cancel_reason { get; set; }
 }

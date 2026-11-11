@@ -42,19 +42,24 @@ public static class InfrastructureExtensions
     }
 
     /// <summary>
-    /// 인증 설정(Jwt·Crypto)을 검증하고 해시·전화번호 암호화·토큰 서비스를 Singleton으로 등록한다.
-    /// 설정이 비었거나 키 형식·길이가 맞지 않거나 두 키가 같으면 기동할 때 InvalidOperationException을 던진다.
+    /// 인증 설정(Jwt·Crypto·QrLogin)을 검증하고 해시·전화번호 암호화·토큰 서비스를 Singleton으로 등록한다.
+    /// 설정이 비었거나 URI·키 형식과 길이가 맞지 않거나 두 키가 같으면 기동할 때 InvalidOperationException을 던진다.
     /// </summary>
     public static IServiceCollection AddAuthInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         var jwt = configuration.GetSection("Jwt");
         var crypto = configuration.GetSection("Crypto");
+        var qrLogin = configuration.GetSection("QrLogin");
 
         RequireText(jwt, "Issuer");
         RequireText(jwt, "Audience");
         var signingKey = RequireKey(jwt, "SigningKey", minBytes: 32, exact: false);
         var phoneEncKey = RequireKey(crypto, "PhoneEncKey", minBytes: 32, exact: true);
         var hashKey = RequireKey(crypto, "HashKey", minBytes: 32, exact: false);
+        var verificationUri = RequireText(qrLogin, "VerificationUri");
+        if (!Uri.TryCreate(verificationUri, UriKind.Absolute, out var parsedVerificationUri)
+            || (parsedVerificationUri.Scheme != Uri.UriSchemeHttp && parsedVerificationUri.Scheme != Uri.UriSchemeHttps))
+            throw new InvalidOperationException("QrLogin:VerificationUri 설정이 올바르지 않습니다.");
 
         RequireDistinct(signingKey, "Jwt:SigningKey", phoneEncKey, "Crypto:PhoneEncKey");
         RequireDistinct(signingKey, "Jwt:SigningKey", hashKey, "Crypto:HashKey");
@@ -62,6 +67,7 @@ public static class InfrastructureExtensions
 
         services.Configure<JwtOptions>(jwt);
         services.Configure<CryptoOptions>(crypto);
+        services.Configure<QrLoginOptions>(qrLogin);
         services.AddSingleton<IHashService, HashService>();
         services.AddSingleton<IPhoneCryptoService, PhoneCryptoService>();
         services.AddSingleton<ITokenService, TokenService>();
