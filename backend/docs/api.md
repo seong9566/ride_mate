@@ -188,6 +188,6 @@
 
 ## API 명세
 
-- API 문서의 정본은 Notion "라이드메이트 API 문서"(https://app.notion.com/p/415aa638eaf880808d84c4ffba30bb51)다. 목차 아래에 화면별 API 호출 순서(로그인·회원가입), API 목록과 API별 하위 페이지("API 상세", Header·Request·Response·Error·예외 다섯 절), 공통 오류 형식이 있다. 주소·응답 형식 같은 공통 규칙은 이 문서가 정본이다. 레포에는 API별 문서를 두지 않는다.
+- API 문서의 정본은 Notion "라이드메이트 API 문서"(https://app.notion.com/p/415aa638eaf880808d84c4ffba30bb51)다. 목차 아래에 화면별 API 호출 순서(로그인·회원가입), API 목록과 API별 하위 페이지("API 상세", Request·Response·Error·예외 네 절), 공통 오류 형식이 있다. 주소·응답 형식 같은 공통 규칙은 이 문서가 정본이다. 레포에는 API별 문서를 두지 않는다.
 - 필드 이름·타입의 기계 정본은 루트 `docs/api/openapi.json`(서버 Swagger 출력)이다. Notion 문서와 다르면 `openapi.json`이 맞고 Notion을 고친다.
 - 라우트·DTO를 바꾼 작업은 같은 PR에서 `openapi.json`을 갱신하고 Notion 문서를 고친다. 응답 `code`·`message`·오류 상황만 바꾼 작업도 Notion 문서를 고친다. 절차는 `update-api-spec` 스킬을 따른다.

@@ -20,7 +20,7 @@ description: RideMate 백엔드의 라우트·DTO나 응답 code·message·오�
 - 레포에 API별 문서(`docs/api/{도메인}/{액션}.md`)를 다시 만들지 않는다. API 문서는 Notion에만 둔다.
 - Notion에 연결되지 않은 실행 환경(codex 등)에서는 절차 1~2(`openapi.json`)만 하고 3~7을 하지 않는다. 새로 쓰거나 고칠 Notion 페이지와 바뀐 내용을 결과 보고에 남긴다. Notion은 연결된 세션이 쓴다.
 - Notion 마크다운 문법을 짐작하지 않는다. 처음 쓰기 전에 `notion://docs/notion-flavored-markdown-spec`을 `notion-fetch`로 읽고, 표·멘션은 고칠 페이지의 기존 행과 같은 형식으로 쓴다.
-- API 페이지의 절(Header, Request, Response, Error, 예외)의 이름과 순서를 바꾸거나 빼지 않는다. 쓸 내용이 없으면 "없음."이라고 쓴다. Error 절은 이 API만의 오류 본문이 없으면 목차 페이지의 공통 오류 형식을 가리키는 한 줄을 쓴다.
+- API 페이지의 절(Request, Response, Error, 예외)의 이름과 순서를 바꾸거나 빼지 않는다. 쓸 내용이 없으면 "없음."이라고 쓴다. Error 절은 이 API만의 오류 본문이 없으면 목차 페이지의 공통 오류 형식을 가리키는 한 줄을 쓴다.
 - API 문서를 짐작으로 쓰지 않는다. 아래 "문서에 쓸 값의 출처"에서 확인한 값만 쓴다.
 - 기존 페이지는 `update_content`로 바뀐 부분만 고친다. 페이지 전체를 다시 쓰지 않는다. 페이지를 지우는 것은 사용자에게 확인을 받은 뒤에만 한다.
 - 다른 PR 번호의 "머지 대기"·"머지 시 삭제" 표시가 있는 페이지와 그 목록 표 행은 고치거나 지우지 않는다. 같은 페이지를 이 PR도 고쳐야 하면 표시에 이 PR 번호를 덧붙이고 이 PR이 고친 절만 다룬다.
@@ -40,12 +40,11 @@ description: RideMate 백엔드의 라우트·DTO나 응답 code·message·오�
 ## API 페이지 양식
 
 - 제목은 `notion-create-pages`의 `properties.title`에 넣고 본문에는 쓰지 않는다. `/M/` API는 `[차량] {한글 기능 이름}`, `/W/` API는 `[웹] {한글 기능 이름}`이다(예: `[차량] 토큰 발급`).
-- 본문 순서: 첫 줄에 `` `{HTTP 메서드} {경로}` ``, 한두 문장 설명, 그다음 아래 다섯 절.
+- 본문 순서: 첫 줄에 `` `{HTTP 메서드} {경로}` ``, 한두 문장 설명, 그다음 아래 네 절.
 
 | 절 | 쓰는 것 |
 |---|---|
-| Header | `- Authorization(Bearer jwt) : mandatory` / `불필요` / `` 쿠키(`__Host-rm_web_session`) ``(`W/sign`), `- Content-Type : …`(본문이 없으면 뺀다) |
-| Request | 값의 위치(JSON 본문·query·form), 필드 목록 `- 필드 (타입): 설명 — 필수/선택`, 요청 예시(JSON은 json 펜스, query는 `?a=1`, form은 `a=1&b=2`를 text 펜스) |
+| Request | 필드 목록과 `**\<Request>**` 아래 요청 예시. 필드는 `- 필드 (타입) - 필수/선택/{조건}이면 필수`, 그 아래 들여쓴 목록에 설명과 제약(길이·형식)을 한 줄씩 쓴다. 필드가 없으면 "없음."과 이유 한 줄. 예시는 text 펜스 하나에 `EndPoint     : {메서드} {경로}`(query는 경로 뒤에 붙인다), `Header       : Authorization 불필요` / `Authorization: Bearer {access_token}`(`M/sign`) / `Cookie: __Host-rm_web_session={웹 세션}`(`W/sign`), `Content-Type : …`(본문이 없으면 뺀다), 빈 줄, 본문 JSON 순서로 쓴다. form API도 본문은 JSON 모양으로 쓴다. 값의 위치(JSON·form·query)를 설명하는 문장은 쓰지 않는다. `grant_type`처럼 방식이 나뉘면 방식마다 `**\<Request> {방식}**` 블록을 둔다 |
 | Response | `data (타입): 설명`, 필드 목록, `**\<Success>**` 아래 실제 응답 예시 |
 | Error | 이 API만의 오류 필드와 예시. 없으면 공통 오류 형식을 가리키는 한 줄 |
 | 예외 | `1. 상황: 설명. HTTP 상태와 code` 목록. 마지막 항목은 항상 `서버 에러: 500 Internal Server Error (공통 오류 형식)`. 그 아래에 앱이 지킬 점을 `- ` 목록으로 덧붙일 수 있다 |
