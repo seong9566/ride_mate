@@ -13,6 +13,7 @@
 | 도메인 | API | 인증 | 문서 |
 |---|---|---|---|
 | Auth | `POST /api/v1/Auth/M/Token` 토큰 발급 | 불필요 | [Token](Auth/Token.md) |
+| Auth | `POST /api/v1/Auth/M/AddPhoneVerification` 로그인 인증번호 발송 | 불필요 | [AddPhoneVerification](Auth/AddPhoneVerification.md) |
 | Auth | `DELETE /api/v1/Auth/M/sign/DeleteLoginSession` 차량 로그아웃 | Bearer | [DeleteLoginSession](Auth/DeleteLoginSession.md) |
 
 ## 공통 오류 형식
