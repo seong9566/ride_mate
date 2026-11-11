@@ -9,7 +9,7 @@ description: RideMate 백엔드에 새 도메인(DTO·Repository·Service·Contr
 
 ## 하지 말 것
 
-- `main`이나 `backend` 브랜치에서 시작하지 않는다. 그 브랜치면 멈추고 `start-task` 스킬로 카드와 브랜치부터 만든다.
+- `main`, `backend`, `backend-dev` 브랜치에서 시작하지 않는다. 그 브랜치면 멈추고 `start-task` 스킬로 카드와 브랜치부터 만든다.
 - 엔티티를 손으로 만들지 않는다. 필요한 엔티티가 `Commons/DBModels/`에 없으면 멈추고 `db-schema-change` 스킬로 테이블부터 만든다.
 - 엔티티 클래스 이름과 `{도메인}`이 같으면 진행하지 않는다(예: 둘 다 `Pickup`). 도메인 네임스페이스가 엔티티 이름을 가려 빌드가 실패한다(CS0118). 멈추고 사용자에게 알린다.
 - 템플릿의 구조(try/catch, 반환 타입, 응답 문구, `[Produces]`·`[SwaggerOperation]`·`[ProducesResponseType]`)를 바꾸지 않는다. 바꾸는 것은 자리표시자, 업무 필드, 쿼리, 메서드 목록, 동작에 따른 HTTP 메서드 어트리뷰트와 라우트(`api.md`의 표), 그리고 `[ProducesResponseType]`의 응답 타입뿐이다.

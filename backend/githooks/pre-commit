@@ -1,6 +1,6 @@
 #!/bin/sh
 # backend/ 변경이 스테이징된 커밋만 검사한다.
-# 1) main·backend 브랜치에서는 커밋을 막는다.
+# 1) main·backend·backend-dev 브랜치에서는 커밋을 막는다.
 # 2) 솔루션을 경고=오류로 다시 빌드해 실패하면 커밋을 막는다.
 # 설치(한 번): sh backend/scripts/install-hooks.sh
 # 테스트: sh backend/githooks/tests/test-pre-commit.sh
@@ -27,7 +27,7 @@ if git diff --cached --quiet -- backend/; then
 fi
 
 branch="$(git symbolic-ref --short -q HEAD)"
-if [ "$branch" = "main" ] || [ "$branch" = "backend" ]; then
+if [ "$branch" = "main" ] || [ "$branch" = "backend" ] || [ "$branch" = "backend-dev" ]; then
   echo "[pre-commit] $branch 브랜치에는 backend/ 변경을 커밋하지 않는다. 브랜치를 만든 뒤 커밋한다(backend/AGENTS.md §작업 흐름)." >&2
   exit 1
 fi

@@ -37,7 +37,7 @@ backend/
 sh scripts/install-hooks.sh
 ```
 
-`main`·`backend` 브랜치에서 `backend/` 변경을 커밋하지 못하게 막고, 커밋할 때마다 경고를 오류로 보고 빌드합니다.
+`main`·`backend`·`backend-dev` 브랜치에서 `backend/` 변경을 커밋하지 못하게 막고, 커밋할 때마다 경고를 오류로 보고 빌드합니다.
 
 ### 2. `.env` 만들기
 
@@ -170,6 +170,7 @@ dotnet ef dbcontext scaffold Name=ConnectionStrings:DefaultConnection MySql.Enti
 
 ## 작업 흐름
 
-- 통합 브랜치는 `backend`입니다. 작업 브랜치는 `backend`에서 만들고 PR도 `backend`로 엽니다.
+- 통합 브랜치는 `backend-dev`입니다. 작업 브랜치는 `backend-dev`에서 만들고 PR도 `backend-dev`로 엽니다.
+- `backend`는 배포 브랜치입니다. 지시가 있을 때 `backend-dev` → `backend` PR(머지 커밋)로 반영하면 자동 배포됩니다.
 - `main` 반영은 따로 지시가 있을 때 `backend` → `main` PR로 합니다.
 - 자세한 규칙은 [`AGENTS.md` §작업 흐름](AGENTS.md#작업-흐름)에 있습니다.

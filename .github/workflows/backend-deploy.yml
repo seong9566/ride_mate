@@ -1,0 +1,48 @@
+# backend 브랜치에 push되면 맥의 self-hosted runner가 API 컨테이너를 다시 빌드해 띄운다.
+# 절차·runner·비밀값 파일은 backend/README.md "배포" 절을 따른다.
+name: backend-deploy
+
+on:
+  push:
+    branches: [backend]
+    paths:
+      - "backend/RideMateService/**"
+      - "backend/docker-compose.yml"
+      - ".github/workflows/backend-deploy.yml"
+  # deploy.env만 바꿨을 때 손으로 다시 띄운다
+  workflow_dispatch:
+
+concurrency:
+  group: backend-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/backend'
+    runs-on: [self-hosted, ridemate-deploy]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # 비밀값은 repo 밖 맥의 고정 파일에 둔다(.env와 같은 MYSQL_* + .env.example의 배포 항목)
+      - name: 비밀값 파일 확인
+        run: |
+          ENV_FILE="$HOME/.ridemate/deploy.env"
+          test -f "$ENV_FILE" || { echo "::error::$ENV_FILE 이 없다. backend/README.md 배포 절을 본다."; exit 1; }
+          echo "ENV_FILE=$ENV_FILE" >> "$GITHUB_ENV"
+
+      - name: 빌드·기동
+        working-directory: backend
+        # 개발용 compose와 같은 프로젝트 이름(backend)을 써야 ridemate-mysql 컨테이너를 같이 쓴다
+        run: docker compose -p backend --env-file "$ENV_FILE" --profile deploy up -d --build api
+
+      - name: 기동 확인
+        working-directory: backend
+        run: |
+          addr=$(docker compose -p backend --env-file "$ENV_FILE" --profile deploy port api 8080)
+          curl -fsS --retry 30 --retry-all-errors --retry-delay 2 -o /dev/null "http://$addr/swagger/index.html"
+          docker logs ridemate-api --tail 30
+
+      - name: 쓰지 않는 이미지 정리
+        if: always()
+        run: docker image prune -f
