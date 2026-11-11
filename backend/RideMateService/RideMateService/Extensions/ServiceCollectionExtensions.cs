@@ -1,4 +1,7 @@
 using System.Security.Cryptography;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
+using RideMateService.Comm;
 using RideMateService.Comm.Logger;
 using RideMateService.Comm.Security;
 using RideMateService.Comm.Sms;
@@ -29,6 +32,32 @@ public static class ServiceCollectionExtensions
 
 public static class InfrastructureExtensions
 {
+    /// <summary>
+    /// 요청 빈도 제한 정책 등록. 차 계정 목록(로그인 전 조회)만 클라이언트별 고정 창 30회/분으로 막고, 넘으면 본문 없이 429와 Retry-After를 돌려준다.
+    /// </summary>
+    public static IServiceCollection AddRateLimitPolicies(this IServiceCollection services)
+    {
+        services.AddRateLimiter(options =>
+        {
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.OnRejected = (context, _) =>
+            {
+                if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+                    context.HttpContext.Response.Headers.RetryAfter = ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString();
+                return ValueTask.CompletedTask;
+            };
+            options.AddPolicy(LoginSessionListRateLimit.PolicyName, context => RateLimitPartition.GetFixedWindowLimiter(
+                LoginSessionListRateLimit.PartitionKey(context.Connection.RemoteIpAddress),
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = LoginSessionListRateLimit.PermitLimit,
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueLimit = 0
+                }));
+        });
+        return services;
+    }
+
     /// <summary>
     /// 공용 인프라 서비스 등록
     /// </summary>

@@ -27,12 +27,12 @@ public class AuthService : IAuthService
     private const int PhoneVerificationMaxFailCount = 5;
     private const int PhoneVerificationLockMinutes = 10;
     private const int QrLoginExpireMinutes = 3;
-    private const int LoginSessionListMax = 10;
     private const int QrLoginPollSeconds = 3;
     private const int QrLoginSlowDownSeconds = QrLoginPollSeconds - 1;
     private const int QrLoginApprovedGraceSeconds = 60;
     private const int QrLoginInsertMaxAttempts = 3;
     private const int WebSessionDays = 90;
+    private const int LoginSessionListMax = 10;
     private const string ConsentTermsVersion = "2026-11-11";
     private const string GrantTypeOtp = "otp";
     private const string GrantTypeRefreshToken = "refresh_token";

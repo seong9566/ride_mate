@@ -166,7 +166,11 @@ builder.Services.AddControllers(options =>
     .AddNewtonsoftJson();
 
 builder.Services.AddAuthorization();
-builder.Services.AddLoginSessionListRateLimit();
+
+#region RateLimiter
+// 차 계정 목록 API의 클라이언트별 요청 빈도 제한. 파티션 키는 클라이언트 IP라 프록시 뒤에서는 ForwardedHeaders가 먼저 있어야 한다
+builder.Services.AddRateLimitPolicies();
+#endregion
 
 var app = builder.Build();
 
@@ -186,7 +190,7 @@ app.UseSwaggerUI(c =>
 
 app.UseAuthentication();
 app.UseAuthorization();
-app.UseRateLimiter();
+app.UseRateLimiter(); // UseRouting 뒤여야 엔드포인트별 정책([EnableRateLimiting])이 붙는다
 
 app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
 app.MapControllers().RequireAuthForSignRoutes();

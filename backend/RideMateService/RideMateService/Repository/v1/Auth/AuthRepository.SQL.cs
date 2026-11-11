@@ -376,8 +376,7 @@ public partial class AuthRepository
 
             var sql = @"
                 SELECT s.LOGIN_SESSION_ID AS loginSessionSeq,
-                       u.USER_NAME        AS userName,
-                       s.LAST_USED_DT     AS lastUsedDt
+                       u.USER_NAME        AS userName
                 FROM LOGIN_SESSION AS s
                 INNER JOIN USER_INFO AS u ON u.USER_ID = s.USER_ID
                 WHERE s.DEVICE_ID = @deviceId

@@ -13,7 +13,7 @@
 
 form 필드다. 이름은 OAuth 규약대로 snake_case다.
 
-- device_id (string): 앱이 처음 실행할 때 만든 설치 번호(UUID 등, 차대번호 아님). 1~100자 — 필수
+- device_id (string): 앱이 처음 실행할 때 CSPRNG로 만든 UUID v4 설치 번호(하드웨어 ID·차대번호 금지, 로그·분석 도구로 보내지 않음). 1~100자 — 필수
 
 ```text
 device_id=3f2b8c1e-9a4d-4e7b-b1c2-7d9e0f6a5b43

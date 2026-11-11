@@ -161,6 +161,8 @@ public class AuthController : ApiControllerBase
     [EnableRateLimiting(LoginSessionListRateLimit.PolicyName)]
     [SwaggerOperation(Summary = "이 차에 로그인한 계정 목록")]
     [ProducesResponseType(typeof(ResponseModel<List<GetLoginSessionList>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> GetLoginSessionList([FromQuery][Required][StringLength(100, MinimumLength = 1)] string deviceId,
         CancellationToken cancellationToken)
     {

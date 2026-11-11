@@ -14,9 +14,4 @@ public class GetLoginSessionList
     /// 운전자 이름(엄마·아빠 등)
     /// </summary>
     public string userName { get; set; } = string.Empty;
-
-    /// <summary>
-    /// 마지막으로 쓴 일시
-    /// </summary>
-    public DateTime lastUsedDt { get; set; }
 }

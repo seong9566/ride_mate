@@ -24,7 +24,7 @@
 
 ## 응답 `ResponseModel<T>`
 
-500과 모델 검증 실패(400)를 뺀 응답 본문은 `{ message, data, code }` 형태다.
+500과 모델 검증 실패(400), 요청 빈도 제한(429, 본문 없음)을 뺀 응답 본문은 `{ message, data, code }` 형태다.
 
 | code | 의미 | HTTP |
 |---|---|---|
@@ -174,9 +174,9 @@
 ## 차 계정 목록
 
 - 주소는 `GET /api/v1/Auth/M/GetLoginSessionList?deviceId=…`이다. 로그인 전에 부르므로 인증 구간이 없다.
-- 그 기기의 살아 있는 `CAR` 세션 계정을 최근 사용 순으로 최대 10개 준다. 항목은 `loginSessionSeq`(로그인 응답의 `session_id`), `userName`, `lastUsedDt`다. 전화번호·계정 ID는 내보내지 않는다.
+- 그 기기의 살아 있는 `CAR` 세션 계정을 최근 사용 순으로 최대 10개 준다. 항목은 `loginSessionSeq`(로그인 응답의 `session_id`)와 `userName`뿐이다. 첫 항목이 가장 최근에 쓴 계정이다. 사용 시각·전화번호·계정 ID는 내보내지 않는다.
 - 아래 커서 페이징의 예외다. 한 차에 계정이 몇 개뿐이고 PK가 아니라 마지막 사용 순으로 보여주기 때문이다.
-- 같은 IP에서 1분에 30번을 넘으면 본문 없이 429다(`security.md`).
+- 같은 클라이언트(IPv4 주소, IPv6는 /64)에서 1분에 30번을 넘으면 본문 없이 429이고 `Retry-After`(초)가 붙는다(`security.md`).
 
 ## 커서 페이징
 
