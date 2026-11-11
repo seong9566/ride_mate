@@ -21,7 +21,7 @@ backend/
 │   ├── dotnet-tools.json          # dotnet-ef 로컬 도구
 │   └── RideMateService/           # 앱 프로젝트
 ├── sql/                           # DDL. 파일 이름 순서대로 적용
-├── docker-compose.yml             # 로컬 MySQL
+├── docker-compose.yml             # 로컬 MySQL · 배포용 API(deploy 프로필)
 ├── .env.example                   # .env 템플릿
 ├── githooks/ · scripts/           # pre-commit 훅과 설치 스크립트
 └── docs/                          # 아키텍처·규칙·ADR
@@ -117,6 +117,31 @@ dotnet run --project RideMateService --launch-profile http # http://localhost:51
 ```
 
 5167 포트가 이미 쓰이고 있으면 `dotnet run --project RideMateService --urls http://localhost:<빈 포트>`로 띄웁니다.
+
+## 배포 (맥 + Docker + Tailscale Funnel)
+
+API 서버를 컨테이너로 띄우고 Tailscale Funnel로 공개 HTTPS 주소를 붙입니다. 차량 앱과 아이 휴대폰은 tailnet에 들어올 수 없으므로 Funnel(공개)을 씁니다. 명령은 `backend/`에서 실행합니다.
+
+1. `.env`에 `.env.example`의 배포 항목을 채웁니다. `PUBLIC_BASE_URL`은 4단계에서 주소를 확인한 뒤 채웁니다.
+2. 서버를 띄웁니다. 컨테이너 시간대는 KST(`TZ=Asia/Seoul`)입니다.
+   ```bash
+   docker compose --profile deploy up -d --build
+   curl -s --retry 15 --retry-all-errors --retry-delay 1 -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/swagger/index.html   # 200
+   docker logs ridemate-api --tail 50
+   ```
+3. Tailscale 관리 콘솔에서 MagicDNS와 HTTPS Certificates를 켭니다.
+4. Funnel을 켭니다. 처음 실행하면 정책 파일에 `funnel` 속성을 추가하라는 링크가 나옵니다.
+   ```bash
+   tailscale funnel --bg 8080
+   tailscale funnel status    # https://<기기>.<tailnet>.ts.net
+   ```
+5. `.env`의 `PUBLIC_BASE_URL`에 4단계 주소를 넣고 `docker compose --profile deploy up -d`로 다시 띄웁니다. `docker exec ridemate-api printenv QrLogin__VerificationUri`가 localhost가 아니라 공개 주소인지 확인합니다.
+6. 맥이 잠들지 않게 하고, Docker Desktop과 Tailscale이 로그인할 때 자동으로 실행되게 합니다. 컨테이너는 `restart: unless-stopped`라 Docker가 뜨면 같이 뜹니다. FileVault가 켜져 있으면 재부팅 뒤 직접 로그인해야 Docker가 뜹니다.
+7. 휴대폰 LTE(와이파이 끔)로 `https://<기기>.<tailnet>.ts.net/swagger`가 열리는지 확인합니다.
+
+- 위 명령의 8080은 `API_PORT`를 비워 둔 경우입니다. 바꿨으면 그 값을 씁니다.
+- 코드를 바꾼 뒤에는 2단계 명령(`--build`)으로 다시 띄웁니다. 개발용 `docker compose up -d`는 `deploy` 프로필이 없어 API 컨테이너를 띄우지 않습니다.
+- 배포 서버는 개발과 같은 MySQL 컨테이너를 씁니다. 배포 중에는 `docker compose down -v`나 위 "4. 스키마 적용"의 DB 초기화(DROP)를 하지 않습니다. 서버만 내릴 때는 `docker compose --profile deploy stop api`를 씁니다.
 
 ## 스키마를 바꿀 때
 
