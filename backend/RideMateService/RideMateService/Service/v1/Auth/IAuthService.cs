@@ -73,4 +73,10 @@ public interface IAuthService
     /// </summary>
     Task<ResponseModel<GuardianVerificationResultDto>> AddGuardianVerificationService(
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 보호자 인증번호 확인
+    /// </summary>
+    Task<ResponseModel<GuardianVerificationCheckDto>> UpdateGuardianVerificationService(
+        UpdateGuardianVerificationDto dto, CancellationToken cancellationToken = default);
 }
