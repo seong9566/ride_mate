@@ -145,7 +145,7 @@ API 서버를 컨테이너로 띄우고 Tailscale Funnel로 공개 HTTPS 주소�
 
 ### 자동 배포
 
-`backend` 브랜치에 push되면(`backend-dev` → `backend` PR 머지) `.github/workflows/backend-deploy.yml`이 맥의 self-hosted runner에서 API 컨테이너를 다시 빌드해 띄우고 Swagger 응답으로 기동을 확인합니다. `backend/RideMateService/`, `docker-compose.yml`, 워크플로 파일이 바뀐 push에만 돕니다. `deploy.env`만 바꿨으면 마지막 실행을 다시 돌립니다: `gh run rerun $(gh run list -w backend-deploy -b backend -L 1 --json databaseId -q ".[0].databaseId")`. Actions 탭의 직접 실행(`workflow_dispatch`)은 워크플로 파일이 `main`에 들어간 뒤부터 됩니다.
+`backend` 브랜치에 push되면(`backend-dev` → `backend` PR 머지) `.github/workflows/backend-deploy.yml`이 맥의 self-hosted runner에서 API 컨테이너를 다시 빌드해 띄우고 Swagger 응답으로 기동을 확인합니다. `backend/RideMateService/`, `docker-compose.yml`, 워크플로 파일이 바뀐 push에만 돕니다. `deploy.env`만 바꿨으면 마지막 실행을 다시 돌립니다: `gh run rerun $(gh run list -w backend-deploy -b backend -L 1 --json databaseId -q ".[0].databaseId")`. 재실행은 첫 실행 후 30일까지만 됩니다. 30일이 지났거나 실행 기록이 없으면 `backend` 체크아웃에서 5단계 명령(`docker compose --env-file ~/.ridemate/deploy.env --profile deploy up -d api`)으로 다시 띄웁니다. Actions 탭의 직접 실행(`workflow_dispatch`)은 워크플로 파일이 `main`에 들어간 뒤부터 됩니다.
 
 - runner는 맥의 `~/actions-runner-ridemate`에 있고, 이름 `stecdevmac-ridemate`, 라벨 `ridemate-deploy`로 이 repo에 등록돼 있습니다. 로그인 사용자의 LaunchAgent로 돌므로 맥이 로그인 상태여야 합니다.
 - 상태 확인: `cd ~/actions-runner-ridemate && ./svc.sh status`. 다시 설치할 때는 repo Settings → Actions → Runners → New self-hosted runner의 안내를 따르고 `--labels ridemate-deploy`를 붙입니다.
