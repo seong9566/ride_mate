@@ -93,6 +93,7 @@ bash "$TASK_VAULT/.claude/scripts/task.sh" done T0x --project ride-mate
 - `/pr-finish`를 돌릴 때 스킬에 적힌 `handoff.sh`·`task.sh` 호출은 모두 `$TASK_VAULT/.claude/scripts/`의 스크립트로 바꿔 하고, `task.sh`에는 `--project ride-mate`를 붙인다.
   - 2단계(handoff): 위 스크립트에 `--pr <번호> --status "머지 대기"`를 붙여 실행한다. 카드가 있으면 `wip`로 둔다.
   - 머지 뒤 카드 닫기: `bash "$TASK_VAULT/.claude/scripts/task.sh" done <ID> --project ride-mate`.
+  - Notion API 문서를 고친 PR: PR을 만든 직후 고친 페이지의 "머지 대기" 표시에 PR 번호를 채우고 PR 본문에 페이지 목록을 적는다. 머지 뒤에는 카드 닫기와 함께 `update-api-spec` 스킬 7단계(표시 제거, "머지 시 삭제" 페이지 삭제)를 한다.
   - 카드의 완료기준 일부만 끝낸 PR: handoff에 `--closes`를 붙이지 않고, 머지 뒤 `bash "$TASK_VAULT/.claude/scripts/task.sh" todo <ID> --project ride-mate`로 되돌린다.
 
 ## 커밋 훅
