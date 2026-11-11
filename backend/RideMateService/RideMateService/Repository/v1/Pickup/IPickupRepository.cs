@@ -1,7 +1,35 @@
+using System.Data;
+using RideMateService.Commons.DBModels;
+
 namespace RideMateService.Repository.v1.Pickup;
 
 public interface IPickupRepository
 {
+    /// <summary>
+    /// 오늘 계획의 픽업 세션을 불러온다. 끝난 계획의 세션도 돌려준다
+    /// </summary>
+    Task<PickupSession?> GetPickupSessionAsync(int pickupPlanId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 픽업 세션 등록
+    /// </summary>
+    Task<bool> AddPickupSessionAsync(PickupSession model, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 픽업 이벤트를 PK로 불러온다(수정 대상). 끝난 계획의 이벤트도 돌려준다
+    /// </summary>
+    Task<PickupEvent?> GetPickupEventAsync(int pickupEventId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 픽업 이벤트 등록. 저장 뒤 model의 픽업 이벤트 ID가 채워진다
+    /// </summary>
+    Task<bool> AddPickupEventAsync(PickupEvent model, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 픽업 이벤트 수정
+    /// </summary>
+    Task<bool> UpdatePickupEventAsync(PickupEvent model, CancellationToken cancellationToken = default);
+
     // ====== Dapper
 
     /// <summary>
@@ -59,4 +87,23 @@ public interface IPickupRepository
     /// 학원가들의 살아 있는 단속 구역을 조회한다
     /// </summary>
     Task<List<ZoneRow>> GetRestrictedZonesAsync(int[] areaIds, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 오늘 계획 행을 FOR UPDATE로 잠그고 읽는다. 트랜잭션의 첫 문장으로 부른다.
+    /// DELETE_YN 조건을 붙이지 않으므로 끝난 계획도 돌려준다(USER_ID가 NULL)
+    /// </summary>
+    Task<LinkPlanLockRow?> LockPickupPlanAsync(int pickupPlanId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 링크 문자의 운전자 이름, 아이 번호(암호문), 지점 이름을 조회한다. 살아 있는 계정이 없으면 null
+    /// </summary>
+    Task<LinkTargetRow?> GetLinkTargetAsync(int userId, int childId, int pickupSpotId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 오늘 계획의 링크 관련 이벤트(LINK_SENT·REMIND_SENT·LINK_OPENED·CHILD_LEAVING)를 PICKUP_EVENT_ID 순으로 조회한다
+    /// </summary>
+    Task<List<LinkEventRow>> GetLinkEventsAsync(int pickupPlanId, IDbTransaction? transaction,
+        CancellationToken cancellationToken = default);
 }

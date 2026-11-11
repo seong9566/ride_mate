@@ -418,4 +418,120 @@ public partial class PickupRepository
             throw;
         }
     }
+
+    /// <summary>
+    /// 오늘 계획 행을 FOR UPDATE로 잠그고 읽는다. 트랜잭션의 첫 문장으로 부른다.
+    /// DELETE_YN 조건을 붙이지 않으므로 끝난 계획도 돌려준다(USER_ID가 NULL)
+    /// </summary>
+    public async Task<LinkPlanLockRow?> LockPickupPlanAsync(int pickupPlanId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("pickupPlanId", pickupPlanId);
+
+            var sql = @"
+                SELECT p.PICKUP_PLAN_ID AS PickupPlanId,
+                       p.USER_ID AS UserId,
+                       p.CHILD_ID AS ChildId,
+                       p.PICKUP_SPOT_ID AS PickupSpotId,
+                       p.STATUS AS Status,
+                       p.EXPIRE_DT AS ExpireDt
+                FROM PICKUP_PLAN AS p
+                WHERE p.PICKUP_PLAN_ID = @pickupPlanId
+                FOR UPDATE";
+
+            return await _dapper.QueryFirstOrDefaultAsync<LinkPlanLockRow>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 링크 문자의 운전자 이름, 아이 번호(암호문), 지점 이름을 조회한다. 살아 있는 계정이 없으면 null
+    /// </summary>
+    public async Task<LinkTargetRow?> GetLinkTargetAsync(int userId, int childId, int pickupSpotId,
+        IDbTransaction transaction, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("userId", userId);
+            dp.Add("childId", childId);
+            dp.Add("pickupSpotId", pickupSpotId);
+
+            var sql = @"
+                SELECT u.USER_NAME AS UserName,
+                       c.PHONE_ENC AS ChildPhoneEnc,
+                       s.SPOT_NAME AS SpotName
+                FROM USER_INFO AS u
+                LEFT JOIN CHILD AS c
+                       ON c.CHILD_ID = @childId
+                      AND c.USER_ID = u.USER_ID
+                      AND c.DELETE_YN = FALSE
+                LEFT JOIN PICKUP_SPOT AS s
+                       ON s.PICKUP_SPOT_ID = @pickupSpotId
+                      AND s.DELETE_YN = FALSE
+                WHERE u.USER_ID = @userId
+                  AND u.DELETE_YN = FALSE";
+
+            return await _dapper.QueryFirstOrDefaultAsync<LinkTargetRow>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 오늘 계획의 링크 관련 이벤트(LINK_SENT·REMIND_SENT·LINK_OPENED·CHILD_LEAVING)를 PICKUP_EVENT_ID 순으로 조회한다
+    /// </summary>
+    public async Task<List<LinkEventRow>> GetLinkEventsAsync(int pickupPlanId, IDbTransaction? transaction,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("pickupPlanId", pickupPlanId);
+
+            // 픽업 계열 테이블은 DELETE_YN이 "끝나서 익명화됨"이라 조건을 붙이지 않는다(schema.md).
+            // 드라이버가 CHAR(36)을 Guid로 읽어 string에 매핑하지 못하므로 CLIENT_EVENT_ID는 문자열로 바꿔 읽는다
+            var sql = @"
+                SELECT e.PICKUP_EVENT_ID AS PickupEventId,
+                       e.EVENT_TYPE AS EventType,
+                       e.EVENT_DT AS EventDt,
+                       CAST(e.CLIENT_EVENT_ID AS CHAR) AS ClientEventId,
+                       e.DETAIL AS Detail,
+                       e.CREATE_DT AS CreateDt
+                FROM PICKUP_EVENT AS e
+                WHERE e.PICKUP_PLAN_ID = @pickupPlanId
+                  AND e.EVENT_TYPE IN ('LINK_SENT', 'REMIND_SENT', 'LINK_OPENED', 'CHILD_LEAVING')
+                ORDER BY e.PICKUP_EVENT_ID";
+
+            var rows = await _dapper.QueryAsync<LinkEventRow>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            return rows.ToList();
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
 }

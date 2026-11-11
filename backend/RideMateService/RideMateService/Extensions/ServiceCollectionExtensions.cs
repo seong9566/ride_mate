@@ -144,13 +144,24 @@ public static class InfrastructureExtensions
     }
 
     /// <summary>
-    /// 카카오 설정(Kakao)과 출발 안내 설정(DepartureGuide)을 등록하고, 도보 경로 클라이언트를 타임아웃 3초의 typed HttpClient로 등록한다.
+    /// 카카오 설정(Kakao)과 출발 안내 설정(DepartureGuide), 픽업 링크 설정(PickupLink)을 등록하고, 도보 경로 클라이언트를 타임아웃 3초의 typed HttpClient로 등록한다.
     /// Kakao:RestApiKey가 비어 있어도 기동은 하며, 이때 클라이언트는 카카오를 부르지 않고 null을 돌려준다.
+    /// PickupLink:BaseUrl이 http(s) 절대 URI가 아니거나 PickupLink:MaxAttempts가 1보다 작으면 기동할 때 InvalidOperationException을 던진다.
     /// </summary>
     public static IServiceCollection AddMapInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<KakaoOptions>(configuration.GetSection("Kakao"));
         services.Configure<DepartureGuideOptions>(configuration.GetSection("DepartureGuide"));
+
+        var pickupLink = configuration.GetSection("PickupLink");
+        var pickupLinkOptions = pickupLink.Get<PickupLinkOptions>() ?? new PickupLinkOptions();
+        if (!Uri.TryCreate(pickupLinkOptions.BaseUrl, UriKind.Absolute, out var parsedBaseUrl)
+            || (parsedBaseUrl.Scheme != Uri.UriSchemeHttp && parsedBaseUrl.Scheme != Uri.UriSchemeHttps))
+            throw new InvalidOperationException("PickupLink:BaseUrl 설정이 올바르지 않습니다.");
+        if (pickupLinkOptions.MaxAttempts < 1)
+            throw new InvalidOperationException("PickupLink:MaxAttempts 설정은 1 이상이어야 합니다.");
+        services.Configure<PickupLinkOptions>(pickupLink);
+
         services.AddHttpClient<IWalkRouteClient, KakaoWalkRouteClient>(client =>
         {
             client.BaseAddress = new Uri("https://dapi.kakao.com/");

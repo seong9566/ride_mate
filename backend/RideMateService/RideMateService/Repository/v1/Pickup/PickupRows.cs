@@ -80,3 +80,39 @@ public class ZoneRow
     public TimeSpan? ActiveStartTime { get; set; }
     public TimeSpan? ActiveEndTime { get; set; }
 }
+
+/// <summary>
+/// 잠근 오늘 계획 한 건. 끝난 계획은 UserId·ChildId가 NULL이다
+/// </summary>
+public class LinkPlanLockRow
+{
+    public int PickupPlanId { get; set; }
+    public int? UserId { get; set; }
+    public int? ChildId { get; set; }
+    public int? PickupSpotId { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public DateTime ExpireDt { get; set; }
+}
+
+/// <summary>
+/// 링크 문자 받는 사람과 문구 값. ChildPhoneEnc는 아이가 없거나 삭제됐으면 null, SpotName은 지점이 삭제됐으면 null이다
+/// </summary>
+public class LinkTargetRow
+{
+    public string UserName { get; set; } = string.Empty;
+    public byte[]? ChildPhoneEnc { get; set; }
+    public string? SpotName { get; set; }
+}
+
+/// <summary>
+/// 링크 관련 이벤트(LINK_SENT·REMIND_SENT·LINK_OPENED·CHILD_LEAVING) 한 건
+/// </summary>
+public class LinkEventRow
+{
+    public int PickupEventId { get; set; }
+    public string EventType { get; set; } = string.Empty;
+    public DateTime EventDt { get; set; }
+    public string? ClientEventId { get; set; }
+    public string? Detail { get; set; }
+    public DateTime CreateDt { get; set; }
+}
