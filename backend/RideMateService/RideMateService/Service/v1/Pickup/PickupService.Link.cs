@@ -11,6 +11,7 @@ namespace RideMateService.Service.v1.Pickup;
 public partial class PickupService
 {
     private const string EventLinkSent = "LINK_SENT";
+    private const string EventRemindSent = "REMIND_SENT";
     private const string SendChannelSms = "SMS";
     private const string AuditUser = "PARENT";
     private const string ReasonPlanClosed = "PLAN_CLOSED";
@@ -19,9 +20,12 @@ public partial class PickupService
     private const string ReasonAlreadySent = "ALREADY_SENT";
     private const string ReasonInProgress = "IN_PROGRESS";
     private const string ReasonLimitReached = "LIMIT_REACHED";
+    private const string ReasonNotStopped = "NOT_STOPPED";
+    private const string ReasonLinkNotSent = "LINK_NOT_SENT";
     private const int EtaPastLimitMin = 10;
     private const int EtaFutureLimitHours = 3;
     private static readonly string[] ClosedPlanStatuses = { "BOARDED", "EXPIRED", "CANCELED" };
+    private static readonly string[] StoppedPlanStatuses = { "STOPPED", "LOOPING" };
 
     /// <summary>
     /// 픽업 링크 문자 발송(최초 발송과 실패 후 다시 보내기)
@@ -39,6 +43,20 @@ public partial class PickupService
 
         return await SendPickupMessageAsync(dto.pickupPlanSeq.Value, dto.clientEventId.Value, EventLinkSent,
             dto.etaDt.Value, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 정차 후 "도착했어요" 다시 알림 문자 발송
+    /// </summary>
+    public async Task<ResponseModel<PickupLinkSendDto>> AddPickupRemindService(AddPickupRemindDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        // 입력 검증 — 필수 값이 빠지면 400이다
+        if (dto?.pickupPlanSeq is null || dto.clientEventId is null)
+            return new ResponseModel<PickupLinkSendDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
+
+        return await SendPickupMessageAsync(dto.pickupPlanSeq.Value, dto.clientEventId.Value, EventRemindSent,
+            null, cancellationToken).ConfigureAwait(false);
     }
 
     // 링크·다시 알림 문자 발송의 공통 흐름(설계 4.1·4.2 처리 1~8). eventType은 LINK_SENT·REMIND_SENT, etaDt는 LINK_SENT 문구에만 쓴다.
@@ -130,6 +148,25 @@ public partial class PickupService
                 // 2) 같은 clientEventId가 이미 있으면 같은 요청을 다시 부른 것이다. 보내지 않고 그 결과를 돌려준다
                 var events = await _pickupRepository.GetLinkEventsAsync(pickupPlanId, transaction.GetDbTransaction(),
                     cancellationToken).ConfigureAwait(false);
+
+                // 다시 알림은 4.1 다음에 둘을 더 본다(설계 4.3). 정차 중이어야 하고, 이미 보낸 링크가 있어야 한다
+                if (eventType == EventRemindSent)
+                {
+                    if (!StoppedPlanStatuses.Contains(plan.Status))
+                    {
+                        await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return LinkConflict(ReasonNotStopped);
+                    }
+
+                    var linkSummary = PickupLinkSendState.Summarize(events, EventLinkSent, thisTime,
+                        _linkOptions.InFlightTimeoutSec, _linkOptions.MaxAttempts);
+                    if (linkSummary.Status != PickupLinkSendState.StatusSent)
+                    {
+                        await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return LinkConflict(ReasonLinkNotSent);
+                    }
+                }
+
                 var summary = PickupLinkSendState.Summarize(events, eventType, thisTime,
                     _linkOptions.InFlightTimeoutSec, _linkOptions.MaxAttempts);
 
