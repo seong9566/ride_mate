@@ -589,8 +589,8 @@ public partial class AuthService : IAuthService
 
                 var consents = new[]
                 {
-                    CreateSignupConsent(user.UserId, "TERMS", verification.PhoneVerificationId, thisTime),
-                    CreateSignupConsent(user.UserId, "PRIVACY", verification.PhoneVerificationId, thisTime)
+                    CreateConsent(user.UserId, "TERMS", true, "PHONE_OTP", verification.PhoneVerificationId, thisTime),
+                    CreateConsent(user.UserId, "PRIVACY", true, "PHONE_OTP", verification.PhoneVerificationId, thisTime)
                 };
                 if (!await _authRepository.AddConsentsAsync(consents, cancellationToken).ConfigureAwait(false))
                 {
@@ -1581,15 +1581,16 @@ public partial class AuthService : IAuthService
         return (int)Math.Ceiling((until - thisTime).TotalSeconds);
     }
 
-    private Consent CreateSignupConsent(int userId, string consentType, int phoneVerificationId, DateTime thisTime)
+    private Consent CreateConsent(int userId, string consentType, bool agreeYn, string verifyMethod,
+        int? phoneVerificationId, DateTime thisTime)
     {
         return new Consent
         {
             UserId = userId,
             ConsentType = consentType,
-            AgreeYn = true,
+            AgreeYn = agreeYn,
             TermsVersion = ConsentTermsVersion,
-            VerifyMethod = "PHONE_OTP",
+            VerifyMethod = verifyMethod,
             PhoneVerificationId = phoneVerificationId,
             ConsentDt = thisTime,
             CreateDt = thisTime,
