@@ -5,51 +5,17 @@
     "version": "v1"
   },
   "paths": {
-    "/api/v1/Auth/M/Token": {
+    "/api/v1/Auth/M/AddLoginSession": {
       "post": {
         "tags": [
           "Auth"
         ],
-        "summary": "토큰 발급",
+        "summary": "인증번호 로그인",
         "requestBody": {
           "content": {
-            "application/x-www-form-urlencoded": {
+            "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "grant_type": {
-                    "type": "string"
-                  },
-                  "refresh_token": {
-                    "type": "string"
-                  },
-                  "phone": {
-                    "type": "string"
-                  },
-                  "code": {
-                    "type": "string"
-                  },
-                  "device_id": {
-                    "type": "string"
-                  }
-                }
-              },
-              "encoding": {
-                "grant_type": {
-                  "style": "form"
-                },
-                "refresh_token": {
-                  "style": "form"
-                },
-                "phone": {
-                  "style": "form"
-                },
-                "code": {
-                  "style": "form"
-                },
-                "device_id": {
-                  "style": "form"
-                }
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Auth_Request_AddLoginSessionDto"
               }
             }
           }
@@ -60,7 +26,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Auth_Response_TokenAuthSuccessDto"
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Auth_Response_LoginSessionResultDto"
                 }
               }
             }
@@ -70,7 +36,46 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Auth_Response_TokenAuthErrorDto"
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Auth_Response_LoginSessionResultDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/Auth/M/UpdateLoginSession": {
+      "patch": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "토큰 갱신",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Auth_Request_UpdateLoginSessionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Auth_Response_LoginSessionResultDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Auth_Response_LoginSessionResultDto"
                 }
               }
             }
@@ -135,6 +140,32 @@
   },
   "components": {
     "schemas": {
+      "RideMateService_Comm_Dto_v1_Auth_Request_AddLoginSessionDto": {
+        "required": [
+          "code",
+          "deviceId",
+          "phone"
+        ],
+        "type": "object",
+        "properties": {
+          "phone": {
+            "minLength": 1,
+            "pattern": "^01[016789][0-9]{7,8}$",
+            "type": "string"
+          },
+          "code": {
+            "minLength": 1,
+            "pattern": "^[0-9]{6}$",
+            "type": "string"
+          },
+          "deviceId": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_Dto_v1_Auth_Request_AddPhoneVerificationDto": {
         "required": [
           "phone"
@@ -145,6 +176,66 @@
             "minLength": 1,
             "pattern": "^01[016789][0-9]{7,8}$",
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Auth_Request_UpdateLoginSessionDto": {
+        "required": [
+          "refreshToken"
+        ],
+        "type": "object",
+        "properties": {
+          "refreshToken": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Auth_Response_LoginSessionResultDto": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string",
+            "nullable": true
+          },
+          "tokenType": {
+            "type": "string",
+            "nullable": true
+          },
+          "expiresIn": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "refreshToken": {
+            "type": "string",
+            "nullable": true
+          },
+          "sessionId": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "setupRequired": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
+          },
+          "remainingAttempts": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "retryAfter": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -163,55 +254,20 @@
         },
         "additionalProperties": false
       },
-      "RideMateService_Comm_Dto_v1_Auth_Response_TokenAuthErrorDto": {
+      "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Auth_Response_LoginSessionResultDto": {
         "type": "object",
         "properties": {
-          "error": {
+          "message": {
             "type": "string",
             "nullable": true
           },
-          "error_description": {
-            "type": "string",
-            "nullable": true
+          "data": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Auth_Response_LoginSessionResultDto"
           },
-          "remaining_attempts": {
+          "code": {
             "type": "integer",
             "format": "int32",
             "nullable": true
-          },
-          "retry_after": {
-            "type": "integer",
-            "format": "int32",
-            "nullable": true
-          }
-        },
-        "additionalProperties": false
-      },
-      "RideMateService_Comm_Dto_v1_Auth_Response_TokenAuthSuccessDto": {
-        "type": "object",
-        "properties": {
-          "access_token": {
-            "type": "string",
-            "nullable": true
-          },
-          "token_type": {
-            "type": "string",
-            "nullable": true
-          },
-          "expires_in": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "refresh_token": {
-            "type": "string",
-            "nullable": true
-          },
-          "session_id": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "setup_required": {
-            "type": "boolean"
           }
         },
         "additionalProperties": false
