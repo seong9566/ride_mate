@@ -2,10 +2,13 @@ using System.Security.Cryptography;
 using System.Threading.RateLimiting;
 using RideMateService.Comm;
 using RideMateService.Comm.Logger;
+using RideMateService.Comm.Map;
 using RideMateService.Comm.Security;
 using RideMateService.Comm.Sms;
 using RideMateService.Repository.v1.Auth;
+using RideMateService.Repository.v1.Pickup;
 using RideMateService.Service.v1.Auth;
+using RideMateService.Service.v1.Pickup;
 
 namespace RideMateService.Extensions;
 
@@ -17,6 +20,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddDomainModules(this IServiceCollection services)
     {
         services.AddAuthModule();
+        services.AddPickupModule();
         // 도메인을 추가하면 여기에 한 줄
         return services;
     }
@@ -25,6 +29,13 @@ public static class ServiceCollectionExtensions
     {
         services.AddTransient<IAuthRepository, AuthRepository>();
         services.AddTransient<IAuthService, AuthService>();
+        return services;
+    }
+
+    private static IServiceCollection AddPickupModule(this IServiceCollection services)
+    {
+        services.AddTransient<IPickupRepository, PickupRepository>();
+        services.AddTransient<IPickupService, PickupService>();
         return services;
     }
 }
@@ -99,6 +110,22 @@ public static class InfrastructureExtensions
         services.AddSingleton<IHashService, HashService>();
         services.AddSingleton<IPhoneCryptoService, PhoneCryptoService>();
         services.AddSingleton<ITokenService, TokenService>();
+        return services;
+    }
+
+    /// <summary>
+    /// 카카오 설정(Kakao)과 출발 안내 설정(DepartureGuide)을 등록하고, 도보 경로 클라이언트를 타임아웃 3초의 typed HttpClient로 등록한다.
+    /// Kakao:RestApiKey가 비어 있어도 기동은 하며, 이때 클라이언트는 카카오를 부르지 않고 null을 돌려준다.
+    /// </summary>
+    public static IServiceCollection AddMapInfrastructure(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.Configure<KakaoOptions>(configuration.GetSection("Kakao"));
+        services.Configure<DepartureGuideOptions>(configuration.GetSection("DepartureGuide"));
+        services.AddHttpClient<IWalkRouteClient, KakaoWalkRouteClient>(client =>
+        {
+            client.BaseAddress = new Uri("https://dapi.kakao.com/");
+            client.Timeout = TimeSpan.FromSeconds(3);
+        });
         return services;
     }
 

@@ -1,4 +1,4 @@
-// Program.cs의 "DbContext" 자리(docs/architecture/overview.md의 서비스 등록 순서 11번)에 넣는다.
+// Program.cs의 "DbContext" 자리(docs/architecture/overview.md의 서비스 등록 순서 12번)에 넣는다.
 // 파일 맨 위 using: System.Data, Microsoft.EntityFrameworkCore, RideMateService.Commons.Repository
 
 #region DbContext
