@@ -576,6 +576,140 @@
           }
         ]
       }
+    },
+    "/api/v1/Pickup/M/sign/AddPickupLink": {
+      "post": {
+        "tags": [
+          "Pickup"
+        ],
+        "summary": "픽업 링크 문자 발송",
+        "requestBody": {
+          "content": {
+            "application/json-patch+json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupLinkDto"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupLinkDto"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupLinkDto"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupLinkDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_PickupLinkSendDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/Pickup/M/sign/AddPickupRemind": {
+      "post": {
+        "tags": [
+          "Pickup"
+        ],
+        "summary": "정차 후 다시 알림 문자 발송",
+        "requestBody": {
+          "content": {
+            "application/json-patch+json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupRemindDto"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupRemindDto"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupRemindDto"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupRemindDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_PickupLinkSendDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/Pickup/M/sign/DetailPickupLinkStatus": {
+      "get": {
+        "tags": [
+          "Pickup"
+        ],
+        "summary": "픽업 링크 전달 상태 조회",
+        "parameters": [
+          {
+            "name": "pickupPlanSeq",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_DetailPickupLinkStatusDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -915,6 +1049,47 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupLinkDto": {
+        "required": [
+          "clientEventId",
+          "etaDt",
+          "pickupPlanSeq"
+        ],
+        "type": "object",
+        "properties": {
+          "pickupPlanSeq": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "etaDt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "clientEventId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupRemindDto": {
+        "required": [
+          "clientEventId",
+          "pickupPlanSeq"
+        ],
+        "type": "object",
+        "properties": {
+          "pickupPlanSeq": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "clientEventId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_Dto_v1_Pickup_Response_DepartureGuideEnforcementDto": {
         "type": "object",
         "properties": {
@@ -1059,6 +1234,45 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_Dto_v1_Pickup_Response_DetailPickupLinkStatusDto": {
+        "type": "object",
+        "properties": {
+          "linkStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "sentDt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "remainingAttempts": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "opened": {
+            "type": "boolean"
+          },
+          "openedDt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "leaving": {
+            "type": "boolean"
+          },
+          "leavingDt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "remindStatus": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_Dto_v1_Pickup_Response_GeoPointDto": {
         "type": "object",
         "properties": {
@@ -1085,6 +1299,27 @@
             "items": {
               "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_RestrictedZoneAreaDto"
             },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Pickup_Response_PickupLinkSendDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "sent": {
+            "type": "boolean"
+          },
+          "remainingAttempts": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "receiverLast4": {
+            "type": "string",
             "nullable": true
           }
         },
@@ -1221,6 +1456,24 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_DetailPickupLinkStatusDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_DetailPickupLinkStatusDto"
+          },
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_GetRestrictedZoneList": {
         "type": "object",
         "properties": {
@@ -1230,6 +1483,24 @@
           },
           "data": {
             "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_GetRestrictedZoneList"
+          },
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_PickupLinkSendDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_PickupLinkSendDto"
           },
           "code": {
             "type": "integer",

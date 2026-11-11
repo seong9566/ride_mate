@@ -6,7 +6,7 @@ namespace RideMateService.Comm.Dto.v1.Pickup.Response;
 public class PickupLinkSendDto
 {
     /// <summary>
-    /// 409일 때만 사유 코드 (PLAN_CLOSED, NO_SPOT, NO_CHILD_PHONE, ALREADY_SENT, IN_PROGRESS, LIMIT_REACHED)
+    /// 409일 때만 사유 코드 (PLAN_CLOSED, NO_SPOT, NO_CHILD_PHONE, ALREADY_SENT, IN_PROGRESS, LIMIT_REACHED, NOT_STOPPED, LINK_NOT_SENT)
     /// </summary>
     public string? reason { get; set; }
 

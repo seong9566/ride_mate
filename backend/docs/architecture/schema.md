@@ -545,7 +545,11 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `CLOSE_DT` | DATETIME | Y | 링크가 끝난 시각 |
 
 - 토큰은 `HMAC-SHA256(서버 비밀키, PICKUP_PLAN_ID와 TOKEN_NONCE)`다. 원문은 저장하지 않는다. 다시 알릴 때는 같은 식으로 다시 계산해 같은 주소를 보낸다. 명세서는 토큰을 UUID v4로 적었는데, 원문을 저장하지 않으려고 이 방식으로 바꿨다.
-- 링크를 열 때는 받은 토큰을 해시해 `TOKEN_HASH`로 찾는다. 없으면 "링크를 찾을 수 없어요"다.
+- `TOKEN_NONCE`는 16바이트 CSPRNG 난수의 소문자 hex 32자다. 토큰 원문은 HMAC 입력 문자열 `"pickup-link:" + PICKUP_PLAN_ID + ":" + TOKEN_NONCE`의 결과 32바이트를 base64url(패딩 없음) 43자로 쓴 값이다. `TOKEN_HASH`는 입력 문자열 `"pickup-link-token:" + 토큰 원문`의 HMAC을 소문자 hex 64자로 쓴 값이다. 접두어는 `security.md`의 다른 해시와 겹치지 않는다.
+- 링크 주소는 설정값 `PickupLink:BaseUrl` + `/` + 토큰 원문이다.
+- 링크를 열 때는 받은 토큰을 위 식으로 해시해 `TOKEN_HASH`로 찾는다. 없으면 "링크를 찾을 수 없어요"다.
+- 세션은 링크 발송 API(`AddPickupLink`)가 만든다. 발송이 실패해도 세션은 남고, 다시 보낼 때 같은 링크를 쓴다. 다시 알림 API(`AddPickupRemind`)는 세션을 만들지 않는다.
+- `SEND_CHANNEL`은 지금 항상 `SMS`다. 아이 정보의 채널이 `ALIMTALK`이어도 SMS로 보낸다.
 - 링크는 계획과 함께 끝난다. 계획이 탑승·만료·취소로 끝날 때 `CLOSE_DT`를 채운다. 만료 처리가 아직 돌지 않았어도 `PICKUP_PLAN.EXPIRE_DT`가 지났으면 끝난 링크로 본다.
 - 끝난 뒤에도 `TOKEN_HASH`는 남긴다. 끝난 링크를 다시 열었을 때 "이 링크는 끝났어요"를 보여주기 위해서다. 장소와 차 정보는 돌려주지 않는다.
 - 전화번호는 이 테이블에 저장하지 않는다. 발송할 때 `CHILD.PHONE_ENC`를 읽어 쓴다.
@@ -581,6 +585,10 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `EXPIRED` | 만료 | — |
 | `CANCELED` | 취소 | — |
 
+- `LINK_SENT`·`REMIND_SENT`의 `DETAIL`은 `{"channel":"SMS","success":true,"resultCode":"2000"}` 모양(`channel`, `success`, `resultCode`)이다. `resultCode`는 사업자의 결과 코드 문자열뿐이다(접수 `2000`, 개발 발송기 `DEV`, 시간 초과 `TIMEOUT`, 그 밖의 예외 `ERROR`).
+  - 보내기 전에 `success`와 `resultCode`가 null인 진행 중 이벤트를 먼저 넣고 커밋한다. 잠금 밖에서 문자를 보낸 뒤 계획 행을 다시 잠그고 같은 행의 `DETAIL`을 결과로 고친다. 이 두 이벤트는 넣은 뒤 결과 칸을 채우려고 한 번 고친다.
+  - `success`가 null이면 결과를 기다리는 진행 중 발송이다. `CREATE_DT`가 `PickupLink:InFlightTimeoutSec`(30초)보다 오래됐는데 결과가 없으면 실패로 센다.
+  - 시도 횟수에는 성공·실패·진행 중을 모두 센다. 한도는 `PickupLink:MaxAttempts`(3)다.
 - UNIQUE: `(PICKUP_PLAN_ID, CLIENT_EVENT_ID)`. 차량은 연결이 끊기면 이벤트를 쌓아 두었다가 다시 보낸다. 같은 이벤트가 두 번 와도 한 번만 들어간다. NULL은 겹쳐도 걸리지 않는다.
 - 횟수 제한(다시 알림 1회, "지금 나가요" 1회)은 이 이력을 세어 Service에서 확인한다.
 - `DETAIL`에는 위 표에 적힌 값만 넣는다. 발송 업체 응답을 그대로 넣지 않는다. 수신 번호가 들어 있을 수 있다.
