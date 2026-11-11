@@ -31,7 +31,7 @@
 
 ### 요청 검증 실패 (400)
 
-JSON 본문의 값이 DTO 검증 규칙에 맞지 않으면 ASP.NET Core의 `ProblemDetails`가 나간다. `errors`에 필드별 메시지가 들어간다.
+요청 값(JSON 본문, query)이 DTO 검증 규칙에 맞지 않거나 JSON 형식이 깨졌으면 ASP.NET Core의 `ProblemDetails`가 나간다. `errors`에 필드별 메시지가 들어간다.
 
 - status (integer): 400
 - errors (object): 필드 이름을 키로, 메시지 목록(array of strings)을 값으로 갖는다
@@ -50,7 +50,7 @@ JSON 본문의 값이 DTO 검증 규칙에 맞지 않으면 ASP.NET Core의 `Pro
 
 ### 서버 에러 (500)
 
-어디서 난 오류든 `ProblemDetails`로 나간다. 앱은 `status`로 판단하고, 사용자에게 보여줄 문구는 `detail`에 있다.
+Controller가 잡은 예외와 Service가 돌려준 500은 `ProblemDetails`로 나간다. 그 밖(미들웨어 등)에서 난 오류는 본문 형식이 다를 수 있으므로 앱은 본문이 아니라 HTTP 상태로 판단한다. 사용자에게 보여줄 문구는 `detail`에 있다.
 
 - status (integer): 500
 - detail (string): 오류 설명

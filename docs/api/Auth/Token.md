@@ -27,7 +27,7 @@ grant_type=refresh_token&refresh_token=Qm9vZ2llV29vZ2llQm9vZ2llV29vZ2llQm9vZ2llV
 - access_token (string): access 토큰(JWT, HS256). 유효 시간 1시간
 - token_type (string): 항상 `Bearer`
 - expires_in (integer): access 토큰 유효 시간(초). 3600
-- refresh_token (string): 새 refresh 토큰(base64url 43자). 유효 기간 90일. 쓸 때마다 새 값으로 바뀐다
+- refresh_token (string): 새 refresh 토큰(base64url 43자). 유효 기간 90일이고 refresh할 때마다 그 시점부터 다시 90일이 된다. 쓸 때마다 새 값으로 바뀐다
 - session_id (integer): 로그인 세션 ID. 교체해도 그대로다
 - setup_required (boolean): 초기 설정이 필요한지. 운전자 이름이 비었거나 등록된 아이가 없으면 `true`
 

@@ -30,7 +30,7 @@
 | `start-task` | 작업을 시작할 때 — 카드 확인·생성, wip 전환, 브랜치 생성 |
 | `add-domain` | 도메인이나 API를 추가할 때 |
 | `db-schema-change` | 테이블을 만들거나 바꿀 때 |
-| `update-api-spec` | 라우트·DTO를 바꾼 뒤 `docs/api/openapi.json`과 API별 문서를 갱신할 때 |
+| `update-api-spec` | 라우트·DTO나 응답 code·message·오류 상황을 바꾼 뒤 `docs/api/openapi.json`과 API별 문서를 갱신할 때 |
 
 - 스킬 정본은 `.agents/skills/<이름>/SKILL.md`다. `.claude/skills/<이름>`은 정본을 가리키는 심볼릭 링크이므로 스킬은 `.agents/skills/`에서만 고친다.
 - 코드 템플릿은 스킬 폴더의 `templates/`에만 둔다. 문서에는 규칙과 템플릿 경로만 쓴다. 레이어 규칙의 정본은 `docs/`다. [ADR-0007]
@@ -54,7 +54,7 @@
 - 실행: `dotnet run --project RideMateService --launch-profile http` → `http://localhost:5167/swagger`
 - 서버는 DB 연결 문자열이 없으면 뜨지 않는다. 새로 클론했으면 `db-schema-change` 스킬의 2단계(로컬 MySQL 준비)를 먼저 한다.
 - 작업을 끝내기 전에 빌드가 경고 0으로 통과해야 한다.
-- 엔드포인트·DTO를 바꿨으면 서버를 띄워 Swagger에서 그 API를 호출해 응답을 확인하고, `update-api-spec` 스킬로 명세와 API 문서를 같은 PR에 넣는다.
+- 엔드포인트·DTO를 바꿨으면 서버를 띄워 Swagger에서 그 API를 호출해 응답을 확인하고, `update-api-spec` 스킬로 명세와 API 문서를 같은 PR에 넣는다. 응답 `code`·`message`·오류 상황만 바꿨어도 API 문서를 같은 PR에서 고친다.
 - 확인 호출은 로컬 서버(`localhost`)와 로컬 Docker DB를 대상으로 할 때만 POST·PATCH·DELETE를 승인 없이 쓴다. 이 경우에 한해 전역 규칙 "검증 호출은 GET만"보다 이 문서가 우선한다. 배포된 서버나 원격 DB에는 GET만 쓰고, 쓰기가 필요하면 사용자 승인을 받는다.
 - 서버를 띄우기 전에 `lsof -ti :5167`이 비어 있는지 본다. 이미 쓰이고 있으면 그 프로세스를 종료하지 않는다. `dotnet run --project RideMateService --urls http://localhost:<빈 포트>`로 띄우거나 사용자에게 알린다.
 - 자신이 띄운 서버만, 띄울 때 기록한 PID로 종료한다. 포트로 찾은 PID나 `pkill`처럼 이름으로 종료하지 않는다.

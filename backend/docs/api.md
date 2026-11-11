@@ -93,4 +93,4 @@
 
 - 앱↔서버 계약은 루트 `docs/api/openapi.json`이다. 모빌리티 앱은 이 파일을 보고 개발한다.
 - API마다 `docs/api/{도메인}/{액션}.md`를 둔다. 양식은 Header·Request·Response·Error·예외 다섯 절이고, 템플릿은 `update-api-spec` 스킬의 `templates/api-doc.md`다.
-- 라우트·DTO를 바꾼 작업은 같은 PR에서 명세와 API 문서를 갱신한다. 절차는 `update-api-spec` 스킬을 따른다.
+- 라우트·DTO를 바꾼 작업은 같은 PR에서 명세와 API 문서를 갱신한다. 응답 `code`·`message`·오류 상황만 바꾼 작업도 API 문서를 갱신한다. 절차는 `update-api-spec` 스킬을 따른다.

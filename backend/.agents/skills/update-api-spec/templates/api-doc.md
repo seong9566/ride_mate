@@ -5,6 +5,7 @@ API 문서 양식. 레포 루트 docs/api/{도메인}/{액션}.md로 복사해 �
 - 타입은 JSON 타입으로 쓴다: string, integer, number, boolean, object, array of objects, array of strings.
 - 필드 이름은 JSON에 나오는 그대로(대소문자 포함) 쓴다. 객체 안의 필드는 들여쓴 목록으로 쓴다.
 - 예시 JSON의 형태·message 문구·code는 코드에서 실제로 나가는 그대로 쓴다. 토큰 같은 값은 형식만 맞춘 가짜 값을 쓴다.
+- 요청 예시는 값의 위치에 맞춰 쓴다. JSON 본문은 json 펜스에 JSON으로, query는 text 펜스에 `?a=1&b=2`로, form은 text 펜스에 `a=1&b=2`로 쓴다.
 - 401 본문과 400·500 ProblemDetails 같은 공통 오류 형식은 docs/api/README.md에 있다. 이 API만의 오류 본문이 없으면 Error 절에 README를 가리키는 한 줄만 쓴다.
 - 예외 목록 아래에는 앱이 지켜야 할 점을 "- " 목록으로 덧붙일 수 있다.
 -->
@@ -21,9 +22,11 @@ API 문서 양식. 레포 루트 docs/api/{도메인}/{액션}.md로 복사해 �
 
 ## Request
 
+{값의 위치: JSON 본문, query, form 중 하나. 요청 값이 없으면 이 절에 "없음."만 쓴다}
+
 - {필드} ({타입}): {설명} — {필수 또는 선택}
 
-```json
+```{json 또는 text}
 {요청 예시}
 ```
 
