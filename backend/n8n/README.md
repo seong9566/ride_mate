@@ -32,6 +32,85 @@ docker compose up -d n8n
 
 워크플로는 키를 각각 `$env.TOPIS_API_KEY`, `$env.GITS_API_KEY`로 읽는다. 키는 워크플로 JSON, 명령줄 인자, 로그, 실행 이력이나 `ERROR_MESSAGE`에 넣지 않는다.
 
+## 5분 수집
+
+TOPIS와 GITS 수집 워크플로는 매일 14:00부터 23:55까지 5분마다 실행한다. 각 워크플로는 소스별 수집 대상 링크의 속도와 여행 시간을 `TRAFFIC_SPEED`에 저장하고, 같은 5분 회차의 처리 결과를 `TRAFFIC_COLLECT_RUN`에 한 행으로 남긴다. 같은 소스와 회차 시각으로 다시 실행해도 회차와 속도 행은 중복으로 쌓이지 않는다.
+
+회차의 `STATUS`는 다음 뜻이다.
+
+- `OK`: 대상 링크를 모두 저장했다.
+- `PARTIAL`: 대상 링크 중 일부만 저장했다.
+- `NO_KEY`: 해당 소스의 API 키가 비어 있어 외부 API를 호출하지 않았다.
+- `FAILED`: 대상 링크가 없거나 저장된 링크가 한 건도 없다.
+
+TOPIS 워크플로를 수동으로 실행하려면 `backend/`에서 다음 명령을 실행한다.
+
+```sh
+docker compose exec -T -e N8N_RUNNERS_BROKER_PORT=5691 n8n n8n execute --id=topisCollect0001
+```
+
+떠 있는 n8n이 작업 브로커 포트 5679를 쓰므로, `n8n execute`에는 다른 브로커 포트를 줘야 한다. 그렇지 않으면 "port 5679 is already in use"로 실행되지 않는다.
+
+워크플로 JSON을 고쳤으면 다시 가져온 뒤 활성화한다.
+
+```sh
+docker compose exec -T n8n sh -c 'cat > /tmp/wf.json && n8n import:workflow --input=/tmp/wf.json; rc=$?; rm -f /tmp/wf.json; exit $rc' < n8n/workflows/topis-collect.json
+docker compose exec -T n8n n8n publish:workflow --id=topisCollect0001
+```
+
+MySQL 노드의 쿼리 파라미터는 `$1`부터 쿼리에 나오는 순서대로 한 번씩만 쓰고, 값은 `={{ [a, b] }}` 배열로 넘긴다. n8n은 `$n`을 모두 `?`로 바꾸고 값을 번호순으로 채우므로, 순서가 어긋나거나 같은 번호를 두 번 쓰면 값이 엇갈린다. `queryBatching: independently`는 쓰지 않는다(여러 행을 넣을 때 실패한다).
+
+### 수집 공백 확인
+
+다음 SQL의 시작일과 종료일을 확인할 범위로 바꿔 실행한다. 날짜 범위의 매일 14:00~23:55에 해당하는 5분 칸을 만들고, TOPIS·GITS 각 소스에서 `TRAFFIC_COLLECT_RUN` 행이 없는 칸만 출력한다.
+
+```sql
+WITH RECURSIVE
+params AS (
+    SELECT DATE('2026-11-01') AS from_date, DATE('2026-11-07') AS to_date
+),
+dates AS (
+    SELECT from_date AS collect_date
+    FROM params
+    UNION ALL
+    SELECT DATE_ADD(d.collect_date, INTERVAL 1 DAY)
+    FROM dates d
+    CROSS JOIN params p
+    WHERE d.collect_date < p.to_date
+),
+slots AS (
+    SELECT 0 AS slot_index
+    UNION ALL
+    SELECT slot_index + 1
+    FROM slots
+    WHERE slot_index < 119
+),
+sources AS (
+    SELECT 'TOPIS' AS source
+    UNION ALL
+    SELECT 'GITS' AS source
+),
+expected AS (
+    SELECT
+        s.source,
+        DATE_ADD(
+            DATE_ADD(CAST(d.collect_date AS DATETIME), INTERVAL 14 HOUR),
+            INTERVAL sl.slot_index * 5 MINUTE
+        ) AS run_dt
+    FROM dates d
+    CROSS JOIN slots sl
+    CROSS JOIN sources s
+)
+SELECT e.source, e.run_dt
+FROM expected e
+LEFT JOIN TRAFFIC_COLLECT_RUN r
+    ON r.SOURCE = e.source
+   AND r.RUN_DT = e.run_dt
+   AND r.DELETE_YN = 0
+WHERE r.COLLECT_RUN_ID IS NULL
+ORDER BY e.run_dt, e.source;
+```
+
 ## 출처와 이용 조건
 
 - 서울 TOPIS 데이터는 공공누리 제1유형으로, 출처를 표시하면 상업적 이용과 변경이 가능하다.
