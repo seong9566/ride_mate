@@ -1,3 +1,4 @@
+using System.Data;
 using System.Globalization;
 using System.Security.Claims;
 using System.Text.RegularExpressions;
@@ -364,18 +365,10 @@ public class ScheduleService : IScheduleService
                 return Fail<DeleteScheduleResultDto>(401, "잘못된 요청입니다.");
             }
 
-            // 6) 학원가를 잠그지 않았으면 일반 조회 전에 잠금 읽기로 최신 학원가를 다시 본다. 학원 행을 공유 잠금해 그사이 좌표·학원가가 채워지지 못하게 한다.
-            //    트랜잭션 밖 조회 뒤에 학원가가 채워졌으면 지금 잠근다 — 순서는 어긋나지만 일반 조회 전이라 아래 조회가 그 잠금 뒤의 커밋을 본다(드문 교착은 재시도)
-            if (areaId is null)
-            {
-                var latestAreaId = await _scheduleRepository.GetScheduleAreaIdAsync(lockedUserId.Value,
-                    dto.scheduleSeq.Value, dbTransaction, cancellationToken).ConfigureAwait(false);
-                if (latestAreaId is not null)
-                {
-                    await _scheduleRepository.LockAreaAsync(latestAreaId.Value, dbTransaction, cancellationToken)
-                        .ConfigureAwait(false);
-                }
-            }
+            // 6) 일반 조회 전에 잠금 읽기로 최신 학원가를 다시 보고, 잠그지 않은 학원가면 지금 잠근다 — 트랜잭션 밖 조회 뒤에
+            //    다른 계정이 좌표를 채웠거나 같은 계정의 편집이 학원을 다른 학원가로 옮겼을 수 있다
+            await LockLatestScheduleAreaAsync(lockedUserId.Value, dto.scheduleSeq.Value,
+                areaId is null ? [] : [areaId.Value], dbTransaction, cancellationToken).ConfigureAwait(false);
 
             // 7) 이 계정 아이의 살아 있는 시간표인지 확인한다. 아이가 없거나 남의 것이거나 이미 지웠으면 찾을 수 없다
             var childId = await _scheduleRepository.GetLiveChildIdAsync(lockedUserId.Value, dbTransaction,
@@ -495,17 +488,9 @@ public class ScheduleService : IScheduleService
                 return Fail(401, "잘못된 요청입니다.");
             }
 
-            // 6) 지금 학원의 학원가를 잠그지 않았으면 삭제와 같이 잠금 읽기로 다시 보고, 그사이 채워졌으면 지금 잠근다(순서가 어긋나 드문 교착은 재시도)
-            if (currentAreaId is null)
-            {
-                var latestAreaId = await _scheduleRepository.GetScheduleAreaIdAsync(lockedUserId.Value, scheduleSeq,
-                    dbTransaction, cancellationToken).ConfigureAwait(false);
-                if (latestAreaId is not null && !lockedAreaIds.Contains(latestAreaId.Value))
-                {
-                    await _scheduleRepository.LockAreaAsync(latestAreaId.Value, dbTransaction, cancellationToken)
-                        .ConfigureAwait(false);
-                }
-            }
+            // 6) 삭제와 같이 잠금 읽기로 지금 학원의 최신 학원가를 다시 보고, 잠그지 않은 학원가면 지금 잠근다
+            await LockLatestScheduleAreaAsync(lockedUserId.Value, scheduleSeq, lockedAreaIds, dbTransaction,
+                cancellationToken).ConfigureAwait(false);
 
             // 7) 이 계정 아이의 살아 있는 시간표인지 확인한다. 아이가 없거나 남의 것이거나 지웠으면 찾을 수 없다
             var childId = await _scheduleRepository.GetLiveChildIdAsync(lockedUserId.Value, dbTransaction,
@@ -643,6 +628,21 @@ public class ScheduleService : IScheduleService
         {
             LogServiceException(ex);
             return Fail(500, "서버에서 요청을 처리하지 못하였습니다.");
+        }
+    }
+
+    // 시간표 삭제·편집 6단계 — USER_INFO를 잠근 뒤 일반 조회 전에 부른다. 잠금 읽기(FOR SHARE)로 시간표 학원의 최신 학원가를 읽고
+    // 학원 행을 공유 잠금해 그사이 다른 계정이 좌표·학원가를 채우지 못하게 한다. 학원을 바꾸는 편집은 USER_INFO를 잡아야 하므로 이 값은 커밋까지 바뀌지 않는다.
+    // 이미 잠근 학원가가 아니면 지금 잠근다 — 순서는 어긋나지만 일반 조회 전이라 아래 조회가 그 잠금 뒤의 커밋을 본다(드문 교착은 재시도)
+    private async Task LockLatestScheduleAreaAsync(int userId, int scheduleSeq, IReadOnlyCollection<int> lockedAreaIds,
+        IDbTransaction dbTransaction, CancellationToken cancellationToken)
+    {
+        var latestAreaId = await _scheduleRepository.GetScheduleAreaIdAsync(userId, scheduleSeq, dbTransaction,
+            cancellationToken).ConfigureAwait(false);
+        if (latestAreaId is not null && !lockedAreaIds.Contains(latestAreaId.Value))
+        {
+            await _scheduleRepository.LockAreaAsync(latestAreaId.Value, dbTransaction, cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 
