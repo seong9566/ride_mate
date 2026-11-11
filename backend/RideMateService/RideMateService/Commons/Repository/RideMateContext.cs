@@ -1671,6 +1671,10 @@ public partial class RideMateContext : DbContext
                 .IsFixedLength()
                 .HasComment("휴대폰 번호 HMAC")
                 .HasColumnName("PHONE_HASH");
+            entity.Property(e => e.SetupDoneDt)
+                .HasComment("초기 설정 완료 시각")
+                .HasColumnType("datetime")
+                .HasColumnName("SETUP_DONE_DT");
             entity.Property(e => e.UpdateDt)
                 .HasComment("수정 일시")
                 .HasColumnType("datetime")
