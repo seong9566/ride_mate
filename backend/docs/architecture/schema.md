@@ -493,8 +493,8 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `COLLECT_RUN_ID` | INT | N | FK → TRAFFIC_COLLECT_RUN |
 | `COLLECTED_DT` | DATETIME | N | 회차 시각(5분 경계). 한 회차의 행은 모두 같은 값이다 |
 | `SOURCE_COLLECTED_DT` | DATETIME | Y | 소스가 준 수집 시각(GITS `collDate`). TOPIS는 NULL |
-| `SPEED_KMH` | SMALLINT | N | 속도(TOPIS `prcs_spd`, GITS `spd`) |
-| `TRAVEL_SEC` | INT | N | 여행시간 초(TOPIS `prcs_trv_time`, GITS `trvlTime`을 초로 맞춘 값) |
+| `SPEED_KMH` | SMALLINT | N | 속도(TOPIS `prcs_spd`, GITS `spd`). 소수로 오므로(예 77.4) 정수로 반올림한다 |
+| `TRAVEL_SEC` | INT | N | 여행시간 초(TOPIS `prcs_trv_time`, GITS `trvlTime`을 초로 맞춘 값). 소수면 반올림한다 |
 
 - UNIQUE: `(TRAFFIC_LINK_ID, COLLECTED_DT)`. 같은 회차가 두 번 돌아도 중복으로 쌓이지 않는다. FK 인덱스를 겸한다.
 - 인덱스: `(COLLECT_RUN_ID)`, `(COLLECTED_DT)`
