@@ -6,6 +6,104 @@ namespace RideMateService.Repository.v1.Auth;
 public partial class AuthRepository
 {
     /// <summary>
+    /// 전화번호 해시로 살아 있는 가장 최근 휴대폰 인증번호를 찾아 FOR UPDATE로 잠그고 ID를 돌려준다.
+    /// </summary>
+    public async Task<int?> LockLatestPhoneVerificationAsync(string phoneHash, IDbTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("phoneHash", phoneHash);
+
+            var sql = @"
+                SELECT t.PHONE_VERIFICATION_ID
+                FROM PHONE_VERIFICATION AS t
+                WHERE t.PHONE_HASH = @phoneHash
+                  AND t.DELETE_YN = FALSE
+                ORDER BY t.PHONE_VERIFICATION_ID DESC
+                LIMIT 1
+                FOR UPDATE";
+
+            return await _dapper.QueryFirstOrDefaultAsync<int?>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 전화번호 해시와 용도로 살아 있는 가장 최근 휴대폰 인증번호를 찾아 FOR UPDATE로 잠그고 ID를 돌려준다.
+    /// </summary>
+    public async Task<int?> LockLatestPhoneVerificationByPurposeAsync(string phoneHash, string purpose,
+        IDbTransaction transaction, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("phoneHash", phoneHash);
+            dp.Add("purpose", purpose);
+
+            var sql = @"
+                SELECT t.PHONE_VERIFICATION_ID
+                FROM PHONE_VERIFICATION AS t
+                WHERE t.PHONE_HASH = @phoneHash
+                  AND t.PURPOSE = @purpose
+                  AND t.DELETE_YN = FALSE
+                ORDER BY t.PHONE_VERIFICATION_ID DESC
+                LIMIT 1
+                FOR UPDATE";
+
+            return await _dapper.QueryFirstOrDefaultAsync<int?>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 전화번호 해시가 같은 살아 있는 계정의 ID를 조회한다.
+    /// </summary>
+    public async Task<int?> GetUserIdByPhoneHashAsync(string phoneHash, IDbTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("phoneHash", phoneHash);
+
+            var sql = @"
+                SELECT t.USER_ID
+                FROM USER_INFO AS t
+                WHERE t.PHONE_HASH = @phoneHash
+                  AND t.DELETE_YN = FALSE";
+
+            return await _dapper.QueryFirstOrDefaultAsync<int?>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
     /// refresh 토큰 해시로 살아 있는 차량 로그인 세션을 찾아 FOR UPDATE로 잠그고 ID를 돌려준다.
     /// 지금 값이거나, 허용 시간(graceFrom 이후) 안에 바뀐 직전 값이면 찾는다.
     /// 인덱스를 하나씩 타도록 지금 값(TOKEN_HASH)을 먼저 찾고, 없을 때만 직전 값(PREV_TOKEN_HASH)을 찾는다

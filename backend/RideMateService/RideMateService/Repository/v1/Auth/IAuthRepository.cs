@@ -6,6 +6,22 @@ namespace RideMateService.Repository.v1.Auth;
 public interface IAuthRepository
 {
     /// <summary>
+    /// 살아 있는 휴대폰 인증번호를 PK로 불러온다(수정 대상)
+    /// </summary>
+    Task<PhoneVerification?> GetPhoneVerificationAsync(int phoneVerificationId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 휴대폰 인증번호 등록
+    /// </summary>
+    Task<bool> AddPhoneVerificationAsync(PhoneVerification model, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 휴대폰 인증번호 수정
+    /// </summary>
+    Task<bool> UpdatePhoneVerificationAsync(PhoneVerification model, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 살아 있는 차량 로그인 세션을 PK로 불러온다(수정 대상)
     /// </summary>
     Task<LoginSession?> GetLoginSessionAsync(int loginSessionId, CancellationToken cancellationToken = default);
@@ -15,7 +31,36 @@ public interface IAuthRepository
     /// </summary>
     Task<bool> UpdateLoginSessionAsync(LoginSession model, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// 같은 계정·기기의 살아 있는 차량 로그인 세션을 모두 끝낸다.
+    /// </summary>
+    Task EndCarSessionsAsync(int userId, string deviceId, DateTime thisTime,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 로그인 세션 등록. 저장 뒤 model의 로그인 세션 ID가 채워진다.
+    /// </summary>
+    Task<bool> AddLoginSessionAsync(LoginSession model, CancellationToken cancellationToken = default);
+
     // ====== Dapper
+
+    /// <summary>
+    /// 전화번호 해시로 살아 있는 가장 최근 휴대폰 인증번호를 찾아 FOR UPDATE로 잠그고 ID를 돌려준다.
+    /// </summary>
+    Task<int?> LockLatestPhoneVerificationAsync(string phoneHash, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 전화번호 해시와 용도로 살아 있는 가장 최근 휴대폰 인증번호를 찾아 FOR UPDATE로 잠그고 ID를 돌려준다.
+    /// </summary>
+    Task<int?> LockLatestPhoneVerificationByPurposeAsync(string phoneHash, string purpose,
+        IDbTransaction transaction, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 전화번호 해시가 같은 살아 있는 계정의 ID를 조회한다.
+    /// </summary>
+    Task<int?> GetUserIdByPhoneHashAsync(string phoneHash, IDbTransaction? transaction = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// refresh 토큰 해시로 살아 있는 차량 로그인 세션을 찾아 FOR UPDATE로 잠그고 ID를 돌려준다.

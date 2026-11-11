@@ -55,7 +55,7 @@
 
 - 주소는 `POST /api/v1/Auth/M/Token`이다. OAuth 토큰 발급이라 `Add` 접두를 쓰지 않는다. 이 API는 DB에 행을 하나 추가하는 것이 아니라 토큰을 발급·교체한다. 인증 구간이 없어(`sign` 아님) Bearer 없이 부른다.
 - 요청 본문은 JSON이 아니라 `application/x-www-form-urlencoded`이고, 필드 이름은 OAuth 규약대로 snake_case다.
-- 지금 지원하는 `grant_type`은 `refresh_token` 하나다(`refresh_token` 값을 함께 보낸다). `otp`와 `urn:ietf:params:oauth:grant-type:device_code`는 카드 T08·T09에서 더하며, 그 전에는 `unsupported_grant_type`을 돌려준다.
+- 지금 지원하는 `grant_type`은 `refresh_token`과 `otp`다. `refresh_token`은 `refresh_token` 값을 함께 보내고, `otp`는 `phone`·`code`·`device_id`를 함께 보낸다. `urn:ietf:params:oauth:grant-type:device_code`는 카드 T09에서 더하며, 그 전에는 `unsupported_grant_type`을 돌려준다.
 - 성공(200)은 `{ message, data, code }`로 감싸지 않고 다음 본문을 그대로 돌려준다. `Cache-Control: no-store`가 붙는다.
 
 ```json
@@ -70,16 +70,35 @@
 ```
 
 - `session_id`는 `LOGIN_SESSION_ID`다. `setup_required`는 그 계정의 운전자 이름이 비었거나 살아 있는 아이가 없으면 `true`다.
+- `otp`로 같은 기기에서 같은 계정에 다시 로그인하면 그 계정·기기의 직전 차량 세션은 모두 끝나고 새 세션이 만들어진다.
 - 실패(400)도 감싸지 않고 `{ "error": "...", "error_description": "..." }`를 돌려준다. `error_description`은 영어 한 줄이고 앱은 `error` 값으로 분기한다.
 
 | `error` | 상황 |
 |---|---|
-| `invalid_request` | `grant_type`이나 그 방식에 필요한 값이 빠졌다 |
+| `invalid_request` | `grant_type`이나 그 방식에 필요한 값이 빠졌거나 형식이 틀렸다 |
 | `unsupported_grant_type` | 지원하지 않는 `grant_type` |
-| `invalid_grant` | refresh 토큰이 틀렸거나(128자보다 길어도 같다) 만료됐거나 로그아웃된 세션이거나 계정이 삭제됐다 |
+| `invalid_grant` | refresh 토큰이 틀렸거나(128자보다 길어도 같다) 만료됐거나 로그아웃된 세션이거나 계정이 삭제됐다. `otp`에서는 대기 중인 로그인 인증번호가 없거나 인증 뒤 계정을 확인할 수 없다 |
+| `otp_locked` | 인증번호 입력이 잠겼다. `retry_after`에 잠금이 풀리기까지 남은 초가 들어간다 |
+| `otp_expired` | 인증번호가 만료됐다 |
+| `otp_mismatch` | 인증번호가 틀렸다. `remaining_attempts`에 잠기기 전까지 남은 횟수가 들어간다 |
+| `signup_required` | 인증번호는 맞지만 계정이 없다. 휴대폰 웹에서 가입해야 한다 |
 
 - 서버 오류(500)는 다른 API와 같은 `ProblemDetails`다.
 - `Token`은 요청 DTO에 검증 특성을 붙이지 않아 값이 빠져도 `[ApiController]`의 `ProblemDetails` 400이 아니라 `invalid_request`가 나간다(`architecture/dto.md`).
+
+## 인증번호 발송
+
+- 주소는 `POST /api/v1/Auth/M/AddPhoneVerification`이다. 인증 구간이 없어(`sign` 아님) Bearer 없이 부른다.
+- 요청 본문은 `application/json`이고 형식은 `{ "phone": "01012345678" }`다.
+- 번호는 숫자로만 된 국내 휴대폰 번호여야 하며 형식은 `^01[016789][0-9]{7,8}$`다. 모델 검증에 실패하면 `ProblemDetails` 400이 나간다.
+- 같은 번호에는 1분에 한 번만 보낸다. 아직 가입하지 않은 번호에도 보내며, 가입은 휴대폰 웹에서 진행한다.
+
+| code | 상황 | data |
+|---|---|---|
+| 200 | 인증번호를 발송했다 | `expiresIn`은 180, `retryAfter`는 60 |
+| 101 | 재발송 간격 1분이 지나지 않았다 | `expiresIn`은 0, `retryAfter`는 다시 보낼 수 있을 때까지 남은 초 |
+| 102 | 인증번호 입력이 잠겨 있다 | `expiresIn`은 0, `retryAfter`는 잠금이 풀릴 때까지 남은 초 |
+| 400 | 요청 값이 없거나 번호 형식이 틀렸다 | 모델 검증 실패는 `ProblemDetails` |
 
 ## 커서 페이징
 

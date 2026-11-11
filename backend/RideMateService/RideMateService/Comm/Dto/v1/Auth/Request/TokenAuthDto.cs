@@ -6,7 +6,7 @@ namespace RideMateService.Comm.Dto.v1.Auth.Request;
 public class TokenAuthDto
 {
     /// <summary>
-    /// 발급 방식(refresh_token)
+    /// 발급 방식(refresh_token, otp)
     /// </summary>
     public string? grant_type { get; set; }
 
@@ -14,4 +14,19 @@ public class TokenAuthDto
     /// refresh 토큰 원문
     /// </summary>
     public string? refresh_token { get; set; }
+
+    /// <summary>
+    /// 숫자로만 된 휴대폰 번호(otp 발급)
+    /// </summary>
+    public string? phone { get; set; }
+
+    /// <summary>
+    /// 6자리 인증번호(otp 발급)
+    /// </summary>
+    public string? code { get; set; }
+
+    /// <summary>
+    /// 차량 앱 설치 번호(otp 발급)
+    /// </summary>
+    public string? device_id { get; set; }
 }
