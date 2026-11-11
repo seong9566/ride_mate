@@ -223,23 +223,7 @@ public class UserService : IUserService
                 return Fail<SetupCompleteDto>(401, "잘못된 요청입니다.");
             }
 
-            // 3) 살아 있는 아이가 없으면 아이 정보부터 등록하게 한다
-            if (!await _userRepository.HasLiveChildAsync(lockedUserId.Value, dbTransaction,
-                    cancellationToken).ConfigureAwait(false))
-            {
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return Fail<SetupCompleteDto>(101, "아이 정보를 먼저 등록해 주세요.");
-            }
-
-            // 4) 픽업이 켜진 시간표 요일이 하나도 없으면 거절한다 — 시간표가 있어도 스위치가 모두 꺼져 있으면 같다
-            if (!await _userRepository.HasPickupOnScheduleAsync(lockedUserId.Value, dbTransaction,
-                    cancellationToken).ConfigureAwait(false))
-            {
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return Fail<SetupCompleteDto>(102, "학원을 하나 이상 추가하고 픽업을 켜 주세요");
-            }
-
-            // 5) 집 주소가 없으면 거절한다
+            // 3) 현재 값을 읽는다. 이미 완료한 계정은 조건을 다시 보지 않고 처음 시각 그대로 200이다 — 이후 아이·시간표를 지워도 초기 설정을 다시 강제하지 않는다
             var row = await _userRepository.GetUserSetupRowAsync(lockedUserId.Value, dbTransaction,
                 cancellationToken).ConfigureAwait(false);
             if (row is null)
@@ -248,30 +232,55 @@ public class UserService : IUserService
                 return Fail<SetupCompleteDto>(500, "서버에서 요청을 처리하지 못하였습니다.");
             }
 
+            if (row.SetupDoneDt is not null)
+            {
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<SetupCompleteDto>
+                {
+                    message = "요청이 정상 처리되었습니다.",
+                    data = new SetupCompleteDto { setupDoneDt = row.SetupDoneDt.Value },
+                    code = 200
+                };
+            }
+
+            // 4) 살아 있는 아이가 없으면 아이 정보부터 등록하게 한다
+            if (!await _userRepository.HasLiveChildAsync(lockedUserId.Value, dbTransaction,
+                    cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return Fail<SetupCompleteDto>(101, "아이 정보를 먼저 등록해 주세요.");
+            }
+
+            // 5) 픽업이 켜진 시간표 요일이 하나도 없으면 거절한다 — 시간표가 있어도 스위치가 모두 꺼져 있으면 같다
+            if (!await _userRepository.HasPickupOnScheduleAsync(lockedUserId.Value, dbTransaction,
+                    cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return Fail<SetupCompleteDto>(102, "학원을 하나 이상 추가하고 픽업을 켜 주세요");
+            }
+
+            // 6) 집 주소가 없으면 거절한다
             if (string.IsNullOrWhiteSpace(row.DestAddress))
             {
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
                 return Fail<SetupCompleteDto>(103, "집 위치를 확인해 주세요");
             }
 
-            // 6) 완료 시각이 비어 있을 때만 채운다 — 이미 있으면 처음 시각을 그대로 두고 200이다
-            if (row.SetupDoneDt is null)
+            // 7) 완료 시각을 채운다 — 위에서 비어 있음을 잠근 뒤에 확인했으므로 반드시 한 행이 바뀐다
+            if (!await _userRepository.UpdateSetupDoneAsync(lockedUserId.Value, thisTime, AuditUser,
+                    cancellationToken).ConfigureAwait(false))
             {
-                if (!await _userRepository.UpdateSetupDoneAsync(lockedUserId.Value, thisTime, AuditUser,
-                        cancellationToken).ConfigureAwait(false))
-                {
-                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return Fail<SetupCompleteDto>(500, "서버에서 요청을 처리하지 못하였습니다.");
-                }
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return Fail<SetupCompleteDto>(500, "서버에서 요청을 처리하지 못하였습니다.");
+            }
 
-                // 응답 — 저장된 현재 값을 읽는다. 커밋 전에 읽어 읽기가 실패하면 저장도 취소된다
-                row = await _userRepository.GetUserSetupRowAsync(lockedUserId.Value, dbTransaction,
-                    cancellationToken).ConfigureAwait(false);
-                if (row?.SetupDoneDt is null)
-                {
-                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return Fail<SetupCompleteDto>(500, "서버에서 요청을 처리하지 못하였습니다.");
-                }
+            // 응답 — 저장된 현재 값을 읽는다. 커밋 전에 읽어 읽기가 실패하면 저장도 취소된다
+            row = await _userRepository.GetUserSetupRowAsync(lockedUserId.Value, dbTransaction,
+                cancellationToken).ConfigureAwait(false);
+            if (row?.SetupDoneDt is null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return Fail<SetupCompleteDto>(500, "서버에서 요청을 처리하지 못하였습니다.");
             }
 
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
