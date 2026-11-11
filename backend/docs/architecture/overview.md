@@ -19,7 +19,7 @@ RideMateService/
 │   ├── LoginSessionListRateLimit.cs # 차 계정 목록 API의 요청 빈도 제한 값·파티션 키(등록은 Extensions)
 │   ├── Security/                 # 해시·전화번호 암호화·토큰 서비스와 설정 클래스
 │   ├── Map/                      # 외부 지도 API(카카오 도보 경로) 호출과 거리 계산
-│   ├── Sms/                      # ISmsSender, 개발용 DevSmsSender
+│   ├── Sms/                      # ISmsSender, 개발용 DevSmsSender, 솔라피 SolapiSmsSender
 │   ├── Logger/                   # ILogService, LogService
 │   └── Dto/v1/{도메인}/Request|Response/
 ├── Commons/
@@ -68,7 +68,7 @@ Controller ──▶ Service ──▶ Repository ──▶ DbContext / IDbConne
 6. 도메인 DI (`AddDomainModules()`)
 7. 백그라운드 워커 (HostedService)
 8. 공용 서비스 (`AddCommonInfrastructure()` — `ILogService`, HttpContextAccessor)
-9. 지도 (`AddMapInfrastructure()` — 카카오 typed HttpClient, Kakao·DepartureGuide 설정. `Kakao:RestApiKey`가 비어도 기동은 한다)
+9. 지도·문자 (`AddMapInfrastructure()` — 카카오 typed HttpClient, Kakao·DepartureGuide·PickupLink 설정. `Kakao:RestApiKey`가 비어도 기동은 한다. `PickupLink:BaseUrl`이 http(s) 절대 URI가 아니거나 `PickupLink:MaxAttempts`·`InFlightTimeoutSec`가 1보다 작으면 기동 실패. `AddSmsInfrastructure()` — `Sms:Provider`가 `Solapi`이면 SolapiSmsSender, 비었거나 `Dev`이면 DevSmsSender. `Dev`인데 Development 환경이 아니거나, `Solapi`인데 `Sms:Solapi`의 `ApiKey`·`ApiSecret`·`Sender`가 비었거나 `Provider`가 그 밖의 값이면 기동 실패)
 10. Dapper 타입 핸들러
 11. 인증 (`AddAuthInfrastructure()` — 키 설정 검증과 Singleton 등록, JwtBearer)
 12. DbContext + Dapper `IDbConnection` (연결 문자열이 없으면 기동 실패)
