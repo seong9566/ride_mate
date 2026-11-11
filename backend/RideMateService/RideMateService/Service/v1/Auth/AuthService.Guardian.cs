@@ -109,7 +109,7 @@ public partial class AuthService
                     PhoneVerificationCheckOutcome.Locked => GuardianCheckResponse(102, "잠시 후 다시 시도해 주세요.",
                         new GuardianVerificationCheckDto { retryAfter = check.RetryAfter }),
                     PhoneVerificationCheckOutcome.NotRequested or PhoneVerificationCheckOutcome.Expired =>
-                        GuardianCheckResponse(103, "인증 시간이 지났습니다. 인증번호를 다시 받아 주세요.",
+                        GuardianCheckResponse(103, "인증번호를 다시 받아 주세요.",
                             new GuardianVerificationCheckDto()),
                     PhoneVerificationCheckOutcome.Mismatch => GuardianCheckResponse(101, "인증번호가 맞지 않습니다.",
                         new GuardianVerificationCheckDto { remainingAttempts = check.RemainingAttempts }),
