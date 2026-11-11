@@ -178,6 +178,23 @@
 - 아래 커서 페이징의 예외다. 한 차에 계정이 몇 개뿐이고 PK가 아니라 마지막 사용 순으로 보여주기 때문이다.
 - 같은 클라이언트(IPv4 주소, IPv6는 /64)에서 1분에 30번을 넘으면 본문 없이 429이고 `Retry-After`(초)가 붙는다(`security.md`).
 
+## 출발 안내 계산
+
+- 주소는 `GET /api/v1/Pickup/M/sign/DetailDepartureGuide`다. 인증 구간 `sign`이 있어 Bearer가 필요하고, 사용자는 JWT의 `sub`에서 꺼낸다.
+- 요청 값은 query다(`currentDt`·`currentLat`·`currentLng`는 필수, `driveMin`·`pickupLat`·`pickupLng`는 선택). `pickupLat`와 `pickupLng`는 함께 보내야 하며 한쪽만 오면 `ProblemDetails` 400이 나간다.
+- 계산 전용이라 DB에 쓰지 않는다. 오늘 픽업은 `currentDt`의 날짜·요일로 고른다: 로그인한 계정의 살아 있는 아이 시간표 중 오늘 `PICKUP_YN = 1`이고 `LAST_PICKUP_DATE`가 오늘이 아닌 것에서 오늘 `SKIP` 예외를 빼고(`TIME_CHANGE`는 바뀐 하원 시각), 하원 시각 + 1시간이 `currentDt`보다 늦은 것 중 하원 시각이 가장 이른 하나다.
+
+| code | 상황 | HTTP |
+|---|---|---|
+| 200 | 계산했다. 쓸 수 있는 기본 지점이 없으면 `pickup`과 계산 필드가 null이고 `reasons`에 `NO_SPOT_AVAILABLE`이 들어간다 | 200 |
+| 101 | 오늘 남은 픽업이 없다. `data`는 null이다 | 200 |
+| 400 | 필수 값이 없거나 범위를 벗어났거나 픽업 좌표가 한쪽만 왔거나 형식이 틀린 값(해석할 수 없는 `currentDt`나 숫자)이나 `Z`·오프셋이 붙은 `currentDt`가 왔다 | 400 (`ProblemDetails`) |
+| 401 | 인증 실패 | 401 |
+
+- 101은 오류가 아닌 정상 상태라 `message`가 `요청이 정상 처리되었습니다.`다. 앱은 `code`로 나눈다.
+- 한계: 하원 시각 + 1시간이 자정을 넘는 픽업(하원 23:30 등)은 00:00이 지나면 101이 나온다. 아이 도착 시각이 자정을 넘으면 요일 유형은 오늘 것으로 판정한다. `currentDt`는 오프셋 없는 KST 로컬 시각(`2026-11-11T21:14:00`)이어야 하며 `Z`·`+09:00`을 붙이면 400 `ProblemDetails`다(서버가 UTC로 바꿔 시각이 밀리기 때문).
+- 필드·`reasons` 코드·계산식은 `docs/api/Pickup/DetailDepartureGuide.md`가 정본이다.
+
 ## 커서 페이징
 
 - 목록은 오프셋 페이징을 쓰지 않고 `CursorResult<T>`(`items`·`lastCursor`·`hasMore`)로 돌려준다.

@@ -1,0 +1,271 @@
+using System.Globalization;
+using System.Security.Claims;
+using Microsoft.Extensions.Options;
+using RideMateService.Comm;
+using RideMateService.Comm.Dto.v1.Pickup.Request;
+using RideMateService.Comm.Dto.v1.Pickup.Response;
+using RideMateService.Comm.Logger;
+using RideMateService.Comm.Map;
+using RideMateService.Repository.v1.Pickup;
+
+namespace RideMateService.Service.v1.Pickup;
+
+public class PickupService : IPickupService
+{
+    private const string WalkSourceStored = "STORED";
+    private const string WalkSourceRoute = "ROUTE";
+    private const string WalkSourceEstimate = "ESTIMATE";
+    private const string DriveSourceNavi = "NAVI";
+    private const string DriveSourceEstimate = "ESTIMATE";
+    private const string EnforcementRestricted = "RESTRICTED";
+    private const string EnforcementClear = "CLEAR";
+    private const string EnforcementUnknown = "UNKNOWN";
+    private const string ReasonAcademyFrontRestricted = "ACADEMY_FRONT_RESTRICTED";
+    private const string ReasonHigherSpotBlocked = "HIGHER_SPOT_BLOCKED";
+    private const string ReasonNoSpotAvailable = "NO_SPOT_AVAILABLE";
+    private const string ReasonCustomLocation = "CUSTOM_LOCATION";
+
+    private readonly IPickupRepository _pickupRepository;
+    private readonly ILogService _logService;
+    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IWalkRouteClient _walkRouteClient;
+    private readonly DepartureGuideOptions _options;
+
+    public PickupService(IPickupRepository pickupRepository,
+        ILogService logService,
+        IHttpContextAccessor httpContextAccessor,
+        IWalkRouteClient walkRouteClient,
+        IOptions<DepartureGuideOptions> options)
+    {
+        this._pickupRepository = pickupRepository;
+        this._logService = logService;
+        this._httpContextAccessor = httpContextAccessor;
+        this._walkRouteClient = walkRouteClient;
+        this._options = options.Value;
+    }
+
+    /// <summary>
+    /// 출발 안내 계산
+    /// </summary>
+    public async Task<ResponseModel<DetailDepartureGuideDto>> DetailDepartureGuideService(DepartureGuideQueryDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // 1) 인증 확인 — 로그인 사용자(USER_ID)는 HttpContext의 클레임 sub에서 꺼낸다
+            if (!int.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("sub"), out var userId))
+                return new ResponseModel<DetailDepartureGuideDto> { message = "잘못된 요청입니다.", data = null, code = 401 };
+
+            // 2) 입력 검증 — 필수값이 없거나 픽업 좌표가 한쪽만 오면 거절한다
+            if (dto?.currentDt is null || dto.currentLat is null || dto.currentLng is null
+                || (dto.pickupLat is null) != (dto.pickupLng is null))
+                return new ResponseModel<DetailDepartureGuideDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
+
+            var now = dto.currentDt.Value;
+            var date = DateOnly.FromDateTime(now);
+
+            // 3) 오늘 남은 픽업 하나 — 하원 뒤 창(PickupWindowHours)이 지나지 않은 것 중 하원이 가장 이른 것
+            var todays = await _pickupRepository.GetTodayPickupsAsync(userId, date,
+                DepartureGuideCalculator.DayOfWeek(date), cancellationToken).ConfigureAwait(false);
+
+            var dayStart = date.ToDateTime(TimeOnly.MinValue);
+            var window = TimeSpan.FromHours(_options.PickupWindowHours);
+            var target = todays
+                .Where(t => dayStart + t.EndTime + window > now)
+                .OrderBy(t => t.EndTime)
+                .ThenBy(t => t.TimetableDayId)
+                .FirstOrDefault();
+
+            if (target is null)
+                return new ResponseModel<DetailDepartureGuideDto> { message = "요청이 정상 처리되었습니다.", data = null, code = 101 };
+
+            // 4) 요일 유형 — 그해 공휴일이 적재되지 않았으면 공휴일이 아닌 것으로 본다
+            var holiday = await _pickupRepository.GetHolidayAsync(date, cancellationToken).ConfigureAwait(false);
+            var dayType = DepartureGuideCalculator.DayType(date, holiday.IsHoliday);
+
+            var result = new DetailDepartureGuideDto
+            {
+                academyName = target.DisplayName,
+                endTime = target.EndTime.ToString(@"hh\:mm")
+            };
+
+            // 5) 픽업 장소와 도보 시간
+            DepartureGuidePickupDto? pickup;
+            if (dto.pickupLat is null || dto.pickupLng is null)
+            {
+                pickup = await SelectDefaultSpotAsync(target, date, dayType, result.reasons, cancellationToken).ConfigureAwait(false);
+                if (pickup is null)
+                {
+                    result.reasons.Add(new DepartureGuideReasonDto { code = ReasonNoSpotAvailable });
+                    return new ResponseModel<DetailDepartureGuideDto> { message = "요청이 정상 처리되었습니다.", data = result, code = 200 };
+                }
+
+                // 학원 앞이 단속 구역이면 근거 맨 앞에 둔다. 판정 시각은 하원 + 정리 시간
+                var academyZones = await MatchZonesAsync(target.AreaId, target.AcademyLat, target.AcademyLng, dayType,
+                    target.EndTime + TimeSpan.FromMinutes(_options.TidyUpMin), cancellationToken).ConfigureAwait(false);
+                if (academyZones is { Count: > 0 })
+                    result.reasons.Insert(0, new DepartureGuideReasonDto { code = ReasonAcademyFrontRestricted, zoneTypes = academyZones });
+            }
+            else
+            {
+                pickup = await CustomPickupAsync(target, dto.pickupLat.Value, dto.pickupLng.Value, cancellationToken).ConfigureAwait(false);
+                result.reasons.Add(new DepartureGuideReasonDto { code = ReasonCustomLocation });
+            }
+
+            result.pickup = pickup;
+
+            // 6) 아이 도착 시각
+            var childArrival = DepartureGuideCalculator.ChildArrival(date, target.EndTime, _options.TidyUpMin, pickup.walkMin);
+            result.childArrivalDt = childArrival;
+
+            // 7) 차량 소요 시간 — 앱이 보낸 값이 없으면 직선 거리로 추정한다
+            if (dto.driveMin is not null)
+            {
+                result.driveMin = dto.driveMin.Value;
+                result.driveSource = DriveSourceNavi;
+            }
+            else
+            {
+                var meters = GeoDistance.Meters(dto.currentLat.Value, dto.currentLng.Value, pickup.lat, pickup.lng);
+                result.driveMin = DepartureGuideCalculator.EstimateMinutes(meters, _options.DriveKmh, _options.RoadFactor);
+                result.driveSource = DriveSourceEstimate;
+            }
+
+            // 8) 추천 출발 시각과 남은 여유
+            var departure = DepartureGuideCalculator.Departure(childArrival, result.driveMin.Value, _options.BufferMin);
+            result.departureDt = departure;
+            result.slackMin = DepartureGuideCalculator.SlackMinutes(departure, now);
+
+            // 9) 단속 구역 판정 — 판정 시각은 아이 도착 시각. 판정할 수 없으면 UNKNOWN
+            var zones = await MatchZonesAsync(target.AreaId, pickup.lat, pickup.lng, dayType, childArrival.TimeOfDay,
+                cancellationToken).ConfigureAwait(false);
+            if (zones is null)
+                result.enforcement = new DepartureGuideEnforcementDto { status = EnforcementUnknown };
+            else if (zones.Count > 0)
+                result.enforcement = new DepartureGuideEnforcementDto { status = EnforcementRestricted, zoneTypes = zones };
+            else if (!holiday.YearLoaded)
+                result.enforcement = new DepartureGuideEnforcementDto { status = EnforcementUnknown };
+            else
+                result.enforcement = new DepartureGuideEnforcementDto { status = EnforcementClear };
+
+            return new ResponseModel<DetailDepartureGuideDto> { message = "요청이 정상 처리되었습니다.", data = result, code = 200 };
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 그대로 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return new ResponseModel<DetailDepartureGuideDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+        }
+    }
+
+    // 기본 지점: 우선순위 순으로 아이 도착 시각이 금지 시간 [시작, 종료)에 들지 않는 첫 지점.
+    // 금지 시간에 걸려 건너뛴 지점마다 HIGHER_SPOT_BLOCKED를 reasons에 더한다. 쓸 지점이 없으면 null
+    private async Task<DepartureGuidePickupDto?> SelectDefaultSpotAsync(TodayPickupRow target, DateOnly date, string dayType,
+        List<DepartureGuideReasonDto> reasons, CancellationToken cancellationToken)
+    {
+        var spots = await _pickupRepository.GetAcademyPickupSpotsAsync(target.AcademyId, cancellationToken).ConfigureAwait(false);
+        if (spots.Count == 0)
+            return null;
+
+        var blocks = await _pickupRepository.GetPickupSpotBlocksAsync(spots.Select(s => s.PickupSpotId).ToArray(), dayType,
+            cancellationToken).ConfigureAwait(false);
+
+        foreach (var spot in spots)
+        {
+            var arrival = DepartureGuideCalculator.ChildArrival(date, target.EndTime, _options.TidyUpMin, spot.WalkMin).TimeOfDay;
+            var block = blocks.FirstOrDefault(b => b.PickupSpotId == spot.PickupSpotId
+                                                   && b.StartTime <= arrival && arrival < b.EndTime);
+            if (block is not null)
+            {
+                reasons.Add(new DepartureGuideReasonDto
+                {
+                    code = ReasonHigherSpotBlocked,
+                    pickupSpotSeq = spot.PickupSpotId,
+                    spotName = spot.SpotName,
+                    blockReason = block.Reason,
+                    blockStartTime = block.StartTime.ToString(@"hh\:mm"),
+                    blockEndTime = block.EndTime.ToString(@"hh\:mm")
+                });
+                continue;
+            }
+
+            return new DepartureGuidePickupDto
+            {
+                pickupSpotSeq = spot.PickupSpotId,
+                spotName = spot.SpotName,
+                lat = spot.Lat,
+                lng = spot.Lng,
+                walkMin = spot.WalkMin,
+                walkSource = WalkSourceStored,
+                walkPath = ParseLineString(spot.WalkPathWkt)
+            };
+        }
+
+        return null;
+    }
+
+    // 임의 좌표: 카카오 도보 경로(학원 → 픽업)를 매번 부른다(결과 캐싱 금지).
+    // 실패하면 직선 거리 ÷ 아이 도보 속도로 추정하고 경로는 주지 않는다
+    private async Task<DepartureGuidePickupDto> CustomPickupAsync(TodayPickupRow target, decimal lat, decimal lng,
+        CancellationToken cancellationToken)
+    {
+        var pickup = new DepartureGuidePickupDto { lat = lat, lng = lng };
+
+        var route = await _walkRouteClient.GetWalkRouteAsync(target.AcademyLat, target.AcademyLng, lat, lng,
+            cancellationToken).ConfigureAwait(false);
+        if (route is not null)
+        {
+            pickup.walkMin = DepartureGuideCalculator.SecondsToMinutesCeil(route.TotalSeconds);
+            pickup.walkSource = WalkSourceRoute;
+            pickup.walkPath = route.Path.Count > 0
+                ? route.Path.Select(p => new GeoPointDto { lat = p.Lat, lng = p.Lng }).ToList()
+                : null;
+            return pickup;
+        }
+
+        var meters = GeoDistance.Meters(target.AcademyLat, target.AcademyLng, lat, lng);
+        pickup.walkMin = DepartureGuideCalculator.EstimateMinutes(meters, _options.ChildWalkKmh);
+        pickup.walkSource = WalkSourceEstimate;
+        return pickup;
+    }
+
+    // 걸린 구역 유형. 학원가 밖이거나 학원가에 구역 데이터가 없어 판정할 수 없으면 null
+    private async Task<List<string>?> MatchZonesAsync(int areaId, decimal lat, decimal lng, string dayType, TimeSpan at,
+        CancellationToken cancellationToken)
+    {
+        if (!await _pickupRepository.IsInsideAreaAsync(areaId, lat, lng, cancellationToken).ConfigureAwait(false))
+            return null;
+
+        if (await _pickupRepository.CountRestrictedZonesAsync(areaId, cancellationToken).ConfigureAwait(false) == 0)
+            return null;
+
+        return await _pickupRepository.GetMatchedZoneTypesAsync(areaId, lat, lng, dayType, at, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    // SRID 4326 LINESTRING WKT("LINESTRING(위도 경도,위도 경도,…)")를 점 목록으로 바꾼다. 없으면 null
+    private static List<GeoPointDto>? ParseLineString(string? wkt)
+    {
+        if (string.IsNullOrWhiteSpace(wkt))
+            return null;
+
+        var open = wkt.IndexOf('(');
+        var close = wkt.LastIndexOf(')');
+        if (open < 0 || close <= open)
+            return null;
+
+        var points = wkt[(open + 1)..close]
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(pair => pair.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            .Select(xy => new GeoPointDto
+            {
+                lat = decimal.Parse(xy[0], NumberStyles.Float, CultureInfo.InvariantCulture),
+                lng = decimal.Parse(xy[1], NumberStyles.Float, CultureInfo.InvariantCulture)
+            })
+            .ToList();
+
+        return points.Count > 0 ? points : null;
+    }
+}

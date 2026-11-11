@@ -6,10 +6,12 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using Newtonsoft.Json;
 using RideMateService.Comm;
+using RideMateService.Comm.Map;
 using RideMateService.Comm.Security;
 using RideMateService.Commons.Repository;
 using RideMateService.Extensions;
@@ -82,6 +84,7 @@ builder.Services.AddDomainModules();
 #region 공용 서비스
 
 builder.Services.AddCommonInfrastructure();
+builder.Services.AddMapInfrastructure(builder.Configuration);
 #endregion
 
 #region Dapper 타입 핸들러
@@ -173,6 +176,10 @@ builder.Services.AddRateLimitPolicies();
 #endregion
 
 var app = builder.Build();
+
+// 키가 비어 있어도 기동은 하므로(도보 시간이 직선 추정으로 떨어진다) ON/OFF만 남기고 키 값은 남기지 않는다
+app.Logger.LogInformation("Kakao walk route: {State}",
+    string.IsNullOrWhiteSpace(app.Services.GetRequiredService<IOptions<KakaoOptions>>().Value.RestApiKey) ? "OFF" : "ON");
 
 app.UseResponseCompression();
 

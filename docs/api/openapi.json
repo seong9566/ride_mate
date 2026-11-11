@@ -452,6 +452,94 @@
           }
         ]
       }
+    },
+    "/api/v1/Pickup/M/sign/DetailDepartureGuide": {
+      "get": {
+        "tags": [
+          "Pickup"
+        ],
+        "summary": "출발 안내 계산",
+        "parameters": [
+          {
+            "name": "currentDt",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "currentLat",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "maximum": 90,
+              "minimum": -90,
+              "type": "number",
+              "format": "double"
+            }
+          },
+          {
+            "name": "currentLng",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "maximum": 180,
+              "minimum": -180,
+              "type": "number",
+              "format": "double"
+            }
+          },
+          {
+            "name": "driveMin",
+            "in": "query",
+            "schema": {
+              "maximum": 300,
+              "minimum": 0,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "pickupLat",
+            "in": "query",
+            "schema": {
+              "maximum": 90,
+              "minimum": -90,
+              "type": "number",
+              "format": "double"
+            }
+          },
+          {
+            "name": "pickupLng",
+            "in": "query",
+            "schema": {
+              "maximum": 180,
+              "minimum": -180,
+              "type": "number",
+              "format": "double"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_DetailDepartureGuideDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -791,6 +879,164 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_Dto_v1_Pickup_Response_DepartureGuideEnforcementDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "zoneTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Pickup_Response_DepartureGuidePickupDto": {
+        "type": "object",
+        "properties": {
+          "pickupSpotSeq": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "spotName": {
+            "type": "string",
+            "nullable": true
+          },
+          "lat": {
+            "type": "number",
+            "format": "double"
+          },
+          "lng": {
+            "type": "number",
+            "format": "double"
+          },
+          "walkMin": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "walkSource": {
+            "type": "string",
+            "nullable": true
+          },
+          "walkPath": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_GeoPointDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Pickup_Response_DepartureGuideReasonDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "nullable": true
+          },
+          "zoneTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "pickupSpotSeq": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "spotName": {
+            "type": "string",
+            "nullable": true
+          },
+          "blockReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "blockStartTime": {
+            "type": "string",
+            "nullable": true
+          },
+          "blockEndTime": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Pickup_Response_DetailDepartureGuideDto": {
+        "type": "object",
+        "properties": {
+          "academyName": {
+            "type": "string",
+            "nullable": true
+          },
+          "endTime": {
+            "type": "string",
+            "nullable": true
+          },
+          "pickup": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_DepartureGuidePickupDto"
+          },
+          "childArrivalDt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "driveMin": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "driveSource": {
+            "type": "string",
+            "nullable": true
+          },
+          "departureDt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "slackMin": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "enforcement": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_DepartureGuideEnforcementDto"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_DepartureGuideReasonDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Pickup_Response_GeoPointDto": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number",
+            "format": "double"
+          },
+          "lng": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Auth_Response_PhoneVerificationResultDto": {
         "type": "object",
         "properties": {
@@ -818,6 +1064,24 @@
           },
           "data": {
             "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Auth_Response_WebQrLoginDto"
+          },
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_DetailDepartureGuideDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_DetailDepartureGuideDto"
           },
           "code": {
             "type": "integer",
@@ -889,6 +1153,9 @@
     },
     {
       "name": "AuthWeb"
+    },
+    {
+      "name": "Pickup"
     }
   ]
 }
