@@ -67,7 +67,10 @@ WHERE SOURCE = 'TOPIS' AND DELETE_YN = 0;
 
 ## 링크 목록 만들기 — GITS
 
-`GITS_API_KEY`를 넣은 뒤 수동 워크플로 `GITS 링크 목록 만들기`를 한 번 실행한다. 대상 도로 이름은 첫 Code 노드 `설정`의 `routeNames`에 있으며, 기본값은 `평촌대로`, `시민대로`, `흥안대로`, `관악대로`, `귀인로`다.
+`GITS_API_KEY`를 넣은 뒤 수동 워크플로 `GITS 링크 목록 만들기`를 한 번 실행한다. 첫 Code 노드 `설정`에 두 값이 있다.
+
+- `routeNames`: GITS 주요도로 목록(`getRoadInfoList`, 154개)의 실제 이름. 기본값은 `안양판교로/관악대로`, `국도 1호선(평택~안양)`, `국도 47호선(안산~서울)`이다. 평촌 학원가 안쪽 도로(평촌대로·시민대로·귀인로·흥안대로)는 GITS 주요도로에 없다(2026-11-11 실측).
+- `nodeKeywords`: GITS는 도로 전 구간(세 도로 합계 약 2,000개 링크)을 주고 링크 좌표는 주지 않는다. 시작·끝 지점명에 이 낱말(`평촌`·`범계`·`안양`·`비산`·`인덕원`·`호계`·`관양` 등)이 든 링크만 남긴다. 2026-11-11 실행 결과 184개다. 지점명에 지명이 없는 링크(`속성변화점` 등)는 빠질 수 있다.
 
 실행의 마지막 `성공 결과` 노드에서 `missingRouteNames`를 확인한다. 값이 비어 있지 않으면 GITS 도로 목록에 없었던 설정 이름이므로, 실제 도로 이름과 평촌 대상 범위를 확인한 뒤 `routeNames`를 고친다. 도로별 살아 있는 링크 수는 다음 SQL로 확인한다.
 
@@ -98,10 +101,16 @@ GROUP BY ROAD_NAME;
 
 ## GITS 키 받은 뒤 확인할 것
 
-- 정상 응답이 XML인지 JSON인지와 실제 반복 요소 구조
-- `collDate`의 실제 형식
-- `trvlTime`의 단위가 초인지 여부
-- 설정한 다섯 도로가 GITS 도로 목록에 있고 평촌 구간을 포함하는지 여부
+2026-11-11 실제 키로 확인한 것:
+
+- 응답은 XML이고 `ServiceResult/msgBody/itemList`가 반복된다.
+- `collDate`는 `2026-11-11 16:05:00.0`처럼 소수 초가 붙는다.
+- `trvlTime`은 초다(72m 링크를 21km/h로 13초).
+- 5분 수집 첫 회차: 184개 중 180개 저장, 4개는 응답에 없음(`LINK_NOT_IN_RESPONSE`).
+
+남은 확인:
+
+- 일일 호출 한도와 이용 조건
 - 같은 이름의 도로가 여러 `routeId`로 나오는지(다른 시·군의 같은 이름 도로). 나오면 `SELECT ROUTE_ID, ROAD_NAME, COUNT(*) FROM TRAFFIC_LINK WHERE SOURCE = 'GITS' AND DELETE_YN = 0 GROUP BY ROUTE_ID, ROAD_NAME`으로 보고 평촌과 무관한 도로를 뺄 방법을 정한다
 - 세 API(`getRoadInfoList`·`getRoadLinkInfoList`·`getRoadLinkTrafficInfoList`)가 결과를 페이지로 나누는지(`numOfRows`·`pageNo` 같은 인자). 나눈다면 `missingRouteNames`나 `LINK_NOT_IN_RESPONSE`가 계속 나온다
 
