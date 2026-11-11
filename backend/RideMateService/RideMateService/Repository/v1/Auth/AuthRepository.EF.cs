@@ -117,22 +117,23 @@ public partial class AuthRepository
     }
 
     /// <summary>
-    /// 같은 계정·기기의 살아 있는 차량 로그인 세션을 모두 끝낸다.
+    /// 로그인 세션을 PK로 끝낸다(DELETE_YN = 1). PK로만 잠가 빈 범위에 갭 락을 남기지 않는다.
     /// </summary>
-    public async Task EndCarSessionsAsync(int userId, string deviceId, DateTime thisTime,
+    public async Task EndLoginSessionsAsync(IReadOnlyCollection<int> loginSessionIds, DateTime thisTime, string updateUser,
         CancellationToken cancellationToken = default)
     {
+        if (loginSessionIds.Count == 0)
+            return;
+
         try
         {
             await _context.LoginSessions
-                .Where(x => x.UserId == userId
-                            && x.DeviceId == deviceId
-                            && x.SessionType == "CAR"
+                .Where(x => loginSessionIds.Contains(x.LoginSessionId)
                             && x.DeleteYn == false)
                 .ExecuteUpdateAsync(setters => setters
                     .SetProperty(x => x.DeleteYn, true)
                     .SetProperty(x => x.UpdateDt, thisTime)
-                    .SetProperty(x => x.UpdateUser, "PARENT"), cancellationToken)
+                    .SetProperty(x => x.UpdateUser, updateUser), cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다

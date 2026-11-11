@@ -74,6 +74,41 @@ public partial class AuthRepository
     }
 
     /// <summary>
+    /// 같은 계정·기기의 살아 있는 차량 로그인 세션 ID를 잠그지 않고 조회한다.
+    /// </summary>
+    public async Task<IReadOnlyList<int>> GetCarSessionIdsAsync(int userId, string deviceId, IDbTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("userId", userId);
+            dp.Add("deviceId", deviceId);
+
+            // 잠그지 않는 조회다. 범위를 잠그면 행이 없을 때 갭 락이 남아 동시 로그인의 INSERT와 교착한다
+            var sql = @"
+                SELECT t.LOGIN_SESSION_ID
+                FROM LOGIN_SESSION AS t
+                WHERE t.USER_ID = @userId
+                  AND t.DEVICE_ID = @deviceId
+                  AND t.SESSION_TYPE = 'CAR'
+                  AND t.DELETE_YN = FALSE";
+
+            var ids = await _dapper.QueryAsync<int>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            return ids.ToList();
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
     /// 전화번호 해시가 같은 살아 있는 계정의 ID를 조회한다.
     /// </summary>
     public async Task<int?> GetUserIdByPhoneHashAsync(string phoneHash, IDbTransaction? transaction = null,

@@ -28,6 +28,7 @@
 - `PHONE_HASH`는 숫자만 남긴 전화번호를 HMAC 입력으로 쓴다. `USER_INFO`와 `PHONE_VERIFICATION`에서 같은 규칙을 쓴다.
 - `CODE_HASH`는 `"otp:" + 숫자만 남긴 전화번호 + ":" + 6자리 인증번호`를 HMAC 입력으로 쓴다.
 - 문자 발송은 `ISmsSender`로 분리한다. 현재 구현은 실제로 발송하지 않는 개발용이며, Development 환경에서만 가린 전화번호와 인증번호가 든 메시지를 콘솔 로그에 남긴다. 그 밖의 환경에서는 발송 구현이 없다는 사실만 기록하고 메시지는 남기지 않는다.
+- 실제 문자 사업자를 연결하기 전에 발송 남용 방어를 더한다: IP·기기별 발송 한도와 번호당 시간·일 한도. 지금은 같은 번호 1분에 한 번뿐이라 번호를 바꿔 가며 부르면 발송 비용을 막을 수 없다.
 - 차량 로그인 토큰은 access와 refresh 둘이다. 발급은 `POST /api/v1/Auth/M/Token`(`api.md`)이다. [ADR-0013]
 
 | | access 토큰 | refresh 토큰 |
@@ -44,7 +45,7 @@
 - 차량이 로그아웃되지 않으려면 앱은 다음을 지킨다.
   1. 세션 하나에서 refresh는 한 번에 하나만 보낸다.
   2. 새 refresh 값을 저장하기 전에는 옛 값을 버리지 않는다. 응답을 받지 못했으면 같은 값으로 다시 보낸다(직전 값은 24시간 동안 받아 준다).
-  3. `invalid_grant`만 "로그아웃됨"으로 처리한다. 네트워크 오류, 5xx, 429는 다시 시도한다.
+  3. refresh(`grant_type=refresh_token`) 요청의 `invalid_grant`만 "로그아웃됨"으로 처리한다. `otp`의 `invalid_grant`는 "대기 중인 인증번호 없음"이라 인증번호를 다시 받게 한다. 네트워크 오류, 5xx, 429는 다시 시도한다.
 - `sign` 구간은 JWT의 서명·만료·발급자·수신자만 검사하고 DB를 조회하지 않는다. 그래서 로그아웃(`DeleteLoginSession`) 뒤에도 그 access 토큰은 만료(최대 1시간)까지 통과한다. 로그아웃은 `LOGIN_SESSION`을 끝내 refresh만 거절시킨다.
 - 인증에 실패한 `sign` 요청은 401이고 본문은 `{ "message": "잘못된 요청입니다.", "data": null, "code": 401 }`이다. 토큰이 없거나 위조·만료여도 같다.
 - Service는 `IHttpContextAccessor`의 클레임 `sub`에서 `USER_ID`를 꺼낸다. JwtBearer가 클레임 이름을 바꾸지 않도록 `MapInboundClaims = false`로 둔다.

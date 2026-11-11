@@ -32,9 +32,9 @@ public interface IAuthRepository
     Task<bool> UpdateLoginSessionAsync(LoginSession model, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 같은 계정·기기의 살아 있는 차량 로그인 세션을 모두 끝낸다.
+    /// 로그인 세션을 PK로 끝낸다(DELETE_YN = 1). PK로만 잠가 빈 범위에 갭 락을 남기지 않는다.
     /// </summary>
-    Task EndCarSessionsAsync(int userId, string deviceId, DateTime thisTime,
+    Task EndLoginSessionsAsync(IReadOnlyCollection<int> loginSessionIds, DateTime thisTime, string updateUser,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -55,6 +55,12 @@ public interface IAuthRepository
     /// </summary>
     Task<int?> LockLatestPhoneVerificationByPurposeAsync(string phoneHash, string purpose,
         IDbTransaction transaction, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 같은 계정·기기의 살아 있는 차량 로그인 세션 ID를 잠그지 않고 조회한다.
+    /// </summary>
+    Task<IReadOnlyList<int>> GetCarSessionIdsAsync(int userId, string deviceId, IDbTransaction? transaction = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 전화번호 해시가 같은 살아 있는 계정의 ID를 조회한다.

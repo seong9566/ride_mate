@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore.Storage;
+using MySql.Data.MySqlClient;
 using RideMateService.Comm;
 using RideMateService.Comm.Dto.v1.Auth.Request;
 using RideMateService.Comm.Dto.v1.Auth.Response;
@@ -54,8 +55,16 @@ public class AuthService : IAuthService
     /// <summary>
     /// 로그인 인증번호 발송
     /// </summary>
-    public async Task<ResponseModel<PhoneVerificationResultDto>> AddPhoneVerificationService(AddPhoneVerificationDto dto,
+    public Task<ResponseModel<PhoneVerificationResultDto>> AddPhoneVerificationService(AddPhoneVerificationDto dto,
         CancellationToken cancellationToken = default)
+    {
+        return RetryOnDeadlockAsync(() => AddPhoneVerificationCoreAsync(dto, cancellationToken));
+    }
+
+    // 처음 보는 번호는 FOR UPDATE가 행 없이 갭 락만 잡아, 같은 번호의 동시 발송이 INSERT에서 교착할 수 있다.
+    // 교착은 RetryOnDeadlockAsync가 한 번 다시 실행하므로 여기서는 500으로 바꾸지 않고 올려보낸다
+    private async Task<ResponseModel<PhoneVerificationResultDto>> AddPhoneVerificationCoreAsync(AddPhoneVerificationDto dto,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -139,9 +148,9 @@ public class AuthService : IAuthService
 
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
-            // 7) DB 반영 뒤 문자 발송
+            // 7) DB 반영 뒤 문자 발송 — 커밋한 뒤에는 요청이 끊겨도 보낸다(행만 남고 1분 동안 다시 받지 못하는 일을 막는다)
             await _smsSender.SendAsync(phoneDigits,
-                "[라이드메이트] 인증번호 " + code + " (3분 안에 입력해 주세요)", cancellationToken).ConfigureAwait(false);
+                "[라이드메이트] 인증번호 " + code + " (3분 안에 입력해 주세요)", CancellationToken.None).ConfigureAwait(false);
 
             // 8) 응답
             return new ResponseModel<PhoneVerificationResultDto>
@@ -152,7 +161,7 @@ public class AuthService : IAuthService
                 code = 200
             };
         }
-        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 그대로 올려보낸다
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && !IsDeadlock(ex)) // 요청 취소·교착은 그대로 올려보낸다
         {
             _logService.LogMessage(ex.ToString());
 #if DEBUG
@@ -177,7 +186,7 @@ public class AuthService : IAuthService
             return dto.grant_type switch
             {
                 GrantTypeRefreshToken => await RefreshTokenGrantAsync(dto, cancellationToken).ConfigureAwait(false),
-                GrantTypeOtp => await OtpGrantAsync(dto, cancellationToken).ConfigureAwait(false),
+                GrantTypeOtp => await RetryOnDeadlockAsync(() => OtpGrantAsync(dto, cancellationToken)).ConfigureAwait(false),
                 _ => TokenError("unsupported_grant_type", "grant_type is not supported")
             };
         }
@@ -374,6 +383,14 @@ public class AuthService : IAuthService
             return TokenError("invalid_grant", "no pending verification code");
         }
 
+        // 다른 용도의 행이 더 최근이어도 이 행이 잠겼으면 거절한다
+        if (verification.LockUntilDt > thisTime)
+        {
+            var retryAfter = RemainingSeconds(verification.LockUntilDt.Value, thisTime);
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return TokenError("otp_locked", "verification is temporarily locked", retryAfter: retryAfter);
+        }
+
         // 4) 만료 확인
         if (verification.ExpireDt <= thisTime)
         {
@@ -428,7 +445,9 @@ public class AuthService : IAuthService
         }
 
         // 8) 같은 기기의 기존 차량 세션 종료
-        await _authRepository.EndCarSessionsAsync(userId.Value, deviceId, thisTime, cancellationToken).ConfigureAwait(false);
+        var oldSessionIds = await _authRepository.GetCarSessionIdsAsync(userId.Value, deviceId,
+            transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+        await _authRepository.EndLoginSessionsAsync(oldSessionIds, thisTime, AuditUser, cancellationToken).ConfigureAwait(false);
 
         // 9) 새 차량 세션 저장
         var refreshToken = _tokenService.CreateRefreshToken();
@@ -500,6 +519,41 @@ public class AuthService : IAuthService
     private static bool IsValidCode(string? code)
     {
         return code is not null && Regex.IsMatch(code, @"\A[0-9]{6}\z");
+    }
+
+    // 교착(MySQL 1213)이면 변경 추적을 비우고 트랜잭션 전체를 한 번 다시 실행한다. 두 번째도 교착이면 500
+    private async Task<ResponseModel<T>> RetryOnDeadlockAsync<T>(Func<Task<ResponseModel<T>>> work)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await work().ConfigureAwait(false);
+            }
+            catch (Exception ex) when (IsDeadlock(ex))
+            {
+                _context.ChangeTracker.Clear();
+                if (attempt < 2)
+                    continue;
+
+                _logService.LogMessage(ex.ToString());
+#if DEBUG
+                _logService.ConsoleWarning(ex.ToString());
+#endif
+                return new ResponseModel<T> { message = "서버에서 요청을 처리하지 못하였습니다.", data = default, code = 500 };
+            }
+        }
+    }
+
+    private static bool IsDeadlock(Exception? ex)
+    {
+        for (; ex is not null; ex = ex.InnerException)
+        {
+            if (ex is MySqlException { Number: 1213 })
+                return true;
+        }
+
+        return false;
     }
 
     private static DateTime NowToSecond()

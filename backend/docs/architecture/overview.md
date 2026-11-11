@@ -17,6 +17,7 @@ RideMateService/
 │   ├── SignRouteConvention.cs    # /sign/ 구간 경로에 인증 요구를 거는 엔드포인트 규약
 │   ├── SignRouteOperationFilter.cs # Swagger에 /sign/ 구간 작업만 Bearer 표시
 │   ├── Security/                 # 해시·전화번호 암호화·토큰 서비스와 설정 클래스
+│   ├── Sms/                      # ISmsSender, 개발용 DevSmsSender
 │   ├── Logger/                   # ILogService, LogService
 │   └── Dto/v1/{도메인}/Request|Response/
 ├── Commons/
