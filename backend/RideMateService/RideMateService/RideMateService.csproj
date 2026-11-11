@@ -46,6 +46,12 @@
       <Compile Update="Repository\v1\Pickup\PickupRepository.SQL.cs">
         <DependentUpon>PickupRepository.cs</DependentUpon>
       </Compile>
+      <Compile Update="Repository\v1\Schedule\ScheduleRepository.EF.cs">
+        <DependentUpon>ScheduleRepository.cs</DependentUpon>
+      </Compile>
+      <Compile Update="Repository\v1\Schedule\ScheduleRepository.SQL.cs">
+        <DependentUpon>ScheduleRepository.cs</DependentUpon>
+      </Compile>
     </ItemGroup>
 
 </Project>

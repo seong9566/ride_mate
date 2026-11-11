@@ -135,7 +135,8 @@ public class DepartureGuideEnforcementDto
 public class DepartureGuideReasonDto
 {
     /// <summary>
-    /// 근거 코드 (ACADEMY_FRONT_RESTRICTED, HIGHER_SPOT_BLOCKED, NO_SPOT_AVAILABLE, CUSTOM_LOCATION)
+    /// 근거 코드 (ACADEMY_FRONT_RESTRICTED, HIGHER_SPOT_BLOCKED, NO_SPOT_AVAILABLE, CUSTOM_LOCATION, NO_ACADEMY_LOCATION).
+    /// NO_ACADEMY_LOCATION은 학원 좌표가 없어 픽업 지점·도보·단속 판정을 할 수 없다는 뜻이며 pickup은 null이다
     /// </summary>
     public string code { get; set; } = string.Empty;
 
