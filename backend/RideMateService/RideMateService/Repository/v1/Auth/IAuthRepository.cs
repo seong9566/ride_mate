@@ -21,6 +21,21 @@ public interface IAuthRepository
     Task<bool> UpdateQrLoginAsync(QrLogin model, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 살아 있는 운전자 계정을 PK로 불러온다.
+    /// </summary>
+    Task<UserInfo?> GetUserInfoAsync(int userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 운전자 계정 등록. 저장 뒤 model의 운전자 계정 ID가 채워진다.
+    /// </summary>
+    Task<bool> AddUserInfoAsync(UserInfo model, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 동의 기록을 등록한다.
+    /// </summary>
+    Task<bool> AddConsentsAsync(IEnumerable<Consent> models, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 살아 있는 휴대폰 인증번호를 PK로 불러온다(수정 대상)
     /// </summary>
     Task<PhoneVerification?> GetPhoneVerificationAsync(int phoneVerificationId,
@@ -42,6 +57,11 @@ public interface IAuthRepository
     Task<LoginSession?> GetLoginSessionAsync(int loginSessionId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 살아 있는 휴대폰 웹 로그인 세션을 PK로 불러온다(수정 대상).
+    /// </summary>
+    Task<LoginSession?> GetWebLoginSessionAsync(int loginSessionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 로그인 세션 수정
     /// </summary>
     Task<bool> UpdateLoginSessionAsync(LoginSession model, CancellationToken cancellationToken = default);
@@ -60,9 +80,21 @@ public interface IAuthRepository
     // ====== Dapper
 
     /// <summary>
+    /// 토큰 해시로 만료되지 않은 WEB 세션과 살아 있는 계정을 조회한다.
+    /// </summary>
+    Task<(int loginSessionId, int userId)?> GetWebSessionAsync(string tokenHash, DateTime thisTime,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// device_code 해시로 살아 있는 QR 로그인 요청을 찾아 FOR UPDATE로 잠그고 ID를 돌려준다.
     /// </summary>
     Task<int?> LockQrLoginByDeviceCodeHashAsync(string hash, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// user_code 해시로 살아 있는 QR 로그인 요청을 찾아 FOR UPDATE로 잠그고 ID를 돌려준다.
+    /// </summary>
+    Task<int?> LockQrLoginByUserCodeHashAsync(string userCodeHash, IDbTransaction transaction,
         CancellationToken cancellationToken = default);
 
     /// <summary>

@@ -19,6 +19,36 @@ public interface IAuthService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 휴대폰 웹 QR 로그인 진입
+    /// </summary>
+    Task<ResponseModel<WebQrLoginDto>> DetailQrLoginService(string userCode, int? webSessionUserId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 휴대폰 웹 인증번호 확인·가입
+    /// </summary>
+    Task<ResponseModel<WebQrLoginDto>> AddWebSessionService(AddWebSessionDto dto,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 휴대폰 웹 QR 로그인 허용
+    /// </summary>
+    Task<ResponseModel<WebQrLoginDto>> AddQrApprovalService(AddQrApprovalDto dto,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 휴대폰 웹 QR 로그인 취소
+    /// </summary>
+    Task<ResponseModel<WebQrLoginDto>> DeleteWebQrLoginService(DeleteWebQrLoginDto dto,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 휴대폰 웹 세션 종료
+    /// </summary>
+    Task<ResponseModel<WebQrLoginDto>> DeleteWebSessionService(DeleteWebSessionDto dto,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 토큰 발급
     /// </summary>
     Task<ResponseModel<TokenAuthResultDto>> TokenAuthService(TokenAuthDto dto, CancellationToken cancellationToken = default);

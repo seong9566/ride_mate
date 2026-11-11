@@ -8,8 +8,8 @@
 |---|---|
 | `{버전}` | `v1` |
 | `{도메인}` | PascalCase 단수 (`Pickup`, `User`) |
-| `{클라이언트}` | `M` 하나만 쓴다 |
-| `{인증구간}` | 인증이 필요한 API는 `sign`. 인증 방식은 `security.md` |
+| `{클라이언트}` | `M`(차량 앱), `W`(휴대폰 웹) |
+| `{인증구간}` | 인증이 필요한 API는 `sign`. `M/sign`은 차량 JWT, `W/sign`은 웹 세션 쿠키를 쓴다. 자세한 인증 방식은 `security.md` |
 | `{액션}` | PascalCase 동사+명사 |
 
 | HTTP | 액션 접두 | 예 |
@@ -129,6 +129,43 @@
 
 - 101·102는 HTTP 200이고 `message`는 `잘못된 요청입니다.`다.
 - 처음 보는 번호로 동시에 여러 번 요청해도 한 번만 보낸다. 나머지는 101이다(교착이 나면 서버가 짧게 기다려 최대 두 번 다시 시도한다). 드물게 500이 나면 다시 요청하면 101이 온다.
+
+## 휴대폰 웹 QR 로그인
+
+휴대폰 웹은 QR 주소로 진입한 뒤 인증번호를 받고 확인한다. 처음 보는 번호면 `AddWebSession`이 code 101로 이름·필수 약관이 필요하다고 알리며, 같은 인증번호에 이름과 약관 동의를 붙여 다시 보낸다. 본인 확인 뒤 차와 휴대폰의 `matchCode`가 같은지 확인하고 `AddQrApproval`로 허용한다.
+
+| API | 설명 |
+|---|---|
+| `GET /api/v1/Auth/W/DetailQrLogin` | QR 진입. 유효한 웹 세션이 있으면 곧바로 해당 계정을 QR에 연결한다 |
+| `POST /api/v1/Auth/W/AddPhoneVerification` | 로그인 인증번호 발송. 차량용 발송 API와 요청·응답 규칙이 같다 |
+| `POST /api/v1/Auth/W/AddWebSession` | 인증번호 확인, 처음 가입, 웹 세션 쿠키 발급, QR 본인 확인 완료 |
+| `POST /api/v1/Auth/W/sign/AddQrApproval` | 숫자 확인 뒤 차량 로그인을 허용한다 |
+| `DELETE /api/v1/Auth/W/sign/DeleteQrLogin` | 휴대폰에서 QR 로그인을 취소한다 |
+| `DELETE /api/v1/Auth/W/sign/DeleteWebSession` | 현재 웹 세션을 끝내고, 진행 중인 QR을 다른 번호로 인증할 수 있게 되돌린다 |
+
+`W/sign` API는 `rm_web_session` 쿠키가 필요하다. 쿠키 값은 응답 본문에 나오지 않는다.
+
+| `qrState` | 의미 |
+|---|---|
+| `NOT_FOUND` | QR 요청을 찾을 수 없다 |
+| `PENDING` | 아직 휴대폰에서 열지 않았다 |
+| `SCANNED` | 휴대폰에서 열었지만 본인 확인 전이다 |
+| `VERIFIED` | 휴대폰 본인 확인을 마치고 허용을 기다린다 |
+| `APPROVED` | 휴대폰에서 차량 로그인을 허용했다 |
+| `USED` | 이미 허용·사용됐거나 다른 휴대폰 계정이 잡은 QR이다 |
+| `CANCELED` | 차 또는 휴대폰에서 취소했다. `cancelReason`은 `USER`·`DRIVING`·`PHONE`이다 |
+| `EXPIRED` | QR의 3분 유효 시간이 지났다 |
+
+| `error` | 의미 |
+|---|---|
+| `invalid_request` | 요청 값이나 이름 형식이 올바르지 않다 |
+| `otp_not_requested` | 대기 중인 로그인 인증번호가 없거나 이미 사용했다 |
+| `otp_locked` | 인증번호 입력이 잠겼다. `retryAfter`가 함께 온다 |
+| `otp_expired` | 인증번호가 만료됐다 |
+| `otp_mismatch` | 인증번호가 틀렸다. `remainingAttempts`가 함께 온다 |
+| `terms_required` | 처음 가입하면서 필수 약관 둘 모두에 동의하지 않았다 |
+
+처음 온 번호에서 이름이 비어 있으면 HTTP 200, code 101, `signupRequired: true`를 돌려준다. 인증번호는 사용 처리하지 않으므로 같은 `phone`·`code`·`userCode`에 공백을 지운 이름과 `agreeTerms: true`, `agreePrivacy: true`를 붙여 다시 요청한다.
 
 ## 커서 페이징
 

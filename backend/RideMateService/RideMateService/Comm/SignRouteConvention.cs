@@ -1,17 +1,18 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
+using RideMateService.Comm.Security;
 
 namespace RideMateService.Comm;
 
 /// <summary>
-/// 최종 경로에 /sign/ 구간이 있는 엔드포인트에 기본 인증 정책을 붙이는 규약.
+/// 최종 경로에 /sign/ 구간이 있는 엔드포인트에 클라이언트별 인증 정책을 붙이는 규약.
 /// 액션이나 컨트롤러에 [Authorize] 계열이 직접 붙어 있으면 건드리지 않고,
 /// [AllowAnonymous]가 붙어 있으면 기동을 실패시킨다.
 /// </summary>
 public static class SignRouteConvention
 {
     /// <summary>
-    /// 컨트롤러 엔드포인트의 최종 경로를 보고 sign 구간이면 [Authorize]를 더한다.
+    /// 컨트롤러 엔드포인트의 최종 경로를 보고 sign 구간이면 알맞은 [Authorize]를 더한다.
     /// </summary>
     public static ControllerActionEndpointConventionBuilder RequireAuthForSignRoutes(
         this ControllerActionEndpointConventionBuilder builder)
@@ -31,7 +32,9 @@ public static class SignRouteConvention
             if (routeBuilder.Metadata.OfType<IAuthorizeData>().Any())
                 return;
 
-            routeBuilder.Metadata.Add(new AuthorizeAttribute());
+            routeBuilder.Metadata.Add(IsWebSignRoute(route)
+                ? new AuthorizeAttribute { AuthenticationSchemes = WebSessionAuthenticationHandler.AuthenticationScheme }
+                : new AuthorizeAttribute());
         });
 
         return builder;
@@ -43,5 +46,21 @@ public static class SignRouteConvention
     public static bool IsSignRoute(string? route)
     {
         return ("/" + (route ?? string.Empty).Trim('/') + "/").Contains("/sign/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// sign 구간 바로 앞이 W인 휴대폰 웹 인증 경로인지 본다.
+    /// </summary>
+    public static bool IsWebSignRoute(string? route)
+    {
+        var segments = (route ?? string.Empty).Split('/', StringSplitOptions.RemoveEmptyEntries);
+        for (var index = 1; index < segments.Length; index++)
+        {
+            if (segments[index].Equals("sign", StringComparison.OrdinalIgnoreCase)
+                && segments[index - 1].Equals("W", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 }

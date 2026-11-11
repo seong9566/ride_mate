@@ -2,6 +2,7 @@ using System.Data;
 using System.IO.Compression;
 using System.Text.RegularExpressions;
 using Dapper;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
@@ -61,6 +62,13 @@ builder.Services.AddSwaggerGen(c =>
         Type = SecuritySchemeType.Http,
         Scheme = "bearer",
         BearerFormat = "JWT"
+    });
+    c.AddSecurityDefinition(WebSessionAuthenticationHandler.AuthenticationScheme, new OpenApiSecurityScheme
+    {
+        Description = "휴대폰 웹 세션 쿠키",
+        Type = SecuritySchemeType.ApiKey,
+        In = ParameterLocation.Cookie,
+        Name = WebSessionAuthenticationHandler.CookieName
     });
     c.OperationFilter<SignRouteOperationFilter>();
 });
@@ -125,7 +133,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 await context.Response.WriteAsync(body).ConfigureAwait(false);
             }
         };
-    });
+    })
+    .AddScheme<AuthenticationSchemeOptions, WebSessionAuthenticationHandler>(
+        WebSessionAuthenticationHandler.AuthenticationScheme, null);
 #endregion
 
 #region DbContext

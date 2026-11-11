@@ -1,6 +1,7 @@
 using System.Data;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Options;
@@ -28,6 +29,8 @@ public class AuthService : IAuthService
     private const int QrLoginExpireMinutes = 3;
     private const int QrLoginPollSeconds = 5;
     private const int QrLoginInsertMaxAttempts = 3;
+    private const int WebSessionDays = 90;
+    private const string ConsentTermsVersion = "2026-11-11";
     private const string GrantTypeOtp = "otp";
     private const string GrantTypeRefreshToken = "refresh_token";
     private const string GrantTypeDeviceCode = "urn:ietf:params:oauth:grant-type:device_code";
@@ -40,6 +43,7 @@ public class AuthService : IAuthService
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly RideMateContext _context; // 트랜잭션 시작·완료에만 쓴다
     private readonly IHashService _hashService;
+    private readonly IPhoneCryptoService _phoneCryptoService;
     private readonly QrLoginOptions _qrLoginOptions;
     private readonly ISmsSender _smsSender;
     private readonly ITokenService _tokenService;
@@ -49,6 +53,7 @@ public class AuthService : IAuthService
         IHttpContextAccessor httpContextAccessor,
         RideMateContext context,
         IHashService hashService,
+        IPhoneCryptoService phoneCryptoService,
         IOptions<QrLoginOptions> qrLoginOptions,
         ISmsSender smsSender,
         ITokenService tokenService)
@@ -58,6 +63,7 @@ public class AuthService : IAuthService
         this._httpContextAccessor = httpContextAccessor;
         this._context = context;
         this._hashService = hashService;
+        this._phoneCryptoService = phoneCryptoService;
         this._qrLoginOptions = qrLoginOptions.Value;
         this._smsSender = smsSender;
         this._tokenService = tokenService;
@@ -272,6 +278,553 @@ public class AuthService : IAuthService
 #endif
             return new ResponseModel<PhoneVerificationResultDto>
                 { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+        }
+    }
+
+    /// <summary>
+    /// 휴대폰 웹 QR 로그인 진입
+    /// </summary>
+    public Task<ResponseModel<WebQrLoginDto>> DetailQrLoginService(string userCode, int? webSessionUserId,
+        CancellationToken cancellationToken = default)
+    {
+        return RetryOnDeadlockAsync(() => DetailQrLoginCoreAsync(userCode, webSessionUserId, cancellationToken));
+    }
+
+    private async Task<ResponseModel<WebQrLoginDto>> DetailQrLoginCoreAsync(string userCode, int? webSessionUserId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // 1) 입력 검증
+            if (string.IsNullOrWhiteSpace(userCode) || userCode.Length > 64)
+                return WebError("invalid_request");
+
+            DateTime thisTime = NowToSecond();
+
+            // 2) QR 요청 잠금·상태 판정
+            var transaction = await _context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            await using var transactionScope = transaction.ConfigureAwait(false);
+            var qrLoginId = await _authRepository.LockQrLoginByUserCodeHashAsync(CreateUserCodeHash(userCode),
+                transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+            var qrLogin = qrLoginId is null
+                ? null
+                : await _authRepository.GetQrLoginAsync(qrLoginId.Value, cancellationToken).ConfigureAwait(false);
+            var stateError = GetQrStateError(qrLogin, thisTime, webSessionUserId);
+            if (stateError is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return stateError;
+            }
+
+            // 3) 웹 세션이 없으면 최초 진입만 SCANNED로 바꾼다
+            if (webSessionUserId is null)
+            {
+                if (qrLogin!.Status == "PENDING")
+                {
+                    qrLogin.Status = "SCANNED";
+                    qrLogin.UpdateDt = thisTime;
+                    qrLogin.UpdateUser = AuditUser;
+                    if (!await _authRepository.UpdateQrLoginAsync(qrLogin, cancellationToken).ConfigureAwait(false))
+                    {
+                        await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return WebServerError();
+                    }
+                }
+
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                return WebSuccess(new WebQrLoginDto
+                {
+                    qrState = qrLogin!.Status,
+                    signedIn = false,
+                    expiresIn = RemainingSeconds(qrLogin.ExpireDt, thisTime)
+                });
+            }
+
+            // 4) 웹 세션 계정을 QR에 연결하고 계정 표시 값을 읽는다
+            var lockedUserId = await _authRepository.LockUserInfoAsync(webSessionUserId.Value,
+                transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+            var user = lockedUserId is null
+                ? null
+                : await _authRepository.GetUserInfoAsync(lockedUserId.Value, cancellationToken).ConfigureAwait(false);
+            if (user is null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<WebQrLoginDto>
+                    { message = "잘못된 요청입니다.", data = null, code = 401 };
+            }
+
+            if (qrLogin!.Status != "VERIFIED")
+            {
+                qrLogin.Status = "VERIFIED";
+                qrLogin.UserId = user.UserId;
+                qrLogin.UpdateDt = thisTime;
+                qrLogin.UpdateUser = AuditUser;
+                if (!await _authRepository.UpdateQrLoginAsync(qrLogin, cancellationToken).ConfigureAwait(false))
+                {
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return WebServerError();
+                }
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return WebSuccess(CreateVerifiedResult(qrLogin, user, thisTime));
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && !IsRetryableTransactionError(ex))
+        {
+            LogServiceException(ex);
+            return WebServerError();
+        }
+    }
+
+    /// <summary>
+    /// 휴대폰 웹 인증번호 확인·가입
+    /// </summary>
+    public Task<ResponseModel<WebQrLoginDto>> AddWebSessionService(AddWebSessionDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        return RetryOnDeadlockAsync(() => AddWebSessionCoreAsync(dto, cancellationToken));
+    }
+
+    private async Task<ResponseModel<WebQrLoginDto>> AddWebSessionCoreAsync(AddWebSessionDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // 1) 입력 검증
+            if (dto is null || !IsValidPhone(dto.phone) || !IsValidCode(dto.code)
+                || string.IsNullOrWhiteSpace(dto.userCode) || dto.userCode.Length > 64)
+                return WebError("invalid_request");
+
+            DateTime thisTime = NowToSecond();
+            var phoneDigits = dto.phone!;
+            var phoneHash = CreatePhoneHash(phoneDigits);
+            var transaction = await _context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            await using var transactionScope = transaction.ConfigureAwait(false);
+
+            // 2) 번호의 최근 인증 잠금 확인
+            var latestId = await _authRepository.LockLatestPhoneVerificationAsync(phoneHash,
+                transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+            var latest = latestId is null
+                ? null
+                : await _authRepository.GetPhoneVerificationAsync(latestId.Value, cancellationToken).ConfigureAwait(false);
+            if (latest?.LockUntilDt > thisTime)
+            {
+                var retryAfter = RemainingSeconds(latest.LockUntilDt.Value, thisTime);
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return WebError("otp_locked", retryAfter: retryAfter);
+            }
+
+            // 3) 로그인용 최근 인증번호 잠금
+            var verificationId = await _authRepository.LockLatestPhoneVerificationByPurposeAsync(phoneHash, "LOGIN",
+                transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+            var verification = verificationId is null
+                ? null
+                : await _authRepository.GetPhoneVerificationAsync(verificationId.Value, cancellationToken).ConfigureAwait(false);
+            if (verification is null || verification.VerifyDt is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return WebError("otp_not_requested");
+            }
+
+            if (verification.LockUntilDt > thisTime)
+            {
+                var retryAfter = RemainingSeconds(verification.LockUntilDt.Value, thisTime);
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return WebError("otp_locked", retryAfter: retryAfter);
+            }
+
+            // 4) 인증번호 만료 확인
+            if (verification.ExpireDt <= thisTime)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return WebError("otp_expired");
+            }
+
+            // 5) 인증번호 불일치 기록
+            if (verification.CodeHash != CreateCodeHash(phoneDigits, dto.code!))
+            {
+                verification.FailCnt = (sbyte)(verification.FailCnt + 1);
+                var isLocked = verification.FailCnt >= PhoneVerificationMaxFailCount;
+                if (isLocked)
+                    verification.LockUntilDt = thisTime.AddMinutes(PhoneVerificationLockMinutes);
+                verification.UpdateDt = thisTime;
+                verification.UpdateUser = AuditUser;
+                if (!await _authRepository.UpdatePhoneVerificationAsync(verification, cancellationToken).ConfigureAwait(false))
+                {
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return WebServerError();
+                }
+
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                return isLocked
+                    ? WebError("otp_locked", retryAfter: PhoneVerificationLockMinutes * 60)
+                    : WebError("otp_mismatch",
+                        remainingAttempts: PhoneVerificationMaxFailCount - verification.FailCnt);
+            }
+
+            // 6) QR 요청 잠금·상태 판정
+            var qrLoginId = await _authRepository.LockQrLoginByUserCodeHashAsync(CreateUserCodeHash(dto.userCode!),
+                transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+            var qrLogin = qrLoginId is null
+                ? null
+                : await _authRepository.GetQrLoginAsync(qrLoginId.Value, cancellationToken).ConfigureAwait(false);
+            var stateError = GetQrStateError(qrLogin, thisTime);
+            if (stateError is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return stateError;
+            }
+
+            // 7) 계정 확인·가입 — QR 잠금 뒤 USER_INFO를 잠가 전역 잠금 순서를 지킨다
+            var userId = await _authRepository.GetUserIdByPhoneHashAsync(phoneHash,
+                transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+            UserInfo? user;
+            if (userId is null)
+            {
+                var userName = dto.userName?.Trim();
+                if (string.IsNullOrEmpty(userName))
+                {
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return new ResponseModel<WebQrLoginDto>
+                    {
+                        message = "요청이 정상 처리되었습니다.",
+                        data = new WebQrLoginDto
+                        {
+                            qrState = qrLogin!.Status,
+                            signupRequired = true,
+                            signedIn = false
+                        },
+                        code = 101
+                    };
+                }
+
+                if (dto.agreeTerms != true || dto.agreePrivacy != true)
+                {
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return WebError("terms_required");
+                }
+
+                if (userName.EnumerateRunes().Count() > 50)
+                {
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return WebError("invalid_request");
+                }
+
+                user = new UserInfo
+                {
+                    PhoneEnc = _phoneCryptoService.Encrypt(phoneDigits),
+                    PhoneHash = phoneHash,
+                    UserName = userName,
+                    AutoSendYn = false,
+                    ArrivalLogYn = false,
+                    WakeBeforeMin = 5,
+                    CreateDt = thisTime,
+                    CreateUser = AuditUser,
+                    UpdateDt = thisTime,
+                    UpdateUser = AuditUser,
+                    DeleteYn = false
+                };
+                if (!await _authRepository.AddUserInfoAsync(user, cancellationToken).ConfigureAwait(false))
+                {
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return WebServerError();
+                }
+
+                var consents = new[]
+                {
+                    CreateSignupConsent(user.UserId, "TERMS", verification.PhoneVerificationId, thisTime),
+                    CreateSignupConsent(user.UserId, "PRIVACY", verification.PhoneVerificationId, thisTime)
+                };
+                if (!await _authRepository.AddConsentsAsync(consents, cancellationToken).ConfigureAwait(false))
+                {
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return WebServerError();
+                }
+            }
+            else
+            {
+                var lockedUserId = await _authRepository.LockUserInfoAsync(userId.Value,
+                    transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+                user = lockedUserId is null
+                    ? null
+                    : await _authRepository.GetUserInfoAsync(lockedUserId.Value, cancellationToken).ConfigureAwait(false);
+                if (user is null)
+                {
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return WebError("invalid_request");
+                }
+            }
+
+            if (qrLogin!.Status == "VERIFIED" && qrLogin.UserId != user.UserId)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return QrConflict("USED");
+            }
+
+            // 8) 인증번호 사용 완료 기록
+            verification.VerifyDt = thisTime;
+            verification.UpdateDt = thisTime;
+            verification.UpdateUser = AuditUser;
+            if (!await _authRepository.UpdatePhoneVerificationAsync(verification, cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return WebServerError();
+            }
+
+            // 9) 새 웹 세션 저장 — 기존 WEB 세션은 끝내지 않는다
+            var webSessionToken = Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(32));
+            var webSession = new LoginSession
+            {
+                UserId = user.UserId,
+                SessionType = "WEB",
+                TokenHash = CreateWebSessionHash(webSessionToken),
+                DeviceId = string.Empty,
+                ExpireDt = thisTime.AddDays(WebSessionDays),
+                LastUsedDt = thisTime,
+                CreateDt = thisTime,
+                CreateUser = AuditUser,
+                UpdateDt = thisTime,
+                UpdateUser = AuditUser,
+                DeleteYn = false
+            };
+            if (!await _authRepository.AddLoginSessionAsync(webSession, cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return WebServerError();
+            }
+
+            // 10) QR을 본인 확인 완료 상태로 저장
+            qrLogin.Status = "VERIFIED";
+            qrLogin.UserId = user.UserId;
+            qrLogin.UpdateDt = thisTime;
+            qrLogin.UpdateUser = AuditUser;
+            if (!await _authRepository.UpdateQrLoginAsync(qrLogin, cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return WebServerError();
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+            // 11) 새 토큰은 JSON에서 숨기고 Controller가 쿠키로만 내보낸다
+            var result = CreateVerifiedResult(qrLogin, user, thisTime);
+            result.webSessionToken = webSessionToken;
+            return WebSuccess(result);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && !IsRetryableTransactionError(ex))
+        {
+            LogServiceException(ex);
+            return WebServerError();
+        }
+    }
+
+    /// <summary>
+    /// 휴대폰 웹 QR 로그인 허용
+    /// </summary>
+    public Task<ResponseModel<WebQrLoginDto>> AddQrApprovalService(AddQrApprovalDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        return RetryOnDeadlockAsync(() => AddQrApprovalCoreAsync(dto, cancellationToken));
+    }
+
+    private async Task<ResponseModel<WebQrLoginDto>> AddQrApprovalCoreAsync(AddQrApprovalDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (dto is null || string.IsNullOrWhiteSpace(dto.userCode) || dto.userCode.Length > 64
+                || !TryGetWebClaims(out var userId, out _))
+                return WebError("invalid_request");
+
+            DateTime thisTime = NowToSecond();
+            var transaction = await _context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            await using var transactionScope = transaction.ConfigureAwait(false);
+
+            // 1) QR 요청 잠금·상태 판정
+            var qrLoginId = await _authRepository.LockQrLoginByUserCodeHashAsync(CreateUserCodeHash(dto.userCode!),
+                transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+            var qrLogin = qrLoginId is null
+                ? null
+                : await _authRepository.GetQrLoginAsync(qrLoginId.Value, cancellationToken).ConfigureAwait(false);
+            var stateError = GetQrStateError(qrLogin, thisTime, userId);
+            if (stateError is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return stateError;
+            }
+
+            // 2) 같은 계정이 본인 확인한 QR만 허용한다
+            if (qrLogin!.Status != "VERIFIED" || qrLogin.UserId != userId)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return QrConflict(qrLogin.Status);
+            }
+
+            qrLogin.Status = "APPROVED";
+            qrLogin.UpdateDt = thisTime;
+            qrLogin.UpdateUser = AuditUser;
+            if (!await _authRepository.UpdateQrLoginAsync(qrLogin, cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return WebServerError();
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return WebSuccess(new WebQrLoginDto { qrState = "APPROVED", signedIn = true });
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && !IsRetryableTransactionError(ex))
+        {
+            LogServiceException(ex);
+            return WebServerError();
+        }
+    }
+
+    /// <summary>
+    /// 휴대폰 웹 QR 로그인 취소
+    /// </summary>
+    public Task<ResponseModel<WebQrLoginDto>> DeleteWebQrLoginService(DeleteWebQrLoginDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        return RetryOnDeadlockAsync(() => DeleteWebQrLoginCoreAsync(dto, cancellationToken));
+    }
+
+    private async Task<ResponseModel<WebQrLoginDto>> DeleteWebQrLoginCoreAsync(DeleteWebQrLoginDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (dto is null || string.IsNullOrWhiteSpace(dto.userCode) || dto.userCode.Length > 64
+                || !TryGetWebClaims(out var userId, out _))
+                return WebError("invalid_request");
+
+            DateTime thisTime = NowToSecond();
+            var transaction = await _context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            await using var transactionScope = transaction.ConfigureAwait(false);
+
+            // 1) QR 요청 잠금
+            var qrLoginId = await _authRepository.LockQrLoginByUserCodeHashAsync(CreateUserCodeHash(dto.userCode!),
+                transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+            var qrLogin = qrLoginId is null
+                ? null
+                : await _authRepository.GetQrLoginAsync(qrLoginId.Value, cancellationToken).ConfigureAwait(false);
+            if (qrLogin is null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<WebQrLoginDto>
+                {
+                    message = "잘못된 요청입니다.",
+                    data = new WebQrLoginDto { qrState = "NOT_FOUND", signedIn = true },
+                    code = 404
+                };
+            }
+
+            // 2) 이미 취소된 요청은 계정과 관계없이 그대로 성공한다
+            if (qrLogin.Status == "CANCELED")
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return WebSuccess(new WebQrLoginDto
+                {
+                    qrState = "CANCELED",
+                    cancelReason = qrLogin.CancelReason,
+                    signedIn = true
+                });
+            }
+
+            // 3) 이미 사용한 요청과 다른 계정이 잡은 요청은 취소하지 않는다
+            if (qrLogin.Status == "USED" || (qrLogin.UserId is not null && qrLogin.UserId != userId))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return QrConflict("USED", signedIn: true);
+            }
+
+            // 4) 휴대폰 취소 상태 저장
+            qrLogin.Status = "CANCELED";
+            qrLogin.CancelReason = "PHONE";
+            qrLogin.UpdateDt = thisTime;
+            qrLogin.UpdateUser = AuditUser;
+            if (!await _authRepository.UpdateQrLoginAsync(qrLogin, cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return WebServerError();
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return WebSuccess(new WebQrLoginDto
+            {
+                qrState = "CANCELED",
+                cancelReason = "PHONE",
+                signedIn = true
+            });
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && !IsRetryableTransactionError(ex))
+        {
+            LogServiceException(ex);
+            return WebServerError();
+        }
+    }
+
+    /// <summary>
+    /// 휴대폰 웹 세션 종료
+    /// </summary>
+    public Task<ResponseModel<WebQrLoginDto>> DeleteWebSessionService(DeleteWebSessionDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        return RetryOnDeadlockAsync(() => DeleteWebSessionCoreAsync(dto, cancellationToken));
+    }
+
+    private async Task<ResponseModel<WebQrLoginDto>> DeleteWebSessionCoreAsync(DeleteWebSessionDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (dto is null || dto.userCode?.Length > 64 || !TryGetWebClaims(out var userId, out var loginSessionId))
+                return WebError("invalid_request");
+
+            DateTime thisTime = NowToSecond();
+            var transaction = await _context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            await using var transactionScope = transaction.ConfigureAwait(false);
+            string? qrState = null;
+
+            // 1) 요청한 QR이 이 계정의 VERIFIED 상태면 SCANNED로 되돌린다
+            if (!string.IsNullOrEmpty(dto.userCode))
+            {
+                var qrLoginId = await _authRepository.LockQrLoginByUserCodeHashAsync(CreateUserCodeHash(dto.userCode),
+                    transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+                var qrLogin = qrLoginId is null
+                    ? null
+                    : await _authRepository.GetQrLoginAsync(qrLoginId.Value, cancellationToken).ConfigureAwait(false);
+                if (qrLogin is not null && qrLogin.ExpireDt > thisTime
+                    && qrLogin.Status == "VERIFIED" && qrLogin.UserId == userId)
+                {
+                    qrLogin.Status = "SCANNED";
+                    qrLogin.UserId = null;
+                    qrLogin.UpdateDt = thisTime;
+                    qrLogin.UpdateUser = AuditUser;
+                    if (!await _authRepository.UpdateQrLoginAsync(qrLogin, cancellationToken).ConfigureAwait(false))
+                    {
+                        await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return WebServerError();
+                    }
+
+                    qrState = "SCANNED";
+                }
+            }
+
+            // 2) sid가 가리키는 WEB 세션만 끝낸다
+            var session = await _authRepository.GetWebLoginSessionAsync(loginSessionId, cancellationToken).ConfigureAwait(false);
+            if (session is not null && session.UserId == userId)
+            {
+                await _authRepository.EndLoginSessionsAsync(new[] { loginSessionId }, thisTime, AuditUser, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return WebSuccess(new WebQrLoginDto { qrState = qrState, signedIn = false });
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && !IsRetryableTransactionError(ex))
+        {
+            LogServiceException(ex);
+            return WebServerError();
         }
     }
 
@@ -827,6 +1380,11 @@ public class AuthService : IAuthService
         return _hashService.Hmac("qr-user:" + userCode);
     }
 
+    private string CreateWebSessionHash(string token)
+    {
+        return _hashService.Hmac("web-session:" + token);
+    }
+
     private static bool IsValidPhone(string? phone)
     {
         return phone is not null && Regex.IsMatch(phone, @"\A01[016789][0-9]{7,8}\z");
@@ -837,7 +1395,7 @@ public class AuthService : IAuthService
         return code is not null && Regex.IsMatch(code, @"\A[0-9]{6}\z");
     }
 
-    // 교착(MySQL 1213)이면 변경 추적을 비우고 짧게 기다린 뒤 트랜잭션 전체를 다시 실행한다(최대 3번 실행). 세 번 모두 교착이면 500
+    // 교착(MySQL 1213)이나 동시 가입 UNIQUE 충돌(1062)이면 변경 추적을 비우고 트랜잭션 전체를 다시 실행한다(최대 3번 실행)
     private async Task<ResponseModel<T>> RetryOnDeadlockAsync<T>(Func<Task<ResponseModel<T>>> work)
     {
         for (var attempt = 1; ; attempt++)
@@ -846,7 +1404,7 @@ public class AuthService : IAuthService
             {
                 return await work().ConfigureAwait(false);
             }
-            catch (Exception ex) when (IsDeadlock(ex))
+            catch (Exception ex) when (IsRetryableTransactionError(ex))
             {
                 _context.ChangeTracker.Clear();
                 if (attempt < DeadlockMaxAttempts)
@@ -876,6 +1434,11 @@ public class AuthService : IAuthService
         return false;
     }
 
+    private static bool IsRetryableTransactionError(Exception? ex)
+    {
+        return IsDeadlock(ex) || IsDuplicateKey(ex);
+    }
+
     private static bool IsDuplicateKey(Exception? ex)
     {
         for (; ex is not null; ex = ex.InnerException)
@@ -896,6 +1459,148 @@ public class AuthService : IAuthService
     private static int RemainingSeconds(DateTime until, DateTime thisTime)
     {
         return (int)Math.Ceiling((until - thisTime).TotalSeconds);
+    }
+
+    private Consent CreateSignupConsent(int userId, string consentType, int phoneVerificationId, DateTime thisTime)
+    {
+        return new Consent
+        {
+            UserId = userId,
+            ConsentType = consentType,
+            AgreeYn = true,
+            TermsVersion = ConsentTermsVersion,
+            VerifyMethod = "PHONE_OTP",
+            PhoneVerificationId = phoneVerificationId,
+            ConsentDt = thisTime,
+            CreateDt = thisTime,
+            CreateUser = AuditUser,
+            UpdateDt = thisTime,
+            UpdateUser = AuditUser,
+            DeleteYn = false
+        };
+    }
+
+    private WebQrLoginDto CreateVerifiedResult(QrLogin qrLogin, UserInfo user, DateTime thisTime)
+    {
+        return new WebQrLoginDto
+        {
+            qrState = "VERIFIED",
+            signedIn = true,
+            signupRequired = false,
+            userName = user.UserName,
+            maskedPhone = MaskPhone(_phoneCryptoService.Decrypt(user.PhoneEnc)),
+            matchCode = qrLogin.MatchCode,
+            expiresIn = RemainingSeconds(qrLogin.ExpireDt, thisTime)
+        };
+    }
+
+    private static string MaskPhone(string phoneDigits)
+    {
+        return phoneDigits[..3] + "-****-" + phoneDigits[^4..];
+    }
+
+    private bool TryGetWebClaims(out int userId, out int loginSessionId)
+    {
+        var user = _httpContextAccessor.HttpContext?.User;
+        loginSessionId = 0;
+        return int.TryParse(user?.FindFirstValue("sub"), out userId)
+               && int.TryParse(user?.FindFirstValue("sid"), out loginSessionId);
+    }
+
+    private static ResponseModel<WebQrLoginDto>? GetQrStateError(QrLogin? qrLogin, DateTime thisTime,
+        int? webSessionUserId = null)
+    {
+        if (qrLogin is null)
+        {
+            return new ResponseModel<WebQrLoginDto>
+            {
+                message = "잘못된 요청입니다.",
+                data = new WebQrLoginDto { qrState = "NOT_FOUND", signedIn = false },
+                code = 404
+            };
+        }
+
+        if (qrLogin.Status is "USED" or "APPROVED")
+            return QrConflict("USED");
+
+        if (qrLogin.Status == "CANCELED")
+        {
+            return new ResponseModel<WebQrLoginDto>
+            {
+                message = "잘못된 요청입니다.",
+                data = new WebQrLoginDto
+                {
+                    qrState = "CANCELED",
+                    cancelReason = qrLogin.CancelReason,
+                    signedIn = false
+                },
+                code = 409
+            };
+        }
+
+        if (qrLogin.ExpireDt <= thisTime)
+            return QrConflict("EXPIRED");
+
+        if (qrLogin.Status == "VERIFIED" && webSessionUserId is not null
+            && qrLogin.UserId != webSessionUserId)
+            return QrConflict("USED");
+
+        return null;
+    }
+
+    private static ResponseModel<WebQrLoginDto> QrConflict(string qrState, bool signedIn = false)
+    {
+        return new ResponseModel<WebQrLoginDto>
+        {
+            message = "잘못된 요청입니다.",
+            data = new WebQrLoginDto { qrState = qrState, signedIn = signedIn },
+            code = 409
+        };
+    }
+
+    private static ResponseModel<WebQrLoginDto> WebError(string error, int? remainingAttempts = null,
+        int? retryAfter = null)
+    {
+        return new ResponseModel<WebQrLoginDto>
+        {
+            message = "잘못된 요청입니다.",
+            data = new WebQrLoginDto
+            {
+                error = error,
+                signedIn = false,
+                remainingAttempts = remainingAttempts,
+                retryAfter = retryAfter
+            },
+            code = 400
+        };
+    }
+
+    private static ResponseModel<WebQrLoginDto> WebSuccess(WebQrLoginDto data)
+    {
+        return new ResponseModel<WebQrLoginDto>
+        {
+            message = "요청이 정상 처리되었습니다.",
+            data = data,
+            code = 200
+        };
+    }
+
+    private static ResponseModel<WebQrLoginDto> WebServerError()
+    {
+        return new ResponseModel<WebQrLoginDto>
+        {
+            message = "서버에서 요청을 처리하지 못하였습니다.",
+            data = null,
+            code = 500
+        };
+    }
+
+    private void LogServiceException(Exception ex)
+    {
+        _logService.LogMessage(ex.ToString());
+#if DEBUG
+        _logService.ConsoleWarning(ex.ToString());
+#endif
     }
 
     // OAuth 기기 인증 실패 응답(400)

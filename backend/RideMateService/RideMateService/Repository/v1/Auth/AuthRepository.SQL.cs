@@ -6,6 +6,43 @@ namespace RideMateService.Repository.v1.Auth;
 public partial class AuthRepository
 {
     /// <summary>
+    /// 토큰 해시로 만료되지 않은 WEB 세션과 살아 있는 계정을 조회한다.
+    /// </summary>
+    public async Task<(int loginSessionId, int userId)?> GetWebSessionAsync(string tokenHash, DateTime thisTime,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("tokenHash", tokenHash);
+            dp.Add("thisTime", thisTime);
+
+            var sql = @"
+                SELECT s.LOGIN_SESSION_ID AS LoginSessionId,
+                       s.USER_ID AS UserId
+                FROM LOGIN_SESSION AS s
+                INNER JOIN USER_INFO AS u ON u.USER_ID = s.USER_ID
+                WHERE s.TOKEN_HASH = @tokenHash
+                  AND s.SESSION_TYPE = 'WEB'
+                  AND s.DELETE_YN = FALSE
+                  AND s.EXPIRE_DT > @thisTime
+                  AND u.DELETE_YN = FALSE";
+
+            var row = await _dapper.QueryFirstOrDefaultAsync<WebSessionRow>(
+                new CommandDefinition(sql, dp, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            return row is null ? null : (row.LoginSessionId, row.UserId);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
     /// device_code 해시로 살아 있는 QR 로그인 요청을 찾아 FOR UPDATE로 잠그고 ID를 돌려준다.
     /// </summary>
     public async Task<int?> LockQrLoginByDeviceCodeHashAsync(string hash, IDbTransaction transaction,
@@ -20,6 +57,37 @@ public partial class AuthRepository
                 SELECT t.QR_LOGIN_ID
                 FROM QR_LOGIN AS t
                 WHERE t.DEVICE_CODE_HASH = @hash
+                  AND t.DELETE_YN = FALSE
+                FOR UPDATE";
+
+            return await _dapper.QueryFirstOrDefaultAsync<int?>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// user_code 해시로 살아 있는 QR 로그인 요청을 찾아 FOR UPDATE로 잠그고 ID를 돌려준다.
+    /// </summary>
+    public async Task<int?> LockQrLoginByUserCodeHashAsync(string userCodeHash, IDbTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("hash", userCodeHash);
+
+            var sql = @"
+                SELECT t.QR_LOGIN_ID
+                FROM QR_LOGIN AS t
+                WHERE t.USER_CODE_HASH = @hash
                   AND t.DELETE_YN = FALSE
                 FOR UPDATE";
 
@@ -290,5 +358,12 @@ public partial class AuthRepository
 #endif
             throw;
         }
+    }
+
+    private sealed class WebSessionRow
+    {
+        public int LoginSessionId { get; set; }
+
+        public int UserId { get; set; }
     }
 }
