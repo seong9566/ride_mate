@@ -80,6 +80,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `AUTO_SEND_YN` | TINYINT(1) | N | 링크 자동 발송 여부. 처음 값 0(매번 음성 확인) |
 | `ARRIVAL_LOG_YN` | TINYINT(1) | N | 차량 도착 기록 사용 여부. 처음 값 0. 기록 자체는 차 안에만 있고 서버에 오지 않는다 |
 | `WAKE_BEFORE_MIN` | TINYINT | N | 쉬는 모드에서 깨우는 시점(출발 몇 분 전, 0이면 출발 시각). 처음 값 5 |
+| `SETUP_DONE_DT` | DATETIME | Y | 초기 설정 완료 시각. 4/4 완료 API가 채운다. NULL이면 로그인 응답의 `setup_required`가 true |
 
 - 살아 있는 행 UNIQUE: `(PHONE_HASH, ACTIVE_FLAG)`
 - 차 정보는 아이 화면에 보이는 값이다. 기획이 확정되지 않아 NULL 허용으로 두고 최초 설정에서 선택 입력으로 받는다.

@@ -69,7 +69,7 @@
 }
 ```
 
-- `session_id`는 `LOGIN_SESSION_ID`다. `setup_required`는 그 계정의 운전자 이름이 비었거나 살아 있는 아이가 없으면 `true`다.
+- `session_id`는 `LOGIN_SESSION_ID`다. `setup_required`는 그 계정의 운전자 이름이 비었거나 초기 설정을 완료하지 않았으면(`SETUP_DONE_DT` 없음) `true`다.
 - `otp`로 같은 기기에서 같은 계정에 다시 로그인하면 그 계정·기기의 직전 차량 세션은 모두 끝나고 새 세션이 만들어진다.
 - 실패(400)도 감싸지 않고 `{ "error": "...", "error_description": "..." }`를 돌려준다. `error_description`은 영어 한 줄이고 앱은 `error` 값으로 분기한다.
 
