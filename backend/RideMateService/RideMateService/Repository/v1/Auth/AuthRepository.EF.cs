@@ -113,15 +113,23 @@ public partial class AuthRepository
     }
 
     /// <summary>
-    /// 운전자 계정 수정
+    /// 운전자 계정의 도착 기록 사용 여부만 바꾼다. 다른 컬럼은 건드리지 않고, 바뀐 행이 정확히 1개일 때 true를 돌려준다.
     /// </summary>
-    public async Task<bool> UpdateUserInfoAsync(UserInfo model, CancellationToken cancellationToken = default)
+    public async Task<bool> UpdateUserArrivalLogAsync(int userId, bool arrivalLogYn, DateTime updateDt, string updateUser,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            _context.UserInfos.Update(model);
+            var affected = await _context.UserInfos
+                .Where(x => x.UserId == userId
+                            && x.DeleteYn == false)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.ArrivalLogYn, arrivalLogYn)
+                    .SetProperty(x => x.UpdateDt, updateDt)
+                    .SetProperty(x => x.UpdateUser, updateUser), cancellationToken)
+                .ConfigureAwait(false);
 
-            return await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false) > 0;
+            return affected == 1;
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
         {

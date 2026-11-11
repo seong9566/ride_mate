@@ -169,10 +169,7 @@ public partial class AuthService
                 "GUARDIAN", transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
             var lockedUserId = await _authRepository.LockUserInfoAsync(loginUser.UserId,
                 transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
-            var user = lockedUserId is null
-                ? null
-                : await _authRepository.GetUserInfoAsync(lockedUserId.Value, cancellationToken).ConfigureAwait(false);
-            if (user is null) // 잠그는 사이에 계정이 지워졌다
+            if (lockedUserId is null) // 잠그는 사이에 계정이 지워졌다
             {
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
                 return new ResponseModel<bool> { message = "잘못된 요청입니다.", data = false, code = 401 };
@@ -192,9 +189,9 @@ public partial class AuthService
             var arrivalLogYn = dto.arrivalLogYn.Value;
             var consents = new[]
             {
-                CreateConsent(user.UserId, "GUARDIAN", true, "PHONE_OTP", verification.PhoneVerificationId, thisTime),
-                CreateConsent(user.UserId, "CHILD_INFO", true, "CHECK", null, thisTime),
-                CreateConsent(user.UserId, "ARRIVAL_LOG", arrivalLogYn, "CHECK", null, thisTime)
+                CreateConsent(lockedUserId.Value, "GUARDIAN", true, "PHONE_OTP", verification.PhoneVerificationId, thisTime),
+                CreateConsent(lockedUserId.Value, "CHILD_INFO", true, "CHECK", null, thisTime),
+                CreateConsent(lockedUserId.Value, "ARRIVAL_LOG", arrivalLogYn, "CHECK", null, thisTime)
             };
             if (!await _authRepository.AddConsentsAsync(consents, cancellationToken).ConfigureAwait(false))
             {
@@ -202,11 +199,9 @@ public partial class AuthService
                 return new ResponseModel<bool> { message = "서버에서 요청을 처리하지 못하였습니다.", data = false, code = 500 };
             }
 
-            // 6) 도착 기록 사본 — 같은 트랜잭션에서 ARRIVAL_LOG 행과 함께 바꾼다
-            user.ArrivalLogYn = arrivalLogYn;
-            user.UpdateDt = thisTime;
-            user.UpdateUser = AuditUser;
-            if (!await _authRepository.UpdateUserInfoAsync(user, cancellationToken).ConfigureAwait(false))
+            // 6) 도착 기록 사본 — 같은 트랜잭션에서 ARRIVAL_LOG 행과 함께 그 칸만 바꾼다
+            if (!await _authRepository.UpdateUserArrivalLogAsync(lockedUserId.Value, arrivalLogYn, thisTime, AuditUser,
+                    cancellationToken).ConfigureAwait(false))
             {
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
                 return new ResponseModel<bool> { message = "서버에서 요청을 처리하지 못하였습니다.", data = false, code = 500 };
