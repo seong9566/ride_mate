@@ -1,0 +1,526 @@
+{
+  "id": "gitsLinkBuild001",
+  "name": "GITS 링크 목록 만들기",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "수동 실행",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-1760, 260]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const key = String($env.GITS_API_KEY ?? '').trim();\n\nreturn [{\n  json: {\n    routeNames: ['평촌대로', '시민대로', '흥안대로', '관악대로', '귀인로'],\n    hasKey: key.length > 0,\n    ok: false,\n    reason: key.length > 0 ? null : 'NO_KEY',\n    missingRouteNames: [],\n    routeCount: 0,\n    linkCount: 0,\n    upserted: 0,\n    softDeleted: 0,\n  },\n}];"
+      },
+      "id": "build-settings",
+      "name": "설정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1540, 260]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "has-gits-key",
+              "leftValue": "={{ $json.hasKey }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-api-key",
+      "name": "API 키 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [-1320, 260]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\n\nreturn [{\n  json: {\n    ok: false,\n    reason: context.reason || 'UNKNOWN',\n    missingRouteNames: context.missingRouteNames || [],\n    routeCount: Number(context.routeCount || 0),\n    linkCount: Number(context.linkCount || 0),\n    upserted: Number(context.upserted || 0),\n    softDeleted: Number(context.softDeleted || 0),\n  },\n}];"
+      },
+      "id": "failure-result",
+      "name": "실패 결과",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2980, 620]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://openapigits.gg.go.kr/api/rest/getRoadInfoList?serviceKey=' + $env.GITS_API_KEY }}",
+        "authentication": "none",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text",
+              "outputPropertyName": "body"
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "request-roads",
+      "name": "도로 목록 호출",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [-1100, 140],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const settings = $('설정').first().json;\nconst response = $input.first().json;\nconst status = Number(response.statusCode);\nconst body = typeof response.body === 'string' ? response.body : '';\n\nfunction decodeXml(value) {\n  return value\n    .replace(/&lt;/g, '<')\n    .replace(/&gt;/g, '>')\n    .replace(/&quot;/g, String.fromCharCode(34))\n    .replace(/&apos;/g, String.fromCharCode(39))\n    .replace(/&#(\\d+);/g, (_, code) => String.fromCodePoint(Number(code)))\n    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)))\n    .replace(/&amp;/g, '&');\n}\n\nfunction tagValue(xml, tagName) {\n  const match = xml.match(new RegExp(`<${tagName}(?:\\\\s[^>]*)?>([\\\\s\\\\S]*?)<\\\\/${tagName}>`, 'i'));\n  return match ? decodeXml(match[1].replace(/^\\s*<!\\[CDATA\\[/, '').replace(/\\]\\]>\\s*$/, '').trim()) : null;\n}\n\nfunction findJsonValue(value, key) {\n  if (Array.isArray(value)) {\n    for (const child of value) {\n      const found = findJsonValue(child, key);\n      if (found != null) return found;\n    }\n    return null;\n  }\n  if (!value || typeof value !== 'object') return null;\n  if (Object.prototype.hasOwnProperty.call(value, key) && value[key] != null) return value[key];\n  for (const child of Object.values(value)) {\n    const found = findJsonValue(child, key);\n    if (found != null) return found;\n  }\n  return null;\n}\n\nfunction jsonRecords(value, anchor) {\n  const records = [];\n  function visit(node) {\n    if (Array.isArray(node)) {\n      for (const child of node) visit(child);\n      return;\n    }\n    if (!node || typeof node !== 'object') return;\n    let childHasRecord = false;\n    for (const child of Object.values(node)) {\n      const before = records.length;\n      visit(child);\n      if (records.length > before) childHasRecord = true;\n    }\n    if (!childHasRecord && Object.prototype.hasOwnProperty.call(node, anchor)) records.push(node);\n  }\n  visit(value);\n  return records;\n}\n\nfunction xmlRecords(xml, anchor, fields) {\n  const root = { children: [] };\n  const stack = [root];\n  const pattern = /<\\/?([A-Za-z_][\\w:.-]*)(?:\\s[^>]*)?\\s*\\/?\\s*>/g;\n  let match;\n  while ((match = pattern.exec(xml)) !== null) {\n    const token = match[0];\n    const name = match[1].split(':').pop();\n    if (token.startsWith('</')) {\n      for (let index = stack.length - 1; index > 0; index -= 1) {\n        if (stack[index].name === name) {\n          const node = stack[index];\n          node.inner = xml.slice(node.contentStart, match.index);\n          stack.length = index;\n          break;\n        }\n      }\n    } else if (!token.endsWith('/>')) {\n      const node = { name, contentStart: pattern.lastIndex, inner: '', children: [] };\n      stack[stack.length - 1].children.push(node);\n      stack.push(node);\n    }\n  }\n  function qualifies(node) {\n    if (!node.inner || tagValue(node.inner, anchor) == null) return false;\n    return fields.some((field) => field !== anchor && tagValue(node.inner, field) != null);\n  }\n  const records = [];\n  function collect(node) {\n    const qualifiedChildren = node.children.filter(qualifies);\n    if (qualifies(node) && qualifiedChildren.length === 0) {\n      records.push(node.inner);\n      return;\n    }\n    for (const child of node.children) collect(child);\n  }\n  for (const child of root.children) collect(child);\n  return records;\n}\n\nlet parsedJson = null;\ntry { parsedJson = JSON.parse(body); } catch {}\nconst headerCdRaw = parsedJson == null ? tagValue(body, 'headerCd') : findJsonValue(parsedJson, 'headerCd');\nconst headerCd = headerCdRaw == null ? null : String(headerCdRaw).trim();\nif (status !== 200 || headerCd !== '0') {\n  const reason = status !== 200\n    ? (Number.isInteger(status) ? `HTTP_${status}` : 'HTTP_ERROR')\n    : headerCd && /^[A-Za-z0-9_-]{1,50}$/.test(headerCd) ? `GITS_${headerCd}` : 'INVALID_DATA';\n  return [{ json: { ...settings, ok: false, reason } }];\n}\n\nconst records = parsedJson == null\n  ? xmlRecords(body, 'routeId', ['routeId', 'routeNm'])\n  : jsonRecords(parsedJson, 'routeId');\nconst roads = [];\nlet invalid = false;\nfor (const record of records) {\n  const get = (field) => typeof record === 'string' ? tagValue(record, field) : findJsonValue(record, field);\n  const routeNameValue = get('routeNm');\n  const routeName = routeNameValue == null ? null : String(routeNameValue).trim();\n  if (!settings.routeNames.includes(routeName)) continue;\n  const routeIdValue = get('routeId');\n  const routeId = routeIdValue == null ? '' : String(routeIdValue).trim();\n  if (!routeId || routeId.length > 20) {\n    invalid = true;\n    continue;\n  }\n  if (!roads.some((road) => road.routeId === routeId)) roads.push({ routeId, routeName });\n}\nconst foundNames = new Set(roads.map((road) => road.routeName));\nconst missingRouteNames = settings.routeNames.filter((name) => !foundNames.has(name));\n\nreturn [{\n  json: {\n    ...settings,\n    ok: !invalid,\n    reason: invalid ? 'INVALID_DATA' : null,\n    roads,\n    routeCount: roads.length,\n    missingRouteNames,\n    hasRoads: roads.length > 0,\n  },\n}];"
+      },
+      "id": "judge-roads",
+      "name": "도로 목록 판정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-880, 140]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "roads-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-roads",
+      "name": "도로 목록 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [-660, 140]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "has-roads",
+              "leftValue": "={{ $json.hasRoads }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-road-count",
+      "name": "대상 도로 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [-440, 40]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "return $input.first().json.roads.map((road) => ({ json: road }));"
+      },
+      "id": "expand-roads",
+      "name": "도로별 링크 호출 행 만들기",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-220, -80]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://openapigits.gg.go.kr/api/rest/getRoadLinkInfoList?serviceKey=' + $env.GITS_API_KEY + '&routeId=' + encodeURIComponent($json.routeId) }}",
+        "authentication": "none",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 250
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text",
+              "outputPropertyName": "body"
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "request-road-links",
+      "name": "도로별 링크 호출",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [0, 0],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "merge-road-links",
+      "name": "도로별 링크 응답 합치기",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [220, -80]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $('도로 목록 판정').first().json;\nconst links = [];\nlet failureReason = null;\n\nfunction decodeXml(value) {\n  return value\n    .replace(/&lt;/g, '<')\n    .replace(/&gt;/g, '>')\n    .replace(/&quot;/g, String.fromCharCode(34))\n    .replace(/&apos;/g, String.fromCharCode(39))\n    .replace(/&#(\\d+);/g, (_, code) => String.fromCodePoint(Number(code)))\n    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)))\n    .replace(/&amp;/g, '&');\n}\n\nfunction tagValue(xml, tagName) {\n  const match = xml.match(new RegExp(`<${tagName}(?:\\\\s[^>]*)?>([\\\\s\\\\S]*?)<\\\\/${tagName}>`, 'i'));\n  return match ? decodeXml(match[1].replace(/^\\s*<!\\[CDATA\\[/, '').replace(/\\]\\]>\\s*$/, '').trim()) : null;\n}\n\nfunction findJsonValue(value, key) {\n  if (Array.isArray(value)) {\n    for (const child of value) {\n      const found = findJsonValue(child, key);\n      if (found != null) return found;\n    }\n    return null;\n  }\n  if (!value || typeof value !== 'object') return null;\n  if (Object.prototype.hasOwnProperty.call(value, key) && value[key] != null) return value[key];\n  for (const child of Object.values(value)) {\n    const found = findJsonValue(child, key);\n    if (found != null) return found;\n  }\n  return null;\n}\n\nfunction jsonRecords(value, anchor) {\n  const records = [];\n  function visit(node) {\n    if (Array.isArray(node)) {\n      for (const child of node) visit(child);\n      return;\n    }\n    if (!node || typeof node !== 'object') return;\n    let childHasRecord = false;\n    for (const child of Object.values(node)) {\n      const before = records.length;\n      visit(child);\n      if (records.length > before) childHasRecord = true;\n    }\n    if (!childHasRecord && Object.prototype.hasOwnProperty.call(node, anchor)) records.push(node);\n  }\n  visit(value);\n  return records;\n}\n\nfunction xmlRecords(xml, anchor, fields) {\n  const root = { children: [] };\n  const stack = [root];\n  const pattern = /<\\/?([A-Za-z_][\\w:.-]*)(?:\\s[^>]*)?\\s*\\/?\\s*>/g;\n  let match;\n  while ((match = pattern.exec(xml)) !== null) {\n    const token = match[0];\n    const name = match[1].split(':').pop();\n    if (token.startsWith('</')) {\n      for (let index = stack.length - 1; index > 0; index -= 1) {\n        if (stack[index].name === name) {\n          const node = stack[index];\n          node.inner = xml.slice(node.contentStart, match.index);\n          stack.length = index;\n          break;\n        }\n      }\n    } else if (!token.endsWith('/>')) {\n      const node = { name, contentStart: pattern.lastIndex, inner: '', children: [] };\n      stack[stack.length - 1].children.push(node);\n      stack.push(node);\n    }\n  }\n  function qualifies(node) {\n    if (!node.inner || tagValue(node.inner, anchor) == null) return false;\n    return fields.some((field) => field !== anchor && tagValue(node.inner, field) != null);\n  }\n  const records = [];\n  function collect(node) {\n    const qualifiedChildren = node.children.filter(qualifies);\n    if (qualifies(node) && qualifiedChildren.length === 0) {\n      records.push(node.inner);\n      return;\n    }\n    for (const child of node.children) collect(child);\n  }\n  for (const child of root.children) collect(child);\n  return records;\n}\n\nfor (const item of $input.all()) {\n  const response = item.json;\n  const status = Number(response.statusCode);\n  const body = typeof response.body === 'string' ? response.body : '';\n  let parsedJson = null;\n  try { parsedJson = JSON.parse(body); } catch {}\n  const headerCdRaw = parsedJson == null ? tagValue(body, 'headerCd') : findJsonValue(parsedJson, 'headerCd');\n  const headerCd = headerCdRaw == null ? null : String(headerCdRaw).trim();\n  if (status !== 200 || headerCd !== '0') {\n    failureReason ||= status !== 200\n      ? (Number.isInteger(status) ? `HTTP_${status}` : 'HTTP_ERROR')\n      : headerCd && /^[A-Za-z0-9_-]{1,50}$/.test(headerCd) ? `GITS_${headerCd}` : 'INVALID_DATA';\n    continue;\n  }\n\n  const records = parsedJson == null\n    ? xmlRecords(body, 'linkId', ['linkId', 'routeWay', 'startNodeNm', 'endNodeNm', 'linkLength'])\n    : jsonRecords(parsedJson, 'linkId');\n  for (const record of records) {\n    const get = (field) => typeof record === 'string' ? tagValue(record, field) : findJsonValue(record, field);\n    const linkIdValue = get('linkId');\n    const startNodeValue = get('startNodeNm');\n    const endNodeValue = get('endNodeNm');\n    const lengthText = get('linkLength');\n    const linkId = linkIdValue == null ? '' : String(linkIdValue).trim();\n    const startNodeName = startNodeValue == null ? '' : String(startNodeValue).trim();\n    const endNodeName = endNodeValue == null ? '' : String(endNodeValue).trim();\n    const length = lengthText == null ? NaN : Number(String(lengthText).trim());\n    if (!linkId || linkId.length > 20 || !startNodeName || !endNodeName || !Number.isFinite(length) || length < 0) {\n      failureReason ||= 'INVALID_DATA';\n      continue;\n    }\n    if (links.some((link) => link.linkId === linkId)) continue;\n    const routeWayValue = get('routeWay');\n    links.push({\n      linkId,\n      routeId: String(response.routeId),\n      roadName: String(response.routeName),\n      startNodeName,\n      endNodeName,\n      routeWay: routeWayValue == null || String(routeWayValue).trim() === '' ? null : String(routeWayValue).trim(),\n      distanceM: Math.round(length),\n    });\n  }\n}\n\nreturn [{\n  json: {\n    ...context,\n    ok: failureReason === null,\n    reason: failureReason,\n    links,\n    linkCount: links.length,\n  },\n}];"
+      },
+      "id": "judge-road-links",
+      "name": "도로별 링크 판정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, -80]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "road-links-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-road-links",
+      "name": "도로별 링크 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [660, -80]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\n\nreturn [{\n  json: {\n    ...context,\n    ok: true,\n    reason: null,\n    links: [],\n    linkCount: 0,\n  },\n}];"
+      },
+      "id": "prepare-empty-links",
+      "name": "빈 링크 목록 준비",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 180]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\n\nreturn [{\n  json: {\n    ...context,\n    linksJson: JSON.stringify(context.links),\n  },\n}];"
+      },
+      "id": "prepare-link-upsert",
+      "name": "정상 링크 적재 준비",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 40]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO TRAFFIC_LINK (SOURCE, AREA_CODE, LINK_ID, ROUTE_ID, ROAD_NAME, ST_NODE_NAME, ED_NODE_NAME, AXIS_DIR, DISTANCE_M, CENTER_DIST_M, CREATE_DT, CREATE_USER, UPDATE_DT, UPDATE_USER, DELETE_YN)\nSELECT 'GITS', 'PYEONGCHON', j.LINK_ID, j.ROUTE_ID, j.ROAD_NAME, j.ST_NODE_NAME, j.ED_NODE_NAME, j.AXIS_DIR, j.DISTANCE_M, NULL, NOW(), 'SYSTEM', NOW(), 'SYSTEM', 0\nFROM JSON_TABLE($1, \"$[*]\" COLUMNS (\n  LINK_ID VARCHAR(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PATH \"$.linkId\",\n  ROUTE_ID VARCHAR(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PATH \"$.routeId\",\n  ROAD_NAME VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PATH \"$.roadName\",\n  ST_NODE_NAME VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PATH \"$.startNodeName\",\n  ED_NODE_NAME VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PATH \"$.endNodeName\",\n  AXIS_DIR VARCHAR(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PATH \"$.routeWay\" NULL ON EMPTY,\n  DISTANCE_M INT PATH \"$.distanceM\"\n)) j\nON DUPLICATE KEY UPDATE AREA_CODE = VALUES(AREA_CODE), ROUTE_ID = VALUES(ROUTE_ID), ROAD_NAME = VALUES(ROAD_NAME), ST_NODE_NAME = VALUES(ST_NODE_NAME), ED_NODE_NAME = VALUES(ED_NODE_NAME), AXIS_DIR = VALUES(AXIS_DIR), DISTANCE_M = VALUES(DISTANCE_M), CENTER_DIST_M = NULL, UPDATE_DT = NOW(), UPDATE_USER = 'SYSTEM', DELETE_YN = 0",
+        "options": {
+          "queryReplacement": "={{ [$json.linksJson] }}"
+        }
+      },
+      "id": "upsert-links",
+      "name": "정상 링크 적재",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [1100, 40],
+      "credentials": {
+        "mySql": {
+          "id": "rmMysqlCred00001",
+          "name": "ridemate-mysql"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $('정상 링크 적재 준비').first().json;\nconst failed = $input.all().some((item) => item.json.error != null);\n\nreturn [{\n  json: {\n    ...context,\n    ok: !failed,\n    reason: failed ? 'DB_UPSERT_FAILED' : null,\n    upserted: failed ? 0 : context.links.length,\n  },\n}];"
+      },
+      "id": "judge-link-upsert",
+      "name": "정상 링크 적재 판정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 40]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "link-upsert-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-link-upsert",
+      "name": "정상 링크 적재 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [1540, 40]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COUNT(*) AS STALE_COUNT\nFROM TRAFFIC_LINK t\nWHERE t.SOURCE = 'GITS' AND t.DELETE_YN = 0\n  AND NOT EXISTS (\n    SELECT 1\n    FROM JSON_TABLE($1, \"$[*]\" COLUMNS (\n      LINK_ID VARCHAR(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PATH \"$.linkId\"\n    )) j\n    WHERE j.LINK_ID = t.LINK_ID\n  )",
+        "options": {
+          "queryReplacement": "={{ [$json.linksJson] }}"
+        }
+      },
+      "id": "count-stale-links",
+      "name": "삭제 대상 조회",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [1760, -80],
+      "credentials": {
+        "mySql": {
+          "id": "rmMysqlCred00001",
+          "name": "ridemate-mysql"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $('정상 링크 적재 판정').first().json;\nconst rows = $input.all().map((item) => item.json);\nconst failed = rows.some((row) => row.error != null);\nconst countRow = rows.find((row) => row.STALE_COUNT != null);\nconst staleCount = countRow ? Number(countRow.STALE_COUNT) : null;\nconst validCount = Number.isSafeInteger(staleCount) && staleCount >= 0;\n\nreturn [{\n  json: {\n    ...context,\n    ok: !failed && validCount,\n    reason: failed ? 'DB_STALE_COUNT_FAILED' : validCount ? null : 'DB_STALE_COUNT_INVALID',\n    staleCount: validCount ? staleCount : 0,\n  },\n}];"
+      },
+      "id": "judge-stale-count",
+      "name": "삭제 대상 조회 판정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1980, -80]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "stale-count-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-stale-count",
+      "name": "삭제 대상 조회 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [2200, -80]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE TRAFFIC_LINK\nSET DELETE_YN = 1, UPDATE_DT = NOW(), UPDATE_USER = 'SYSTEM'\nWHERE SOURCE = 'GITS' AND DELETE_YN = 0\n  AND NOT EXISTS (\n    SELECT 1\n    FROM JSON_TABLE($1, \"$[*]\" COLUMNS (\n      LINK_ID VARCHAR(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PATH \"$.linkId\"\n    )) j\n    WHERE j.LINK_ID = TRAFFIC_LINK.LINK_ID\n  )",
+        "options": {
+          "queryReplacement": "={{ [$json.linksJson] }}"
+        }
+      },
+      "id": "soft-delete-links",
+      "name": "빠진 링크 삭제 표시",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [2420, -200],
+      "credentials": {
+        "mySql": {
+          "id": "rmMysqlCred00001",
+          "name": "ridemate-mysql"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $('삭제 대상 조회 판정').first().json;\nconst failed = $input.all().some((item) => item.json.error != null);\n\nreturn [{\n  json: {\n    ...context,\n    ok: !failed,\n    reason: failed ? 'DB_SOFT_DELETE_FAILED' : null,\n    softDeleted: failed ? 0 : context.staleCount,\n  },\n}];"
+      },
+      "id": "judge-soft-delete",
+      "name": "빠진 링크 삭제 표시 판정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2640, -200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "soft-delete-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-soft-delete",
+      "name": "빠진 링크 삭제 표시 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [2860, -200]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\n\nreturn [{\n  json: {\n    ok: true,\n    reason: null,\n    missingRouteNames: context.missingRouteNames,\n    routeCount: context.routeCount,\n    linkCount: context.linkCount,\n    upserted: context.upserted,\n    softDeleted: context.softDeleted,\n  },\n}];"
+      },
+      "id": "success-result",
+      "name": "성공 결과",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3080, -320]
+    }
+  ],
+  "connections": {
+    "수동 실행": {"main": [[{"node": "설정", "type": "main", "index": 0}]]},
+    "설정": {"main": [[{"node": "API 키 확인", "type": "main", "index": 0}]]},
+    "API 키 확인": {"main": [[{"node": "도로 목록 호출", "type": "main", "index": 0}], [{"node": "실패 결과", "type": "main", "index": 0}]]},
+    "도로 목록 호출": {"main": [[{"node": "도로 목록 판정", "type": "main", "index": 0}]]},
+    "도로 목록 판정": {"main": [[{"node": "도로 목록 성공 확인", "type": "main", "index": 0}]]},
+    "도로 목록 성공 확인": {"main": [[{"node": "대상 도로 확인", "type": "main", "index": 0}], [{"node": "실패 결과", "type": "main", "index": 0}]]},
+    "대상 도로 확인": {"main": [[{"node": "도로별 링크 호출 행 만들기", "type": "main", "index": 0}], [{"node": "빈 링크 목록 준비", "type": "main", "index": 0}]]},
+    "도로별 링크 호출 행 만들기": {"main": [[{"node": "도로별 링크 호출", "type": "main", "index": 0}, {"node": "도로별 링크 응답 합치기", "type": "main", "index": 0}]]},
+    "도로별 링크 호출": {"main": [[{"node": "도로별 링크 응답 합치기", "type": "main", "index": 1}]]},
+    "도로별 링크 응답 합치기": {"main": [[{"node": "도로별 링크 판정", "type": "main", "index": 0}]]},
+    "도로별 링크 판정": {"main": [[{"node": "도로별 링크 성공 확인", "type": "main", "index": 0}]]},
+    "도로별 링크 성공 확인": {"main": [[{"node": "정상 링크 적재 준비", "type": "main", "index": 0}], [{"node": "실패 결과", "type": "main", "index": 0}]]},
+    "빈 링크 목록 준비": {"main": [[{"node": "정상 링크 적재 준비", "type": "main", "index": 0}]]},
+    "정상 링크 적재 준비": {"main": [[{"node": "정상 링크 적재", "type": "main", "index": 0}]]},
+    "정상 링크 적재": {"main": [[{"node": "정상 링크 적재 판정", "type": "main", "index": 0}]]},
+    "정상 링크 적재 판정": {"main": [[{"node": "정상 링크 적재 성공 확인", "type": "main", "index": 0}]]},
+    "정상 링크 적재 성공 확인": {"main": [[{"node": "삭제 대상 조회", "type": "main", "index": 0}], [{"node": "실패 결과", "type": "main", "index": 0}]]},
+    "삭제 대상 조회": {"main": [[{"node": "삭제 대상 조회 판정", "type": "main", "index": 0}]]},
+    "삭제 대상 조회 판정": {"main": [[{"node": "삭제 대상 조회 성공 확인", "type": "main", "index": 0}]]},
+    "삭제 대상 조회 성공 확인": {"main": [[{"node": "빠진 링크 삭제 표시", "type": "main", "index": 0}], [{"node": "실패 결과", "type": "main", "index": 0}]]},
+    "빠진 링크 삭제 표시": {"main": [[{"node": "빠진 링크 삭제 표시 판정", "type": "main", "index": 0}]]},
+    "빠진 링크 삭제 표시 판정": {"main": [[{"node": "빠진 링크 삭제 표시 성공 확인", "type": "main", "index": 0}]]},
+    "빠진 링크 삭제 표시 성공 확인": {"main": [[{"node": "성공 결과", "type": "main", "index": 0}], [{"node": "실패 결과", "type": "main", "index": 0}]]}
+  },
+  "settings": {
+    "timezone": "Asia/Seoul",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false,
+    "executionOrder": "v1"
+  },
+  "active": false
+}
