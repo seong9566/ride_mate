@@ -19,6 +19,7 @@
 | 테이블 목록·컬럼·코드 값 | `docs/architecture/schema.md` |
 | 라우트·응답 code·커서 페이징·API 명세 | `docs/api.md` |
 | 설정·비밀값·로그·입력 처리·인증 | `docs/security.md` |
+| 도로 소통 수집(n8n)·공공 교통 API 키 | `n8n/README.md` |
 | 네이밍·코드 스타일 | `docs/coding-style.md` |
 | 규칙을 그렇게 정한 이유(결정 기록) | `docs/adr/README.md` |
 | 기능 요구사항(화면 동작·입력 검증·데이터·상태 문구) | `docs/spec/README.md` → 해당 시트 |
