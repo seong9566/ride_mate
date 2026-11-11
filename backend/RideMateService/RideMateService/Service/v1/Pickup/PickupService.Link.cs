@@ -132,7 +132,7 @@ public partial class PickupService
             if (!int.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("sub"), out var userId))
                 return new ResponseModel<PickupLinkSendDto> { message = "잘못된 요청입니다.", data = null, code = 401 };
 
-            DateTime thisTime = DateTime.Now;
+            DateTime thisTime;
             int pickupEventId;
             string phoneDigits;
             string receiverLast4;
@@ -146,6 +146,8 @@ public partial class PickupService
                 // 1) 계획 행을 첫 문장으로 잠그고 공통 판정을 한다. 끝난 계획은 USER_ID가 NULL이라 404다
                 var plan = await _pickupRepository.LockPickupPlanAsync(pickupPlanId, transaction.GetDbTransaction(),
                     cancellationToken).ConfigureAwait(false);
+                // 기준 시각은 잠금을 얻은 뒤에 잡는다. 연결·잠금 대기만큼 진행 중 발송의 유효 시간이 줄지 않게 한다
+                thisTime = DateTime.Now;
                 if (plan is null || plan.UserId != userId)
                 {
                     await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
