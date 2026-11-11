@@ -106,4 +106,10 @@ public interface IPickupRepository
     /// </summary>
     Task<List<LinkEventRow>> GetLinkEventsAsync(int pickupPlanId, IDbTransaction? transaction,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 로그인한 부모의 오늘 계획 상태와 만료 시각을 잠금 없이 조회한다. 계획이 없거나 남의 계획이거나 끝난 계획(USER_ID가 NULL)이면 null
+    /// </summary>
+    Task<LinkStatusPlanRow?> GetLinkStatusPlanAsync(int pickupPlanId, int userId,
+        CancellationToken cancellationToken = default);
 }

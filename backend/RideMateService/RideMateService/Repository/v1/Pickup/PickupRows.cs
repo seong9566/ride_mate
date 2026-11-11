@@ -95,6 +95,15 @@ public class LinkPlanLockRow
 }
 
 /// <summary>
+/// 전달 상태 조회용 오늘 계획 한 건
+/// </summary>
+public class LinkStatusPlanRow
+{
+    public string Status { get; set; } = string.Empty;
+    public DateTime ExpireDt { get; set; }
+}
+
+/// <summary>
 /// 링크 문자 받는 사람과 문구 값. ChildPhoneEnc는 아이가 없거나 삭제됐으면 null, SpotName은 지점이 삭제됐으면 null이다
 /// </summary>
 public class LinkTargetRow

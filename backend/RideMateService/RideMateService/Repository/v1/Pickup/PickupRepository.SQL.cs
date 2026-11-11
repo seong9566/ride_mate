@@ -534,4 +534,37 @@ public partial class PickupRepository
             throw;
         }
     }
+
+    /// <summary>
+    /// 로그인한 부모의 오늘 계획 상태와 만료 시각을 잠금 없이 조회한다. 계획이 없거나 남의 계획이거나 끝난 계획(USER_ID가 NULL)이면 null
+    /// </summary>
+    public async Task<LinkStatusPlanRow?> GetLinkStatusPlanAsync(int pickupPlanId, int userId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("pickupPlanId", pickupPlanId);
+            dp.Add("userId", userId);
+
+            // 픽업 계열 테이블은 DELETE_YN이 "끝나서 익명화됨"이라 조건을 붙이지 않는다. 끝난 계획은 USER_ID가 NULL이라 걸러진다
+            var sql = @"
+                SELECT p.STATUS AS Status,
+                       p.EXPIRE_DT AS ExpireDt
+                FROM PICKUP_PLAN AS p
+                WHERE p.PICKUP_PLAN_ID = @pickupPlanId
+                  AND p.USER_ID = @userId";
+
+            return await _dapper.QueryFirstOrDefaultAsync<LinkStatusPlanRow>(
+                new CommandDefinition(sql, dp, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
 }
