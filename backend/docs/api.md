@@ -193,7 +193,7 @@
 
 - 101은 오류가 아닌 정상 상태라 `message`가 `요청이 정상 처리되었습니다.`다. 앱은 `code`로 나눈다.
 - 한계: 하원 시각 + 1시간이 자정을 넘는 픽업(하원 23:30 등)은 00:00이 지나면 101이 나온다. 아이 도착 시각이 자정을 넘으면 요일 유형은 오늘 것으로 판정한다. `currentDt`는 오프셋 없는 KST 로컬 시각(`2026-11-11T21:14:00`)이어야 하며 `Z`·`+09:00`을 붙이면 400 `ProblemDetails`다(서버가 UTC로 바꿔 시각이 밀리기 때문).
-- 필드·`reasons` 코드·계산식은 `docs/api/Pickup/DetailDepartureGuide.md`가 정본이다.
+- 필드·`reasons` 코드·계산식은 Notion "[차량] 출발 안내 계산" 페이지(https://app.notion.com/p/415aa638eaf8819eac85f85d0a5f1836)가 정본이다.
 
 ## 커서 페이징
 
@@ -205,6 +205,6 @@
 
 ## API 명세
 
-- 앱↔서버 계약은 루트 `docs/api/openapi.json`이다. 모빌리티 앱은 이 파일을 보고 개발한다.
-- API마다 `docs/api/{도메인}/{액션}.md`를 둔다. 양식은 Header·Request·Response·Error·예외 다섯 절이고, 템플릿은 `update-api-spec` 스킬의 `templates/api-doc.md`다.
-- 라우트·DTO를 바꾼 작업은 같은 PR에서 명세와 API 문서를 갱신한다. 응답 `code`·`message`·오류 상황만 바꾼 작업도 API 문서를 갱신한다. 절차는 `update-api-spec` 스킬을 따른다.
+- API 문서의 정본은 Notion "라이드메이트 API 문서"(https://app.notion.com/p/415aa638eaf880808d84c4ffba30bb51)다. 목차 아래에 화면별 API 호출 순서(로그인·회원가입), API 목록과 API별 하위 페이지("API 상세", Request·Response·Error·예외 네 절), 공통 오류 형식이 있다. 주소·응답 형식 같은 공통 규칙은 이 문서가 정본이다. 레포에는 API별 문서를 두지 않는다.
+- 필드 이름·타입의 기계 정본은 루트 `docs/api/openapi.json`(서버 Swagger 출력)이다. Notion 문서와 다르면 `openapi.json`이 맞고 Notion을 고친다.
+- 라우트·DTO를 바꾼 작업은 같은 PR에서 `openapi.json`을 갱신하고 Notion 문서를 고친다. 응답 `code`·`message`·오류 상황만 바꾼 작업도 Notion 문서를 고친다. 절차는 `update-api-spec` 스킬을 따른다.
