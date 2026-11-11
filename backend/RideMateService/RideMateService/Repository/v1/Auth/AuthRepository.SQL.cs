@@ -402,7 +402,7 @@ public partial class AuthRepository
     }
 
     /// <summary>
-    /// 계정의 초기 설정이 필요한지 조회한다. 운전자 이름이 비었거나 살아 있는 아이가 없으면 true, 계정이 없거나 삭제됐으면 null
+    /// 계정의 초기 설정이 필요한지 조회한다. 운전자 이름이 비었거나 초기 설정 완료 시각이 없으면 true, 계정이 없거나 삭제됐으면 null
     /// </summary>
     public async Task<bool?> GetSetupRequiredAsync(int userId, IDbTransaction? transaction = null,
         CancellationToken cancellationToken = default)
@@ -414,10 +414,7 @@ public partial class AuthRepository
 
             var sql = @"
                 SELECT (t.USER_NAME = ''
-                        OR NOT EXISTS (SELECT 1
-                                       FROM CHILD AS c
-                                       WHERE c.USER_ID = t.USER_ID
-                                         AND c.DELETE_YN = FALSE)) AS setupRequired
+                        OR t.SETUP_DONE_DT IS NULL) AS setupRequired
                 FROM USER_INFO AS t
                 WHERE t.USER_ID = @userId
                   AND t.DELETE_YN = FALSE";

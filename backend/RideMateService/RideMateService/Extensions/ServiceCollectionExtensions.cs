@@ -9,10 +9,12 @@ using RideMateService.Repository.v1.Auth;
 using RideMateService.Repository.v1.ChildInfo;
 using RideMateService.Repository.v1.Pickup;
 using RideMateService.Repository.v1.Schedule;
+using RideMateService.Repository.v1.User;
 using RideMateService.Service.v1.Auth;
 using RideMateService.Service.v1.ChildInfo;
 using RideMateService.Service.v1.Pickup;
 using RideMateService.Service.v1.Schedule;
+using RideMateService.Service.v1.User;
 
 namespace RideMateService.Extensions;
 
@@ -27,6 +29,7 @@ public static class ServiceCollectionExtensions
         services.AddPickupModule();
         services.AddChildInfoModule();
         services.AddScheduleModule();
+        services.AddUserModule();
         // 도메인을 추가하면 여기에 한 줄
         return services;
     }
@@ -56,6 +59,13 @@ public static class ServiceCollectionExtensions
     {
         services.AddTransient<IScheduleRepository, ScheduleRepository>();
         services.AddTransient<IScheduleService, ScheduleService>();
+        return services;
+    }
+
+    private static IServiceCollection AddUserModule(this IServiceCollection services)
+    {
+        services.AddTransient<IUserRepository, UserRepository>();
+        services.AddTransient<IUserService, UserService>();
         return services;
     }
 }

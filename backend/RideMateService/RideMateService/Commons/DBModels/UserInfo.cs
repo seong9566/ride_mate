@@ -74,6 +74,11 @@ public partial class UserInfo
     public sbyte WakeBeforeMin { get; set; }
 
     /// <summary>
+    /// 초기 설정 완료 시각
+    /// </summary>
+    public DateTime? SetupDoneDt { get; set; }
+
+    /// <summary>
     /// 생성 일시
     /// </summary>
     public DateTime CreateDt { get; set; }

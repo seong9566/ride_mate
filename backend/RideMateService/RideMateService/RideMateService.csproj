@@ -52,6 +52,12 @@
       <Compile Update="Repository\v1\Schedule\ScheduleRepository.SQL.cs">
         <DependentUpon>ScheduleRepository.cs</DependentUpon>
       </Compile>
+      <Compile Update="Repository\v1\User\UserRepository.EF.cs">
+        <DependentUpon>UserRepository.cs</DependentUpon>
+      </Compile>
+      <Compile Update="Repository\v1\User\UserRepository.SQL.cs">
+        <DependentUpon>UserRepository.cs</DependentUpon>
+      </Compile>
     </ItemGroup>
 
 </Project>
