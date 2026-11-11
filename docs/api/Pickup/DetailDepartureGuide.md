@@ -12,7 +12,7 @@
 
 query 값이다. 본문은 없다.
 
-- currentDt (string): 앱의 현재 시각. KST 로컬 시각을 오프셋 없이 쓴다(예: `2026-11-11T21:14:00`). `Z`나 `+09:00`을 붙이지 않는다. 오늘 날짜·요일과 남은 여유 계산의 기준이다 — 필수
+- currentDt (string): 앱의 현재 시각. KST 로컬 시각을 오프셋 없이 쓴다(예: `2026-11-11T21:14:00`). `Z`나 `+09:00`을 붙이면 400이다. 오늘 날짜·요일과 남은 여유 계산의 기준이다 — 필수
 - currentLat (number): 차량 현재 위도. -90~90 — 필수
 - currentLng (number): 차량 현재 경도. -180~180 — 필수
 - driveMin (integer): 내비(NaviHelper)로 구한, 차량이 픽업 장소까지 가는 시간(분). 0~300. 없으면 서버가 직선 거리로 추정한다 — 선택
@@ -218,7 +218,7 @@ data (object): 계산 결과
 
 1. 오늘 남은 픽업 없음: 오늘 픽업하는 시간표가 없거나, 모두 하원한 지 1시간이 지났거나, 이미 마쳤거나, 오늘 건너뛰기로 했다. HTTP 200, code 101, `data`는 null
 2. 쓸 수 있는 기본 지점 없음: HTTP 200, code 200. `pickup`·`childArrivalDt`·`driveMin`·`driveSource`·`departureDt`·`slackMin`·`enforcement`가 null이고 `reasons`에 `NO_SPOT_AVAILABLE`이 있다
-3. 필수 값 없음·범위 밖 값·좌표 한쪽만 보냄(`pickupLat`와 `pickupLng` 중 하나만)·형식이 틀린 값(해석할 수 없는 `currentDt`나 숫자): 요청 검증 실패. HTTP 400 (공통 오류 형식, `ProblemDetails`)
+3. 필수 값 없음·범위 밖 값·좌표 한쪽만 보냄(`pickupLat`와 `pickupLng` 중 하나만)·형식이 틀린 값(해석할 수 없는 `currentDt`나 숫자)·`Z`나 오프셋(`+09:00`)이 붙은 `currentDt`: 요청 검증 실패. HTTP 400 (공통 오류 형식, `ProblemDetails`)
 4. 토큰 없음·위조·만료: HTTP 401, code 401 (공통 오류 형식)
 5. 서버 에러: 500 Internal Server Error (공통 오류 형식)
 
@@ -226,5 +226,5 @@ data (object): 계산 결과
 - 부모가 보낸 좌표로 계산하는 호출은 매번 카카오맵 도보 경로 API를 부르고 결과를 저장하지 않는다. 호출마다 카카오의 일일 무료 한도를 쓰므로 폴링 간격을 1분보다 줄이지 않는다. 카카오 호출이 실패하거나 3초 안에 응답이 없으면 오류 없이 `walkSource`가 `ESTIMATE`인 결과가 나온다.
 - 하원 시각 + 1시간이 자정을 넘는 픽업(예: 하원 23:30)은 `currentDt`가 00:00을 지나면 오늘 남은 픽업으로 나오지 않는다(code 101). 아이 도착 시각이 자정을 넘으면 요일 유형(평일·토요일·공휴일)은 자정 전 날(오늘)의 것으로 판정하고, 금지 시간·단속 시각 판정에는 자정 이후의 시각(예: 00:04)을 쓴다.
 - 그 해 공휴일 데이터가 없으면 서버는 공휴일을 평일처럼 다루고, 걸린 구역이 없을 때는 `enforcement.status`를 `CLEAR`가 아니라 `UNKNOWN`으로 낸다.
-- `currentDt`는 오프셋 없는 KST 로컬 시각이어야 한다(예: `2026-11-11T21:14:00`). `Z`나 `+09:00`을 붙이면 서버가 그 시각을 그대로 읽는다고 보장하지 않는다.
+- `currentDt`는 오프셋 없는 KST 로컬 시각이어야 한다(예: `2026-11-11T21:14:00`). `Z`나 `+09:00`을 붙이면 서버가 시각을 UTC로 바꿔 읽어 밀리므로 400(`ProblemDetails`, `errors.currentDt`)으로 거절한다.
 - 응답의 시각(`childArrivalDt`, `departureDt`)도 오프셋이 없는 KST 로컬 시각이다.

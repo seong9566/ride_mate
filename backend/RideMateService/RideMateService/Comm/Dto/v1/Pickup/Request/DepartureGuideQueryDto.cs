@@ -47,6 +47,11 @@ public class DepartureGuideQueryDto : IValidatableObject
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
+        // 쿼리 바인딩은 Z·오프셋이 붙은 값을 UTC로 바꿔 시각이 밀린다. 오프셋 없는 로컬 시각(Unspecified)만 받는다
+        if (currentDt is { Kind: not DateTimeKind.Unspecified })
+            yield return new ValidationResult("currentDt는 오프셋 없는 로컬 시각이어야 합니다.",
+                new[] { nameof(currentDt) });
+
         if ((pickupLat is null) != (pickupLng is null))
             yield return new ValidationResult("pickupLat와 pickupLng는 함께 보내야 합니다.",
                 new[] { nameof(pickupLat), nameof(pickupLng) });

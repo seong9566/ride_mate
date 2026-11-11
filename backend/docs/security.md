@@ -9,11 +9,13 @@
 - 필수 설정(연결 문자열·서명 키)이 비어 있으면 기동할 때 `InvalidOperationException`으로 실패시킨다. 빈 값으로 조용히 넘어가지 않는다.
 - 설정 묶음은 `IOptions<T>`로 받는다. 서비스에 `IConfiguration`을 직접 주입하지 않는다.
 - Issuer·Audience·프록시 IP처럼 환경마다 다른 값도 코드 상수로 박지 않고 설정에서 읽는다.
+- `Kakao:RestApiKey`(카카오 REST API 키)는 선택 비밀값이다. 환경변수 `Kakao__RestApiKey`로 주입하고, 비어 있어도 기동은 하며 도보 시간은 직선 거리 추정으로 떨어진다(기동 로그 `Kakao walk route: ON/OFF`).
 
 ## 로그
 
 - 비밀번호·토큰·개인정보(아이 이름, 연락처, 위치 등)를 로그에 남기지 않는다.
 - `EnableSensitiveDataLogging()`은 Development에서만 켠다.
+- 출발 안내 계산에서 부모가 바꾼 픽업 장소 좌표와 학원 좌표는 도보 시간을 구하려고 카카오 도보 경로 API(외부)로 전송된다.
 
 ## 입력·쿼리
 
