@@ -22,6 +22,15 @@
                   },
                   "refresh_token": {
                     "type": "string"
+                  },
+                  "phone": {
+                    "type": "string"
+                  },
+                  "code": {
+                    "type": "string"
+                  },
+                  "device_id": {
+                    "type": "string"
                   }
                 }
               },
@@ -30,6 +39,15 @@
                   "style": "form"
                 },
                 "refresh_token": {
+                  "style": "form"
+                },
+                "phone": {
+                  "style": "form"
+                },
+                "code": {
+                  "style": "form"
+                },
+                "device_id": {
                   "style": "form"
                 }
               }
@@ -53,6 +71,35 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Auth_Response_TokenAuthErrorDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/Auth/M/AddPhoneVerification": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "로그인 인증번호 발송",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Auth_Request_AddPhoneVerificationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Auth_Response_PhoneVerificationResultDto"
                 }
               }
             }
@@ -88,6 +135,34 @@
   },
   "components": {
     "schemas": {
+      "RideMateService_Comm_Dto_v1_Auth_Request_AddPhoneVerificationDto": {
+        "required": [
+          "phone"
+        ],
+        "type": "object",
+        "properties": {
+          "phone": {
+            "minLength": 1,
+            "pattern": "^01[016789][0-9]{7,8}$",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Auth_Response_PhoneVerificationResultDto": {
+        "type": "object",
+        "properties": {
+          "expiresIn": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "retryAfter": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_Dto_v1_Auth_Response_TokenAuthErrorDto": {
         "type": "object",
         "properties": {
@@ -137,6 +212,24 @@
           },
           "setup_required": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Auth_Response_PhoneVerificationResultDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Auth_Response_PhoneVerificationResultDto"
+          },
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
           }
         },
         "additionalProperties": false

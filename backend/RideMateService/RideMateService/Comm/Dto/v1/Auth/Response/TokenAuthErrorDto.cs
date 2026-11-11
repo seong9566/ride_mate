@@ -8,7 +8,7 @@ namespace RideMateService.Comm.Dto.v1.Auth.Response;
 public class TokenAuthErrorDto
 {
     /// <summary>
-    /// 오류 코드(invalid_request, unsupported_grant_type, invalid_grant 등)
+    /// 오류 코드(invalid_request, unsupported_grant_type, invalid_grant, otp_locked, otp_expired, otp_mismatch, signup_required 등)
     /// </summary>
     public string error { get; set; } = string.Empty;
 

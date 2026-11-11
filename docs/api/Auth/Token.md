@@ -2,7 +2,7 @@
 
 `POST /api/v1/Auth/M/Token`
 
-차량 로그인 토큰(access·refresh)을 발급하거나 교체한다. OAuth 2.0 형식이라 공통 응답 형식(`{ message, data, code }`)으로 감싸지 않는다.
+차량 로그인 토큰(access·refresh)을 발급하거나 교체한다. 인증번호 로그인(`otp`)과 refresh 교체(`refresh_token`)를 같은 주소에서 `grant_type`으로 나눈다. OAuth 2.0 형식이라 공통 응답 형식(`{ message, data, code }`)으로 감싸지 않는다.
 
 ## Header
 
@@ -13,8 +13,17 @@
 
 form 필드다. 이름은 OAuth 규약대로 snake_case다.
 
-- grant_type (string): 발급 방식. 지금은 `refresh_token`만 지원한다 — 필수
+- grant_type (string): 발급 방식. `otp`(인증번호 로그인) 또는 `refresh_token`(교체) — 필수
+- phone (string): 숫자만 쓴 휴대폰 번호. 형식 `^01[016789][0-9]{7,8}$` — `grant_type`이 `otp`이면 필수
+- code (string): [인증번호 발송](AddPhoneVerification.md)으로 받은 숫자 6자리 — `grant_type`이 `otp`이면 필수
+- device_id (string): 앱이 처음 실행할 때 만든 설치 번호(UUID 등, 차대번호 아님). 로그인마다 같은 값. 1~100자 — `grant_type`이 `otp`이면 필수
 - refresh_token (string): 갖고 있는 refresh 토큰 — `grant_type`이 `refresh_token`이면 필수
+
+쓰지 않는 방식의 필드는 보내지 않는다(보내도 무시한다).
+
+```text
+grant_type=otp&phone=01012345678&code=482173&device_id=3f2b8c1e-9a4d-4e7b-b1c2-7d9e0f6a5b43
+```
 
 ```text
 grant_type=refresh_token&refresh_token=Qm9vZ2llV29vZ2llQm9vZ2llV29vZ2llQm9vZ2llV28
@@ -50,23 +59,30 @@ HTTP 400이다. 공통 형식으로 감싸지 않는다. 앱은 `error` 값으�
 
 - error (string): 오류 코드. 아래 "예외"의 값 중 하나
 - error_description (string): 오류 설명(영어 한 줄)
-- remaining_attempts (integer): 남은 인증번호 시도 횟수. 지금은 보내지 않는다(값이 없으면 필드가 빠진다)
-- retry_after (integer): 잠금이 풀리기까지 남은 시간(초). 지금은 보내지 않는다
+- remaining_attempts (integer): 잠기기 전까지 남은 인증번호 시도 횟수. `otp_mismatch`일 때만 들어간다(값이 없으면 필드가 빠진다)
+- retry_after (integer): 잠금이 풀리기까지 남은 시간(초). `otp_locked`일 때만 들어간다
 
 ```json
 {
-  "error": "invalid_grant",
-  "error_description": "refresh token is invalid or expired"
+  "error": "otp_mismatch",
+  "error_description": "verification code is incorrect",
+  "remaining_attempts": 4
 }
 ```
 
 ## 예외
 
-1. `invalid_request`: `grant_type`이 없거나, `refresh_token` 방식인데 `refresh_token`이 없다. 400
-2. `unsupported_grant_type`: `refresh_token`이 아닌 `grant_type`(예: `otp`). 400
-3. `invalid_grant`: refresh 토큰이 틀렸거나(128자보다 길어도 같다) 만료됐거나, 로그아웃된 세션이거나, 계정이 삭제됐다. 400
-4. 서버 에러: 500 Internal Server Error (공통 오류 형식)
+1. `invalid_request`: `grant_type`이 없거나, 그 방식에 필요한 값이 없거나 형식이 틀렸다. 400
+2. `unsupported_grant_type`: `otp`·`refresh_token`이 아닌 `grant_type`. 400
+3. `invalid_grant`(`refresh_token`): refresh 토큰이 틀렸거나(128자보다 길어도 같다) 만료됐거나, 로그아웃된 세션이거나, 계정이 삭제됐다. 400
+4. `invalid_grant`(`otp`): 대기 중인 로그인 인증번호가 없다. 받지 않았거나 이미 썼다(인증에 성공했으면 결과와 관계없이 그 인증번호는 다시 쓸 수 없다). 400
+5. `otp_mismatch`(`otp`): 인증번호가 틀렸다. `remaining_attempts`가 함께 온다. 400
+6. `otp_locked`(`otp`): 5번 틀려 10분 동안 잠겼다. `retry_after`가 함께 온다. 400
+7. `otp_expired`(`otp`): 인증번호를 받은 지 3분이 지났다. 400
+8. `signup_required`(`otp`): 인증번호는 맞지만 가입한 계정이 없다. 계정을 만들지 않는다(가입은 휴대폰 웹). 400
+9. 서버 에러: 500 Internal Server Error (공통 오류 형식)
 
-- 앱은 `invalid_grant`만 "로그아웃됨"으로 처리한다. 네트워크 오류, 5xx, 429는 같은 refresh 값으로 다시 보낸다.
+- 같은 기기(`device_id`)·같은 계정으로 다시 로그인하면 그 계정·기기의 직전 차량 세션이 끝난다.
+- 앱은 `refresh_token` 방식의 `invalid_grant`만 "로그아웃됨"으로 처리한다. `otp`의 `invalid_grant`는 인증번호를 다시 받게 한다. 네트워크 오류, 5xx, 429는 같은 refresh 값으로 다시 보낸다.
 - 새 refresh 값을 저장하기 전에는 옛 값을 버리지 않는다. 교체 직전 값은 24시간 동안 받아 주고, 다시 보내면 이미 발급한 새 값을 그대로 돌려준다.
 - 세션 하나에서 refresh 요청은 한 번에 하나만 보낸다.

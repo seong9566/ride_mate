@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using RideMateService.Comm.Logger;
 using RideMateService.Comm.Security;
+using RideMateService.Comm.Sms;
 using RideMateService.Repository.v1.Auth;
 using RideMateService.Service.v1.Auth;
 
@@ -35,6 +36,8 @@ public static class InfrastructureExtensions
     {
         services.AddTransient<ILogService, LogService>();
         services.AddHttpContextAccessor();
+        // 문자 사업자가 정해지면 구현체만 바꾼다
+        services.AddSingleton<ISmsSender, DevSmsSender>();
         return services;
     }
 
