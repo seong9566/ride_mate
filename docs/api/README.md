@@ -24,6 +24,7 @@
 | Auth | `POST /api/v1/Auth/W/sign/AddQrApproval` QR 로그인 허용(휴대폰 웹) | 쿠키(`__Host-rm_web_session`) | [AddQrApproval](Auth/W/AddQrApproval.md) |
 | Auth | `DELETE /api/v1/Auth/W/sign/DeleteQrLogin` QR 로그인 취소(휴대폰 웹) | 쿠키(`__Host-rm_web_session`) | [DeleteQrLogin](Auth/W/DeleteQrLogin.md) |
 | Auth | `DELETE /api/v1/Auth/W/sign/DeleteWebSession` 다른 번호로 로그인(휴대폰 웹) | 쿠키(`__Host-rm_web_session`) | [DeleteWebSession](Auth/W/DeleteWebSession.md) |
+| Pickup | `GET /api/v1/Pickup/M/sign/DetailDepartureGuide` 출발 안내 계산 | Bearer | [DetailDepartureGuide](Pickup/DetailDepartureGuide.md) |
 
 ## 공통 오류 형식
 

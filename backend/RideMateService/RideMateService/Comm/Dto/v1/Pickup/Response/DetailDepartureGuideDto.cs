@@ -71,8 +71,14 @@ public class DepartureGuidePickupDto
     /// </summary>
     public string? spotName { get; set; }
 
+    /// <summary>
+    /// 픽업 장소 위도
+    /// </summary>
     public decimal lat { get; set; }
 
+    /// <summary>
+    /// 픽업 장소 경도
+    /// </summary>
     public decimal lng { get; set; }
 
     /// <summary>
@@ -96,8 +102,14 @@ public class DepartureGuidePickupDto
 /// </summary>
 public class GeoPointDto
 {
+    /// <summary>
+    /// 위도
+    /// </summary>
     public decimal lat { get; set; }
 
+    /// <summary>
+    /// 경도
+    /// </summary>
     public decimal lng { get; set; }
 }
 
