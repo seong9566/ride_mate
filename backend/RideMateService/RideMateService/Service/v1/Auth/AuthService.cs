@@ -277,7 +277,9 @@ public partial class AuthService : IAuthService
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         // 7) DB 반영 뒤 문자 발송 — 커밋한 뒤에는 요청이 끊겨도 보낸다(행만 남고 1분 동안 다시 받지 못하는 일을 막는다)
-        await _smsSender.SendAsync(phoneDigits, createSmsMessage(code), CancellationToken.None).ConfigureAwait(false);
+        var smsResult = await _smsSender.SendAsync(phoneDigits, createSmsMessage(code), CancellationToken.None).ConfigureAwait(false);
+        if (!smsResult.Success)
+            _logService.LogMessage($"SMS send failed: {smsResult.ResultCode}");
 
         // 8) 응답
         return new ResponseModel<PhoneVerificationResultDto>

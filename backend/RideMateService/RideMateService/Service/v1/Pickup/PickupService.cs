@@ -8,11 +8,14 @@ using RideMateService.Comm.Dto.v1.Pickup.Request;
 using RideMateService.Comm.Dto.v1.Pickup.Response;
 using RideMateService.Comm.Logger;
 using RideMateService.Comm.Map;
+using RideMateService.Comm.Security;
+using RideMateService.Comm.Sms;
+using RideMateService.Commons.Repository;
 using RideMateService.Repository.v1.Pickup;
 
 namespace RideMateService.Service.v1.Pickup;
 
-public class PickupService : IPickupService
+public partial class PickupService : IPickupService
 {
     private const string WalkSourceStored = "STORED";
     private const string WalkSourceRoute = "ROUTE";
@@ -33,18 +36,33 @@ public class PickupService : IPickupService
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IWalkRouteClient _walkRouteClient;
     private readonly DepartureGuideOptions _options;
+    private readonly RideMateContext _context; // 트랜잭션 시작·완료에만 쓴다
+    private readonly IHashService _hashService;
+    private readonly IPhoneCryptoService _phoneCryptoService;
+    private readonly ISmsSender _smsSender;
+    private readonly PickupLinkOptions _linkOptions;
 
     public PickupService(IPickupRepository pickupRepository,
         ILogService logService,
         IHttpContextAccessor httpContextAccessor,
         IWalkRouteClient walkRouteClient,
-        IOptions<DepartureGuideOptions> options)
+        IOptions<DepartureGuideOptions> options,
+        RideMateContext context,
+        IHashService hashService,
+        IPhoneCryptoService phoneCryptoService,
+        ISmsSender smsSender,
+        IOptions<PickupLinkOptions> linkOptions)
     {
         this._pickupRepository = pickupRepository;
         this._logService = logService;
         this._httpContextAccessor = httpContextAccessor;
         this._walkRouteClient = walkRouteClient;
         this._options = options.Value;
+        this._context = context;
+        this._hashService = hashService;
+        this._phoneCryptoService = phoneCryptoService;
+        this._smsSender = smsSender;
+        this._linkOptions = linkOptions.Value;
     }
 
     /// <summary>

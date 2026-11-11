@@ -105,8 +105,42 @@ public static class InfrastructureExtensions
     {
         services.AddTransient<ILogService, LogService>();
         services.AddHttpContextAccessor();
-        // 문자 사업자가 정해지면 구현체만 바꾼다
-        services.AddSingleton<ISmsSender, DevSmsSender>();
+        return services;
+    }
+
+    /// <summary>
+    /// 문자 발송기를 등록한다. Sms:Provider가 비었거나 Dev이면 실제로 발송하지 않는 DevSmsSender를, Solapi이면 5초 타임아웃의 typed HttpClient인 SolapiSmsSender를 등록한다.
+    /// Dev인데 Development 환경이 아니거나, Solapi인데 Sms:Solapi의 ApiKey·ApiSecret·Sender가 비었거나 Sender가 숫자만이 아니거나, Provider가 그 밖의 값이면 기동할 때 InvalidOperationException을 던진다.
+    /// </summary>
+    public static IServiceCollection AddSmsInfrastructure(this IServiceCollection services, IConfiguration configuration,
+        IHostEnvironment environment)
+    {
+        var provider = configuration["Sms:Provider"];
+        if (string.IsNullOrWhiteSpace(provider) || provider.Trim().Equals("Dev", StringComparison.OrdinalIgnoreCase))
+        {
+            // 발송하지 않고 성공을 돌려주므로, 운영에서 문자가 나간 것처럼 보이지 않게 Development에서만 허용한다
+            if (!environment.IsDevelopment())
+                throw new InvalidOperationException("Sms:Provider가 Dev이면 Development 환경에서만 기동합니다. (Solapi로 설정)");
+            services.AddSingleton<ISmsSender, DevSmsSender>();
+            return services;
+        }
+
+        if (!provider.Trim().Equals("Solapi", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Sms:Provider 설정이 올바르지 않습니다. (Dev 또는 Solapi)");
+
+        var solapi = configuration.GetSection("Sms:Solapi");
+        RequireText(solapi, "ApiKey");
+        RequireText(solapi, "ApiSecret");
+        var sender = RequireText(solapi, "Sender");
+        if (!sender.All(char.IsAsciiDigit))
+            throw new InvalidOperationException($"{solapi.Path}:Sender 설정은 숫자만 써야 합니다.");
+
+        services.Configure<SolapiOptions>(solapi);
+        services.AddHttpClient<ISmsSender, SolapiSmsSender>(client =>
+        {
+            client.BaseAddress = new Uri("https://api.solapi.com/");
+            client.Timeout = TimeSpan.FromSeconds(5);
+        });
         return services;
     }
 
@@ -144,13 +178,26 @@ public static class InfrastructureExtensions
     }
 
     /// <summary>
-    /// 카카오 설정(Kakao)과 출발 안내 설정(DepartureGuide)을 등록하고, 도보 경로 클라이언트를 타임아웃 3초의 typed HttpClient로 등록한다.
+    /// 카카오 설정(Kakao)과 출발 안내 설정(DepartureGuide), 픽업 링크 설정(PickupLink)을 등록하고, 도보 경로 클라이언트를 타임아웃 3초의 typed HttpClient로 등록한다.
     /// Kakao:RestApiKey가 비어 있어도 기동은 하며, 이때 클라이언트는 카카오를 부르지 않고 null을 돌려준다.
+    /// PickupLink:BaseUrl이 http(s) 절대 URI가 아니거나 PickupLink:MaxAttempts·InFlightTimeoutSec가 1보다 작으면 기동할 때 InvalidOperationException을 던진다.
     /// </summary>
     public static IServiceCollection AddMapInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<KakaoOptions>(configuration.GetSection("Kakao"));
         services.Configure<DepartureGuideOptions>(configuration.GetSection("DepartureGuide"));
+
+        var pickupLink = configuration.GetSection("PickupLink");
+        var pickupLinkOptions = pickupLink.Get<PickupLinkOptions>() ?? new PickupLinkOptions();
+        if (!Uri.TryCreate(pickupLinkOptions.BaseUrl, UriKind.Absolute, out var parsedBaseUrl)
+            || (parsedBaseUrl.Scheme != Uri.UriSchemeHttp && parsedBaseUrl.Scheme != Uri.UriSchemeHttps))
+            throw new InvalidOperationException("PickupLink:BaseUrl 설정이 올바르지 않습니다.");
+        if (pickupLinkOptions.MaxAttempts < 1)
+            throw new InvalidOperationException("PickupLink:MaxAttempts 설정은 1 이상이어야 합니다.");
+        if (pickupLinkOptions.InFlightTimeoutSec < 1)
+            throw new InvalidOperationException("PickupLink:InFlightTimeoutSec 설정은 1 이상이어야 합니다.");
+        services.Configure<PickupLinkOptions>(pickupLink);
+
         services.AddHttpClient<IWalkRouteClient, KakaoWalkRouteClient>(client =>
         {
             client.BaseAddress = new Uri("https://dapi.kakao.com/");
@@ -164,7 +211,7 @@ public static class InfrastructureExtensions
     {
         var value = section[name];
         if (string.IsNullOrWhiteSpace(value))
-            throw new InvalidOperationException($"{section.Key}:{name} 설정이 비어 있습니다.");
+            throw new InvalidOperationException($"{section.Path}:{name} 설정이 비어 있습니다.");
         return value;
     }
 

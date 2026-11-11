@@ -17,4 +17,22 @@ public interface IPickupService
     /// </summary>
     Task<ResponseModel<GetRestrictedZoneList>> GetRestrictedZoneListService(RestrictedZoneListQueryDto dto,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 픽업 링크 문자 발송(최초 발송과 실패 후 다시 보내기)
+    /// </summary>
+    Task<ResponseModel<PickupLinkSendDto>> AddPickupLinkService(AddPickupLinkDto dto,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 정차 후 "도착했어요" 다시 알림 문자 발송
+    /// </summary>
+    Task<ResponseModel<PickupLinkSendDto>> AddPickupRemindService(AddPickupRemindDto dto,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 픽업 링크 전달 상태 조회(링크·다시 알림 발송, 열람, 지금 나가요)
+    /// </summary>
+    Task<ResponseModel<DetailPickupLinkStatusDto>> DetailPickupLinkStatusService(PickupLinkStatusQueryDto dto,
+        CancellationToken cancellationToken = default);
 }

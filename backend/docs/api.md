@@ -214,6 +214,110 @@
 - 앱이 전체를 한 번에 캐시하는 목록이라 커서 페이징을 쓰지 않는다. `GetLoginSessionList`와 같은 예외다.
 - 필드·구역 유형·도형 규칙은 Notion "[차량] 학원가 단속 구역 목록" 페이지(https://app.notion.com/p/415aa638eaf8817997e0f3e2bbefc22a)가 정본이다.
 
+## 픽업 링크 문자 발송
+
+아이 휴대폰 번호로 픽업 링크 문자를 보내고 전달 상태를 읽는 세 API다. 모두 인증 구간 `sign`이 있어 Bearer가 필요하고, 사용자는 JWT의 `sub`에서 꺼낸다. 번호는 앱이 보내지 않고 서버가 DB의 아이 정보에서 읽는다.
+
+| API | 설명 |
+|---|---|
+| `POST /api/v1/Pickup/M/sign/AddPickupLink` | 링크 문자 발송. 최초 발송과 실패 뒤 다시 보내기가 같은 API다. 본문 `pickupPlanSeq`·`etaDt`·`clientEventId`가 모두 필수다 |
+| `POST /api/v1/Pickup/M/sign/AddPickupRemind` | 정차 뒤 "도착했어요" 다시 알림. 본문 `pickupPlanSeq`·`clientEventId`가 모두 필수다 |
+| `GET /api/v1/Pickup/M/sign/DetailPickupLinkStatus` | 전달 상태 조회. query `pickupPlanSeq`가 필수다. 차량이 10초 간격으로 부른다 |
+
+- `etaDt`는 차량 내비가 계산한 도착 예정 시각이고 오프셋 없는 로컬(KST) 시각이다(`2026-11-11T22:04:00`). 문자의 `HH:mm`에 쓰이며 서버 현재 시각 기준 -10분 ~ +3시간 안이어야 한다.
+- `clientEventId`는 차량이 요청마다 만드는 UUID다. 같은 발송을 다시 부를 때는 같은 값을, 새로 보낼 때는 새 값을 쓴다.
+- 응답 `data`는 `{ reason, sent, remainingAttempts, receiverLast4 }`이고 값이 없는 필드도 null로 나간다. `sent`는 이번 시도를 사업자가 접수했는지, `remainingAttempts`는 남은 시도 횟수, `receiverLast4`는 아이 번호 뒤 4자리다.
+
+두 발송 API(`AddPickupLink`·`AddPickupRemind`)의 응답이다.
+
+| code | 상황 | HTTP |
+|---|---|---|
+| 200 | 문자 사업자가 접수했다. `sent`는 true | 200 |
+| 101 | 사업자가 거절했거나 5초 안에 응답하지 않았다. `sent`는 false이고 `remainingAttempts`가 남아 있으면 다시 보낼 수 있다 | 200 |
+| 400 | 값이 없거나 형식이 틀렸다(`ProblemDetails`). `etaDt`가 범위 밖이거나 `clientEventId`가 이 계획의 다른 유형(링크↔다시 알림) 발송에 쓰였으면 `data`가 null인 `{ message, data, code }`다 | 400 |
+| 401 | 인증 실패 | 401 |
+| 404 | 계획이 없거나, 로그인한 계정의 계획이 아니거나, 탑승·만료·취소로 끝났다. 끝난 계획은 `USER_ID`가 NULL이라 남의 계획과 구분되지 않는다 | 404 |
+| 409 | 보낼 수 없는 상태. `data.reason`에 사유가 들어간다 | 409 |
+
+- 101은 오류가 아닌 정상 분기라 `message`가 `요청이 정상 처리되었습니다.`다. 400(`etaDt`·`clientEventId` 경우)·404·409는 `잘못된 요청입니다.`다. 앱은 `code`와 `data.reason`으로 나눈다.
+
+| `reason` (409) | 상황 | API |
+|---|---|---|
+| `PLAN_CLOSED` | `EXPIRE_DT`가 지났는데 만료 처리가 아직 돌지 않았다. 이미 `BOARDED`·`EXPIRED`·`CANCELED`로 끝난 계획은 `USER_ID`가 NULL이라 404가 먼저 나간다 | 둘 다 |
+| `NO_SPOT` | 배정된 픽업 지점이 없다 | 둘 다 |
+| `NO_CHILD_PHONE` | 아이가 삭제됐거나 `PHONE_ENC`가 비었거나 복호화할 수 없다 | 둘 다 |
+| `NOT_STOPPED` | `STATUS`가 `STOPPED`·`LOOPING`이 아니다 | `AddPickupRemind` |
+| `LINK_NOT_SENT` | 접수된 링크 발송(`LINK_SENT` 성공)이 없다. 링크 세션이 없는 경우도 같다 | `AddPickupRemind` |
+| `ALREADY_SENT` | 그 유형의 발송이 이미 접수됐다 | 둘 다 |
+| `IN_PROGRESS` | 그 유형의 발송이 진행 중이다(결과가 없고 만든 지 `PickupLink:InFlightTimeoutSec`, 30초가 안 됐다) | 둘 다 |
+| `LIMIT_REACHED` | 그 유형의 시도가 `PickupLink:MaxAttempts`(3)에 이르렀다. 성공·실패·진행 중을 모두 센다(성공 1회 + 실패 재시도 2회) | 둘 다 |
+
+- 판정 순서는 404 → `PLAN_CLOSED` → `NO_SPOT` → `NO_CHILD_PHONE` → (`AddPickupRemind`만) `NOT_STOPPED` → `LINK_NOT_SENT` → 같은 `clientEventId` 재시도 확인 → `ALREADY_SENT` → `IN_PROGRESS` → `LIMIT_REACHED`다. 먼저 걸린 것을 돌려준다.
+- 409의 `remainingAttempts`는 `IN_PROGRESS`만 남은 횟수이고 나머지는 0이다. `receiverLast4`는 `ALREADY_SENT`·`IN_PROGRESS`·`LIMIT_REACHED`에만 있고 나머지는 null이다.
+- 링크와 다시 알림은 서로 다른 이벤트(`LINK_SENT`·`REMIND_SENT`)라 시도 횟수와 `ALREADY_SENT`를 따로 센다.
+
+같은 `clientEventId`로 다시 부르는 경우는 이렇게 처리한다.
+
+- 원래 요청이 끝났으면 문자를 다시 보내지 않고 원래 결과(200 또는 101)를 그대로 돌려준다. 이벤트도 늘지 않는다.
+- 원래 요청이 아직 진행 중이면 409 `IN_PROGRESS`다. 차량의 5초 타임아웃 뒤 자동 재시도가 원래 요청보다 먼저 오는 경우다. 앱은 `DetailPickupLinkStatus`를 폴링해 결과를 확인한다.
+- 결과 없이 30초가 지난 진행 중 이벤트는 실패로 세므로 같은 `clientEventId`를 다시 부르면 문자를 보내지 않고 101이 온다. 다시 보내려면 새 `clientEventId`를 쓴다.
+- 이 재시도도 계획 판정(404, `PLAN_CLOSED`, `NO_SPOT`, `NO_CHILD_PHONE`, 다시 알림은 `NOT_STOPPED`, `LINK_NOT_SENT`)을 먼저 거친다. 그 사이 계획이 끝났으면 원래 결과 대신 그 오류가 온다.
+
+중복 발송과 실패 처리:
+
+- 서버는 사업자 호출 전에 결과가 없는 진행 중 이벤트(`DETAIL`의 `success`가 null)를 먼저 커밋하고 잠금 밖에서 보낸 뒤 결과를 채운다. 같은 계획에 다른 `clientEventId`로 동시에 온 요청은 이 이벤트를 보고 `IN_PROGRESS`가 되므로 문자는 한 번만 나간다. 요청이 끊겨도 발송과 결과 기록은 끝까지 한다.
+- 서버가 사업자 접수 뒤에 실패하면(500) 이벤트가 진행 중으로 남고 `PickupLink:InFlightTimeoutSec`(30초)가 지나면 실패로 센다. 그 뒤 다시 보내면 아이가 같은 문자를 두 번 받을 수 있다. 못 받는 쪽이 더 위험하다고 보고 받아들인 동작이다(사용자 결정 2026-11-11).
+- 사업자 접수(`sent` true)를 "보냄"으로 본다. 통신사 도달 여부는 알 수 없다.
+
+`DetailPickupLinkStatus` 응답이다. 읽기 전용이다.
+
+| code | 상황 | HTTP |
+|---|---|---|
+| 200 | 상태를 돌려준다 | 200 |
+| 400 | `pickupPlanSeq`가 없거나 형식이 틀렸다 | 400 (`ProblemDetails`) |
+| 401 | 인증 실패 | 401 |
+| 404 | 계획이 없거나, 로그인한 계정의 계획이 아니거나, 끝났거나(`BOARDED`·`EXPIRED`·`CANCELED`), `EXPIRE_DT`가 지났다 | 404 |
+
+- `data`는 `{ linkStatus, sentDt, remainingAttempts, opened, openedDt, leaving, leavingDt, remindStatus }`다. `linkStatus`·`remindStatus`는 `NONE`(시도 없음), `SENDING`(진행 중), `SENT`(접수된 시도가 있음), `FAILED`(접수된 시도가 없고 마지막 시도가 실패. 결과 없이 30초가 지난 진행 중 발송 포함) 중 하나다. `sentDt`는 처음 접수된 링크 발송의 `EVENT_DT`이고, `remainingAttempts`는 링크 발송의 남은 횟수다.
+- `opened`·`openedDt`·`leaving`·`leavingDt`는 `LINK_OPENED`·`CHILD_LEAVING` 이벤트의 유무와 첫 이벤트의 `EVENT_DT`다. 이 이벤트를 기록하는 API(링크를 여는 웹)는 아직 없어서 지금은 항상 false와 null이다.
+- 필드·예시는 Notion "[차량] 픽업 링크 문자 발송"(https://app.notion.com/p/415aa638eaf881bbbd18cf5d4fd3de6d), "[차량] 정차 후 다시 알림 문자 발송"(https://app.notion.com/p/415aa638eaf881068dd4f1dbf92a31cd), "[차량] 픽업 링크 전달 상태 조회"(https://app.notion.com/p/415aa638eaf881a0a737d13571e9265c) 페이지가 정본이다.
+
+## 시간표 삭제
+
+- 주소는 `DELETE /api/v1/Schedule/M/sign/DeleteSchedule`다. 인증 구간 `sign`이 있어 Bearer가 필요하고, 사용자는 JWT의 `sub`에서 꺼낸다. JSON 본문 `{ "scheduleSeq": 12 }`를 보낸다(`DeleteQrLogin`과 같이 DELETE에 본문을 싣는다).
+- 시간표와 그 요일·날짜별 예외를 함께 삭제 표시한다. 되돌릴 수 없다. 처리 순서와 잠금은 `architecture/schema.md`의 `TIMETABLE` 절이다.
+
+| code | 상황 | HTTP |
+|---|---|---|
+| 200 | 지웠다. `data.scheduleSeq`는 지운 시간표 ID다 | 200 |
+| 400 | `scheduleSeq`가 없거나 1보다 작다. 빠지면 `ProblemDetails`다 | 400 |
+| 401 | 인증 실패이거나 계정이 없다 | 401 |
+| 404 | 시간표가 없거나, 로그인한 계정 아이의 시간표가 아니거나, 이미 지웠다. 셋을 구분하지 않는다 | 404 |
+| 409 | 이 시간표의 요일을 가리키는 진행 중 픽업 계획(`PLANNED`·`STARTED`·`WAITING`·`STOPPED`·`LOOPING`)이 있다. `data`는 null이다 | 409 |
+
+- 400·401·409의 `message`는 `잘못된 요청입니다.`, 404는 `대상을 찾을 수 없습니다.`다(시간표 API의 기존 404 문구). 앱은 `code`로 나눈다.
+- 진행 중인지는 계획의 `STATUS`로만 본다. `EXPIRE_DT`가 지났는데 만료 처리가 아직 돌지 않은 계획도 진행 중으로 보고 409다.
+
+## 시간표 편집
+
+- 주소는 `PATCH /api/v1/Schedule/M/sign/UpdateSchedule`다. 인증 구간 `sign`이 있어 Bearer가 필요하고, 사용자는 JWT의 `sub`에서 꺼낸다. JSON 본문은 `scheduleSeq`와 `AddSchedule`의 필드 전부(`displayName`·`place`·`days`·`endTime`·`confirmOverlap`)다.
+- 시간표 전체를 보낸 값으로 바꾼다. "빠진 필드는 바꾸지 않음" 규칙(위 라우트 절)의 예외이며, 빠진 필수 필드는 `ProblemDetails` 400이다. 검증 규칙과 학원 찾기·만들기는 `AddSchedule`과 같다. 요일 처리와 잠금은 `architecture/schema.md`의 `TIMETABLE` 절이다.
+- 응답 `data`는 `AddSchedule`과 같은 `{ schedule, overlaps }`다.
+
+| code | 상황 | HTTP |
+|---|---|---|
+| 200 | 바꿨다. `data.schedule`은 바꾼 시간표다 | 200 |
+| 103 | 같은 요일에 하원 시각이 40분 이하로 가까운 다른 시간표가 있다. 저장하지 않고 `data.overlaps`만 준다. 자기 자신은 세지 않는다. `confirmOverlap: true`로 다시 보내면 저장한다 | 200 |
+| 104 | 좌표가 학원가 밖이다 | 200 |
+| 400 | 값이 없거나 검증에 실패했다. 빠지면 `ProblemDetails`다 | 400 |
+| 401 | 인증 실패이거나 계정이 없다 | 401 |
+| 404 | 시간표가 없거나, 로그인한 계정 아이의 시간표가 아니거나, 이미 지웠다. 셋을 구분하지 않는다 | 404 |
+| 409 | 진행 중 픽업 계획이 있는데 학원이나 하원 시각을 바꾸거나 그 계획의 요일을 뺐다. 이름 변경과 다른 요일 추가·빼기는 된다. `data`는 null이다 | 409 |
+
+- 판정 순서는 400 → 401 → 404 → 104 → 409 → 103이다. 409를 103보다 먼저 봐서 겹침을 확인하고 다시 보냈는데 409가 나오는 일이 없다.
+- `message`는 103이 `같은 요일에 시간이 가까운 시간표가 있어요.`, 104가 `지금은 대치동 학원만 등록할 수 있어요`로 `AddSchedule`과 같고, 404는 `대상을 찾을 수 없습니다.`, 400·401·409는 `잘못된 요청입니다.`다.
+- 학원이 바뀌었는지는 정규화한 이름·주소로 찾은 학원 행(`ACADEMY_ID`)이 지금과 다른지로 본다. 같은 학원에 좌표만 채우는 것은 학원 변경이 아니다.
+
 ## 커서 페이징
 
 - 목록은 오프셋 페이징을 쓰지 않고 `CursorResult<T>`(`items`·`lastCursor`·`hasMore`)로 돌려준다.
