@@ -244,9 +244,14 @@ public partial class RideMateContext : DbContext
 
             entity.HasIndex(e => e.UserId, "IX_CHILD_01");
 
+            entity.HasIndex(e => new { e.PhoneHash, e.ActiveFlag }, "UK_CHILD_01").IsUnique();
+
             entity.Property(e => e.ChildId)
                 .HasComment("아이 ID")
                 .HasColumnName("CHILD_ID");
+            entity.Property(e => e.ActiveFlag)
+                .HasComment("살아 있는 행 표시 (UNIQUE용)")
+                .HasColumnName("ACTIVE_FLAG");
             entity.Property(e => e.ChildName)
                 .HasMaxLength(50)
                 .HasComment("아이 이름")
@@ -266,6 +271,11 @@ public partial class RideMateContext : DbContext
                 .HasMaxLength(255)
                 .HasComment("암호화한 휴대폰 번호")
                 .HasColumnName("PHONE_ENC");
+            entity.Property(e => e.PhoneHash)
+                .HasMaxLength(64)
+                .IsFixedLength()
+                .HasComment("휴대폰 번호의 HMAC")
+                .HasColumnName("PHONE_HASH");
             entity.Property(e => e.SendChannel)
                 .HasMaxLength(20)
                 .HasComment("발송 채널 (SMS, ALIMTALK)")
