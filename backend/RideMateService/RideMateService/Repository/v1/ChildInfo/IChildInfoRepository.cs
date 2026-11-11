@@ -1,0 +1,37 @@
+using System.Data;
+using RideMateService.Commons.DBModels;
+
+namespace RideMateService.Repository.v1.ChildInfo;
+
+public interface IChildInfoRepository
+{
+    /// <summary>
+    /// 살아 있는 운전자 계정을 PK로 불러온다.
+    /// </summary>
+    Task<UserInfo?> GetUserInfoAsync(int userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 아이 등록. 저장 뒤 model의 아이 ID가 채워진다. 같은 번호의 살아 있는 아이가 있으면 MySQL 중복 키 예외(1062)를 올려보낸다.
+    /// </summary>
+    Task<bool> AddChildAsync(Child model, CancellationToken cancellationToken = default);
+
+    // ====== Dapper
+
+    /// <summary>
+    /// 살아 있는 운전자 계정을 FOR UPDATE 잠그고 ID를 돌려준다. 같은 계정의 동시 요청을 직렬화한다.
+    /// </summary>
+    Task<int?> LockUserInfoAsync(int userId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 그 계정·종류의 가장 최근 동의 행의 동의 여부를 돌려준다. 행이 없으면 null이다.
+    /// </summary>
+    Task<bool?> GetLatestConsentAgreeAsync(int userId, string consentType, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 그 계정에 살아 있는 아이가 있는지 돌려준다.
+    /// </summary>
+    Task<bool> ExistsLiveChildAsync(int userId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+}
