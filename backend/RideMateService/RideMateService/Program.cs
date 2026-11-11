@@ -82,6 +82,7 @@ builder.Services.AddDomainModules();
 #region 공용 서비스
 
 builder.Services.AddCommonInfrastructure();
+builder.Services.AddMapInfrastructure(builder.Configuration);
 #endregion
 
 #region Dapper 타입 핸들러
