@@ -25,6 +25,7 @@ public class AuthService : IAuthService
     private const string GrantTypeOtp = "otp";
     private const string GrantTypeRefreshToken = "refresh_token";
     private const string AuditUser = "PARENT";
+    private const int DeadlockMaxAttempts = 3;
     private const int RefreshTokenMaxLength = 128; // 실제 값은 43자다. 더 길면 해시·트랜잭션 전에 거절한다
 
     private readonly IAuthRepository _authRepository;
@@ -445,6 +446,8 @@ public class AuthService : IAuthService
         }
 
         // 8) 같은 기기의 기존 차량 세션 종료
+        // 잠그지 않는 조회라도 안전하다: 같은 계정의 차량 세션을 만드는 경로는 지금 otp뿐이고, 같은 번호의 인증번호 행 잠금으로 직렬화된다.
+        // 세션을 만드는 경로(QR 로그인 등)가 늘면 USER_INFO 행을 PK로 FOR UPDATE하는 공통 잠금으로 옮긴다
         var oldSessionIds = await _authRepository.GetCarSessionIdsAsync(userId.Value, deviceId,
             transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
         await _authRepository.EndLoginSessionsAsync(oldSessionIds, thisTime, AuditUser, cancellationToken).ConfigureAwait(false);
@@ -521,7 +524,7 @@ public class AuthService : IAuthService
         return code is not null && Regex.IsMatch(code, @"\A[0-9]{6}\z");
     }
 
-    // 교착(MySQL 1213)이면 변경 추적을 비우고 트랜잭션 전체를 한 번 다시 실행한다. 두 번째도 교착이면 500
+    // 교착(MySQL 1213)이면 변경 추적을 비우고 짧게 기다린 뒤 트랜잭션 전체를 다시 실행한다(최대 3번 실행). 세 번 모두 교착이면 500
     private async Task<ResponseModel<T>> RetryOnDeadlockAsync<T>(Func<Task<ResponseModel<T>>> work)
     {
         for (var attempt = 1; ; attempt++)
@@ -533,8 +536,12 @@ public class AuthService : IAuthService
             catch (Exception ex) when (IsDeadlock(ex))
             {
                 _context.ChangeTracker.Clear();
-                if (attempt < 2)
+                if (attempt < DeadlockMaxAttempts)
+                {
+                    // 동시에 진 요청들이 같은 순간에 다시 갭 락을 잡지 않도록 무작위로 기다린다
+                    await Task.Delay(Random.Shared.Next(10, 50)).ConfigureAwait(false);
                     continue;
+                }
 
                 _logService.LogMessage(ex.ToString());
 #if DEBUG
