@@ -422,7 +422,7 @@
 - `data`는 `{ linkStatus, sentDt, remainingAttempts, opened, openedDt, leaving, leavingDt, leaveStatus, plannedLeaveDt, remindStatus, resendStatus, resentDt }`다. `linkStatus`·`remindStatus`·`resendStatus`는 `NONE`(시도 없음), `SENDING`(진행 중), `SENT`(접수된 시도가 있음), `FAILED`(접수된 시도가 없고 마지막 시도가 실패. 결과 없이 30초가 지난 진행 중 발송 포함) 중 하나다. `sentDt`는 처음 접수된 링크 발송의 `EVENT_DT`이고, `remainingAttempts`는 링크 발송의 남은 횟수다(둘 다 `LINK_SENT`만 센다). `resendStatus`·`resentDt`는 `AddPickupLinkResend`가 기록한 `LINK_RESENT`로 같은 규칙으로 계산한 상태와 처음 접수된 시각(없으면 null)이다.
 - `leaving`·`leavingDt`는 아이 출발 알림 API가 기록한 `CHILD_LEAVING` 이벤트의 유무와 첫 이벤트의 `EVENT_DT`다. `opened`·`openedDt`는 아이 휴대폰 웹의 열람 기록(`AddPickupLinkOpen`, 아래 "아이 픽업 안내")이 넣은 첫 `LINK_OPENED`의 유무와 `EVENT_DT`다.
 - `leaveStatus`·`plannedLeaveDt`는 아래 "아이 출발 알림"의 출발 상태와 예정 시각이다. `plannedLeaveDt`는 `SCHEDULED`·`SOON`일 때만 값이 있다. 차량은 상태가 바뀐 순간에만 알린다(`SCHEDULED`가 되거나 `plannedLeaveDt`가 바뀌면 "22:03에 나온대요", `SOON`이 되면 "곧 나와요", `LEAVING`이 되면 "나오고 있어요").
-- 필드·예시는 Notion "[차량] 픽업 링크 문자 발송"(https://app.notion.com/p/415aa638eaf881bbbd18cf5d4fd3de6d), "[차량] 정차 후 다시 알림 문자 발송"(https://app.notion.com/p/415aa638eaf881068dd4f1dbf92a31cd), "[차량] 정차 전 픽업 링크 다시 보내기"(Notion 페이지 작성 예정), "[차량] 픽업 링크 전달 상태 조회"(https://app.notion.com/p/415aa638eaf881a0a737d13571e9265c) 페이지가 정본이다.
+- 필드·예시는 Notion "[차량] 픽업 링크 문자 발송"(https://app.notion.com/p/415aa638eaf881bbbd18cf5d4fd3de6d), "[차량] 정차 후 다시 알림 문자 발송"(https://app.notion.com/p/415aa638eaf881068dd4f1dbf92a31cd), "[차량] 정차 전 픽업 링크 다시 보내기"(https://app.notion.com/p/416aa638eaf881289a21e5186cbe0cdb), "[차량] 픽업 링크 전달 상태 조회"(https://app.notion.com/p/415aa638eaf881a0a737d13571e9265c) 페이지가 정본이다.
 
 ### 전달 상태 실시간 연결
 
