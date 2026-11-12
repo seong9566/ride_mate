@@ -259,4 +259,14 @@ public interface IPickupRepository
     Task<bool> ClosePickupPlanAsync(int pickupPlanId, string closeStatus, bool setLastPickupDate, DateTime now,
         string updateUser, IDbTransaction transaction, CancellationToken cancellationToken = default,
         Guid? clientEventId = null, DateTime? eventDt = null, DateTime? boardDt = null);
+
+    /// <summary>
+    /// 픽업 계획의 운전자 이름과 차량 정보를 조회한다. 운전자가 없으면 null
+    /// </summary>
+    Task<ChildPickupDriverRow?> GetChildPickupDriverAsync(int pickupPlanId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 픽업 계획의 마지막 정차 이벤트 종류(STOPPED·WRONG_STOP)를 조회한다. 없으면 null
+    /// </summary>
+    Task<string?> GetLastStopEventTypeAsync(int pickupPlanId, CancellationToken cancellationToken = default);
 }

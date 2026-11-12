@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
+using System.Text;
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 using RideMateService.Comm;
 using RideMateService.Comm.Logger;
@@ -76,6 +78,7 @@ public static class InfrastructureExtensions
 {
     /// <summary>
     /// 요청 빈도 제한 정책 등록. 차 계정 목록과 아이 출발 알림을 클라이언트별 고정 창 30회/분으로 막고, 넘으면 본문 없이 429와 Retry-After를 돌려준다.
+    /// 아이 픽업 안내 조회는 토큰별 30회/분, 아이 픽업 안내 API 전체 공용 상한은 600회/분이다.
     /// </summary>
     public static IServiceCollection AddRateLimitPolicies(this IServiceCollection services)
     {
@@ -104,8 +107,42 @@ public static class InfrastructureExtensions
                     Window = TimeSpan.FromMinutes(1),
                     QueueLimit = 0
                 }));
+            options.AddPolicy(ChildPickupRateLimit.ViewPolicyName, context =>
+                ChildPickupPartitionKey(context) is { } key
+                    ? RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = ChildPickupRateLimit.ViewPermitLimit,
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueLimit = 0
+                    })
+                    : RateLimitPartition.GetNoLimiter(string.Empty));
+
+            // 아이 픽업 안내 API 전체 공용 상한. 토큰을 바꿔 가며 부르는 경우를 막는다
+            options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+            {
+                var policyName = context.GetEndpoint()?.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName;
+                return policyName is not null && ChildPickupRateLimit.GlobalPolicyNames.Contains(policyName)
+                    && ChildPickupPartitionKey(context) is not null
+                    ? RateLimitPartition.GetFixedWindowLimiter("child-pickup", _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = ChildPickupRateLimit.GlobalPermitLimit,
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueLimit = 0
+                    })
+                    : RateLimitPartition.GetNoLimiter(string.Empty);
+            });
         });
         return services;
+    }
+
+    // 토큰 원문을 메모리 키로 두지 않으려고 해시한다. 형식이 틀린 토큰은 DB 조회 전에 404로 끝나므로 세지 않는다
+    private static string? ChildPickupPartitionKey(HttpContext context)
+    {
+        var token = context.Request.Headers["X-Pickup-Token"].FirstOrDefault();
+        if (!PickupLinkToken.IsWellFormed(token))
+            return null;
+
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(token!)));
     }
 
     /// <summary>

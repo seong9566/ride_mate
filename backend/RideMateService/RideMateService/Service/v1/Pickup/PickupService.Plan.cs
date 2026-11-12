@@ -870,6 +870,28 @@ public partial class PickupService
         var row = await _pickupRepository.GetPlanByIdAsync(pickupPlanId, tx, cancellationToken).ConfigureAwait(false)
                   ?? throw new InvalidOperationException($"pickup plan not found: plan={pickupPlanId}");
 
+        var location = ToPlanLocation(row);
+
+        return new PickupPlanDto
+        {
+            reason = null,
+            pickupPlanSeq = row.PickupPlanId,
+            status = row.Status,
+            pickupDate = row.PickupDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            endTime = row.EndTime?.ToString(@"hh\:mm"),
+            academyName = row.AcademyName,
+            pickup = location,
+            slotDt = location is null ? null : row.SlotDt,
+            expireDt = row.ExpireDt,
+            reassigned = reassigned,
+            // 대기 중(WAITING)일 때만 채운다. 출발하면 DB에는 마지막 주차장이 남지만 응답은 null이다
+            parkingLotSeq = row.Status == PlanStatusWaiting ? row.ParkingLotId : null
+        };
+    }
+
+    // 계획의 픽업 장소를 임의 좌표 우선으로 응답에 옮긴다
+    private static PickupPlanLocationDto? ToPlanLocation(LivePlanRow row)
+    {
         PickupPlanLocationDto? location = null;
         if (row is { CustomLat: { } customLat, CustomLng: { } customLng, CustomName: { } customName })
         {
@@ -900,21 +922,7 @@ public partial class PickupService
             };
         }
 
-        return new PickupPlanDto
-        {
-            reason = null,
-            pickupPlanSeq = row.PickupPlanId,
-            status = row.Status,
-            pickupDate = row.PickupDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-            endTime = row.EndTime?.ToString(@"hh\:mm"),
-            academyName = row.AcademyName,
-            pickup = location,
-            slotDt = location is null ? null : row.SlotDt,
-            expireDt = row.ExpireDt,
-            reassigned = reassigned,
-            // 대기 중(WAITING)일 때만 채운다. 출발하면 DB에는 마지막 주차장이 남지만 응답은 null이다
-            parkingLotSeq = row.Status == PlanStatusWaiting ? row.ParkingLotId : null
-        };
+        return location;
     }
 
     // 이벤트 DETAIL의 시각 형식(오프셋 없는 KST)

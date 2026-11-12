@@ -276,3 +276,29 @@ public class PlanEventRow
     public string EventType { get; set; } = string.Empty;
     public string? Detail { get; set; }
 }
+
+/// <summary>
+/// 아이 픽업 안내에 쓰는 운전자와 차량 정보
+/// </summary>
+public class ChildPickupDriverRow
+{
+    /// <summary>
+    /// 운전자 이름
+    /// </summary>
+    public string UserName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 차종
+    /// </summary>
+    public string? CarModel { get; set; }
+
+    /// <summary>
+    /// 차 색
+    /// </summary>
+    public string? CarColor { get; set; }
+
+    /// <summary>
+    /// 차량 번호 뒷자리 4자리
+    /// </summary>
+    public string? CarNoLast4 { get; set; }
+}
