@@ -95,7 +95,7 @@ public class KotsaParkingRealtimeClient : IParkingRealtimeClient
 
         foreach (var item in root["PrkRealtimeInfo"] as JArray ?? new JArray())
         {
-            var realtimeRef = item["prk_center_id"]?.Value<string>();
+            var realtimeRef = item["prk_center_id"]?.Value<string>()?.Trim(); // 수집기가 trim해서 REALTIME_REF에 넣는다
             var availableText = item["pkfc_Available_ParkingLots_total"]?.Value<string>();
             if (realtimeRef is null || !requested.Contains(realtimeRef)
                 || !int.TryParse(availableText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var available))

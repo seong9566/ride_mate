@@ -463,6 +463,8 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 - 표준데이터와 서울시가 같은 주차장에 다른 값을 주면 기준일(`referenceDate` vs `LAST_DATA_SYNC_TM`)이 최신인 쪽을 쓰고 `FEE_SOURCE`·`FEE_BASE_DATE`에 남긴다.
 - CHECK: `(FEE_SOURCE IS NULL) = (FEE_BASE_DATE IS NULL)`
 - 추천할 때 저장된 빈자리가 5분 안의 값이면 그대로 쓰고, 아니면 실시간 API를 조회해 덮어쓴다. API가 실패하면 저장된 값을 쓴다.
+- `REALTIME_REF`가 없거나, 실시간 API가 성공했는데 응답에 그 주차장이 없으면 저장된 빈자리를 쓰지 않고 "자리 정보 없음"으로 둔다.
+- 수집기가 `REALTIME_REF`를 바꾸면(연결이 끊기거나 다른 시설로 바뀌면) `AVAILABLE_SPACES`·`AVAILABLE_UPDATE_DT`를 함께 비운다.
 - 빈자리 갱신은 조회 시각이 저장된 `AVAILABLE_UPDATE_DT`보다 나중일 때만 한다. 늦게 도착한 응답이 최신 값을 덮지 않게 한다.
 - 빈자리 갱신은 `UPDATE_DT`·`UPDATE_USER`를 바꾸지 않는다. 감사 컬럼은 기준 데이터(요금, 운영 시간)를 고친 기록으로만 쓴다.
 - 살아 있는 행 UNIQUE: `(SOURCE_REF, ACTIVE_FLAG)`. 공공데이터를 다시 적재할 때 이 값으로 같은 주차장을 찾아 덮어쓴다.
