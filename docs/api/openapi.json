@@ -959,55 +959,6 @@
         ]
       }
     },
-    "/api/v1/Pickup/M/sign/AddPickupPlan": {
-      "post": {
-        "tags": [
-          "Pickup"
-        ],
-        "summary": "오늘 픽업 계획 만들기",
-        "requestBody": {
-          "content": {
-            "application/json-patch+json": {
-              "schema": {
-                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupPlanDto"
-              }
-            },
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupPlanDto"
-              }
-            },
-            "text/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupPlanDto"
-              }
-            },
-            "application/*+json": {
-              "schema": {
-                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupPlanDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_PickupPlanDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": [ ]
-          }
-        ]
-      }
-    },
     "/api/v1/Pickup/M/sign/UpdatePickupPlanLocation": {
       "patch": {
         "tags": [
@@ -2161,26 +2112,6 @@
         },
         "additionalProperties": false
       },
-      "RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupPlanDto": {
-        "type": "object",
-        "properties": {
-          "pickupLat": {
-            "maximum": 90,
-            "minimum": -90,
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
-          "pickupLng": {
-            "maximum": 180,
-            "minimum": -180,
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          }
-        },
-        "additionalProperties": false
-      },
       "RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupRemindDto": {
         "required": [
           "clientEventId",
@@ -2276,15 +2207,10 @@
         "required": [
           "clientEventId",
           "driveMin",
-          "eventDt",
-          "pickupPlanSeq"
+          "eventDt"
         ],
         "type": "object",
         "properties": {
-          "pickupPlanSeq": {
-            "type": "integer",
-            "format": "int32"
-          },
           "clientEventId": {
             "type": "string",
             "format": "uuid"
@@ -2298,6 +2224,20 @@
             "minimum": 0,
             "type": "integer",
             "format": "int32"
+          },
+          "pickupLat": {
+            "maximum": 90,
+            "minimum": -90,
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "pickupLng": {
+            "maximum": 180,
+            "minimum": -180,
+            "type": "number",
+            "format": "double",
+            "nullable": true
           }
         },
         "additionalProperties": false

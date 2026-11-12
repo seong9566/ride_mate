@@ -55,19 +55,13 @@ public interface IPickupService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 오늘 픽업 계획 만들기(이미 있으면 그 계획). 기본 지점을 우선순위·금지 시간·정원으로 배정한다
-    /// </summary>
-    Task<ResponseModel<PickupPlanDto>> AddPickupPlanService(AddPickupPlanDto dto,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
     /// 픽업 장소 바꾸기(임의 좌표로 바꾸거나 기본 지점으로 되돌리기). 같은 clientEventId를 다시 보내면 한 번만 반영한다
     /// </summary>
     Task<ResponseModel<PickupPlanDto>> UpdatePickupPlanLocationService(UpdatePickupPlanLocationDto dto,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 경로 시작. 늦게 출발했으면 같은 장소에서 배정 시각을 차 도착 예상 시각으로 미룬다. 이미 시작했으면 지금 계획을 돌려준다
+    /// 경로 시작. 오늘 계획이 없으면 만들면서 시작한다. 늦게 출발했으면 같은 장소에서 배정 시각을 차 도착 예상 시각으로 미룬다. 이미 시작했으면 지금 계획을 돌려준다
     /// </summary>
     Task<ResponseModel<PickupPlanDto>> UpdatePickupPlanStartService(UpdatePickupPlanStartDto dto,
         CancellationToken cancellationToken = default);
