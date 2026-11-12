@@ -8,6 +8,7 @@ using RideMateService.Comm.Dto.v1.Pickup.Request;
 using RideMateService.Comm.Dto.v1.Pickup.Response;
 using RideMateService.Comm.Logger;
 using RideMateService.Comm.Map;
+using RideMateService.Comm.Parking;
 using RideMateService.Comm.Security;
 using RideMateService.Comm.Sms;
 using RideMateService.Commons.Repository;
@@ -35,7 +36,9 @@ public partial class PickupService : IPickupService
     private readonly ILogService _logService;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IWalkRouteClient _walkRouteClient;
+    private readonly IParkingRealtimeClient _parkingRealtimeClient;
     private readonly DepartureGuideOptions _options;
+    private readonly WaitingPlaceOptions _waitingPlaceOptions;
     private readonly RideMateContext _context; // 트랜잭션 시작·완료에만 쓴다
     private readonly IHashService _hashService;
     private readonly IPhoneCryptoService _phoneCryptoService;
@@ -46,7 +49,9 @@ public partial class PickupService : IPickupService
         ILogService logService,
         IHttpContextAccessor httpContextAccessor,
         IWalkRouteClient walkRouteClient,
+        IParkingRealtimeClient parkingRealtimeClient,
         IOptions<DepartureGuideOptions> options,
+        IOptions<WaitingPlaceOptions> waitingPlaceOptions,
         RideMateContext context,
         IHashService hashService,
         IPhoneCryptoService phoneCryptoService,
@@ -57,7 +62,9 @@ public partial class PickupService : IPickupService
         this._logService = logService;
         this._httpContextAccessor = httpContextAccessor;
         this._walkRouteClient = walkRouteClient;
+        this._parkingRealtimeClient = parkingRealtimeClient;
         this._options = options.Value;
+        this._waitingPlaceOptions = waitingPlaceOptions.Value;
         this._context = context;
         this._hashService = hashService;
         this._phoneCryptoService = phoneCryptoService;

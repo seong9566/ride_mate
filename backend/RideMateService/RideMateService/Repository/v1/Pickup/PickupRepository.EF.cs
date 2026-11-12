@@ -110,4 +110,30 @@ public partial class PickupRepository
             throw; // Service가 500으로 바꾼다
         }
     }
+
+    /// <summary>
+    /// 조회 시각이 저장된 시각보다 나중일 때 주차장 빈자리 캐시를 갱신한다
+    /// </summary>
+    public async Task<int> UpdateAvailableSpacesAsync(int parkingLotId, short availableSpaces, DateTime checkedDt,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await _context.ParkingLots
+                .Where(x => x.ParkingLotId == parkingLotId
+                            && (x.AvailableUpdateDt == null || x.AvailableUpdateDt < checkedDt))
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.AvailableSpaces, availableSpaces)
+                    .SetProperty(x => x.AvailableUpdateDt, checkedDt), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
 }

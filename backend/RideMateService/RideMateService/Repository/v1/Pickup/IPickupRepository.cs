@@ -30,6 +30,12 @@ public interface IPickupRepository
     /// </summary>
     Task<bool> UpdatePickupEventAsync(PickupEvent model, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// 조회 시각이 저장된 시각보다 나중일 때 주차장 빈자리 캐시를 갱신한다
+    /// </summary>
+    Task<int> UpdateAvailableSpacesAsync(int parkingLotId, short availableSpaces, DateTime checkedDt,
+        CancellationToken cancellationToken = default);
+
     // ====== Dapper
 
     /// <summary>
@@ -38,6 +44,11 @@ public interface IPickupRepository
     /// </summary>
     Task<List<TodayPickupRow>> GetTodayPickupsAsync(int userId, DateOnly date, byte dayOfWeek,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 학원가의 살아 있는 대기 장소를 조회한다
+    /// </summary>
+    Task<List<ParkingLotRow>> GetParkingLotsAsync(int areaId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 학원의 픽업 지점 후보 중 사용 중인 것을 우선순위 순으로 조회한다
