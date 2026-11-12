@@ -32,6 +32,12 @@ public static class ChildPickupRateLimit
     /// 전체 공용으로 1분에 받는 요청 수
     /// </summary>
     public const int GlobalPermitLimit = 600;
+
+    /// <summary>
+    /// 토큰별 제한의 칸 수. 토큰 해시를 이 수로 나눈 칸마다 센다. 가짜 토큰을 바꿔 가며 보내도 제한기 상태가 이 수(그룹마다)를 넘지 않는다.
+    /// 같은 칸에 든 다른 링크와 토큰별 한도를 나눠 쓸 수 있다
+    /// </summary>
+    public const int TokenBucketCount = 4096;
 }
 
 /// <summary>아이 픽업 안내 빈도 제한을 받는 엔드포인트 표시. 그룹과 토큰별 1분 허용 횟수를 담는다</summary>

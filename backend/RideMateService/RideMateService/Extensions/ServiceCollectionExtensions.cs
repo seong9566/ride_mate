@@ -134,14 +134,16 @@ public static class InfrastructureExtensions
         return services;
     }
 
-    // 토큰 원문을 메모리 키로 두지 않으려고 해시한다. 형식이 틀린 토큰은 DB 조회 전에 404로 끝나므로 세지 않는다
+    // 토큰 해시를 TokenBucketCount칸으로 나눈 칸 번호를 키로 쓴다. 토큰 원문을 메모리 키로 두지 않고,
+    // 가짜 토큰을 바꿔 가며 보내도 제한기 상태가 칸 수를 넘지 않게 한다(PR #40 2차 리뷰). 형식이 틀린 토큰은 DB 조회 전에 404로 끝나므로 세지 않는다
     private static string? ChildPickupPartitionKey(HttpContext context)
     {
         var token = context.Request.Headers["X-Pickup-Token"].FirstOrDefault();
         if (!PickupLinkToken.IsWellFormed(token))
             return null;
 
-        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(token!)));
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(token!));
+        return (((hash[0] << 8) | hash[1]) % ChildPickupRateLimit.TokenBucketCount).ToString();
     }
 
     /// <summary>
