@@ -118,4 +118,11 @@ public interface IPickupService
     /// </summary>
     Task<ResponseModel<PickupPlanPositionDto>> UpdatePickupPlanPositionService(UpdatePickupPlanPositionDto dto,
         CancellationToken cancellationToken = default);
+    /// <summary>아이 픽업 실시간 연결을 판정한다</summary>
+    Task<ResponseModel<ChildPickupStreamTicket>> OpenChildPickupStreamService(string? token,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>아이 픽업 실시간 이벤트를 읽는다. 요청 취소 외 오류는 기록하고 연결을 끝낸다</summary>
+    IAsyncEnumerable<ChildPickupStreamEvent> ReadChildPickupStreamAsync(ChildPickupStreamTicket ticket,
+        CancellationToken cancellationToken = default);
 }

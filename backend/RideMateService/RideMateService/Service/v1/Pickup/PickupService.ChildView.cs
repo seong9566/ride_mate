@@ -39,7 +39,7 @@ public partial class PickupService
         }
     }
 
-    private async Task<(ChildPickupDto Dto, DateTime? ExpireDt)?> LoadChildPickupAsync(string tokenHash,
+    private async Task<(int PickupPlanId, ChildPickupDto Dto, DateTime? ExpireDt)?> LoadChildPickupAsync(string tokenHash,
         CancellationToken cancellationToken)
     {
         int? pickupPlanId = null;
@@ -63,7 +63,7 @@ public partial class PickupService
                     ? LinkStatusClosed
                     : LinkStatusActive;
             if (linkStatus != LinkStatusActive)
-                return (new ChildPickupDto { linkStatus = linkStatus, serverDt = now }, null);
+                return (plan.PickupPlanId, new ChildPickupDto { linkStatus = linkStatus, serverDt = now }, null);
 
             var driver = await _pickupRepository.GetChildPickupDriverAsync(plan.PickupPlanId,
                 cancellationToken).ConfigureAwait(false);
@@ -89,7 +89,7 @@ public partial class PickupService
                 cancellationToken).ConfigureAwait(false);
             var summary = ChildLeaveState.Summarize(events, now, _linkOptions.LeaveSoonMin);
             var vehicle = ResolveVehicle(plan.PickupPlanId, plan.SlotDt, now);
-            return (new ChildPickupDto
+            return (plan.PickupPlanId, new ChildPickupDto
             {
                 linkStatus = linkStatus,
                 serverDt = now,
