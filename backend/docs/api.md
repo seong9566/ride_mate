@@ -358,7 +358,8 @@
 |---|---|
 | `POST /api/v1/Pickup/M/sign/AddPickupLink` | 링크 문자 발송. 최초 발송과 실패 뒤 다시 보내기가 같은 API다. 본문 `pickupPlanSeq`·`etaDt`·`clientEventId`가 모두 필수다 |
 | `POST /api/v1/Pickup/M/sign/AddPickupRemind` | 정차 뒤 "도착했어요" 다시 알림. 정차 기록(`UpdatePickupPlanStop`, 잘못된 위치 정차 포함) 뒤 사용할 수 있다. 본문 `pickupPlanSeq`·`clientEventId`가 모두 필수다 |
-| `GET /api/v1/Pickup/M/sign/DetailPickupLinkStatus` | 전달 상태 조회. query `pickupPlanSeq`가 필수다. 차량이 10초 간격으로 부른다 |
+| `GET /api/v1/Pickup/M/sign/DetailPickupLinkStatus` | 전달 상태 조회. query `pickupPlanSeq`가 필수다. 실시간 연결을 쓸 수 없을 때 차량이 간격을 두고 부른다(3초 이상) |
+| `GET /api/v1/Pickup/M/sign/DetailPickupLinkStream` | 전달 상태 실시간 연결(SSE). query `pickupPlanSeq`가 필수다. 차량은 이것을 먼저 쓴다(아래 "전달 상태 실시간 연결") |
 
 - `etaDt`는 차량 내비가 계산한 도착 예정 시각이고 오프셋 없는 로컬(KST) 시각이다(`2026-11-11T22:04:00`). 문자의 `HH:mm`에 쓰이며 서버 현재 시각 기준 -10분 ~ +3시간 안이어야 한다.
 - `clientEventId`는 차량이 요청마다 만드는 UUID다. 같은 발송을 다시 부를 때는 같은 값을, 새로 보낼 때는 새 값을 쓴다.
@@ -419,6 +420,18 @@
 - `leaving`·`leavingDt`는 아이 출발 알림 API가 기록한 `CHILD_LEAVING` 이벤트의 유무와 첫 이벤트의 `EVENT_DT`다. `opened`·`openedDt`는 아이 휴대폰 웹의 열람 기록(`AddPickupLinkOpen`, 아래 "아이 픽업 안내")이 넣은 첫 `LINK_OPENED`의 유무와 `EVENT_DT`다.
 - `leaveStatus`·`plannedLeaveDt`는 아래 "아이 출발 알림"의 출발 상태와 예정 시각이다. `plannedLeaveDt`는 `SCHEDULED`·`SOON`일 때만 값이 있다. 차량은 상태가 바뀐 순간에만 알린다(`SCHEDULED`가 되거나 `plannedLeaveDt`가 바뀌면 "22:03에 나온대요", `SOON`이 되면 "곧 나와요", `LEAVING`이 되면 "나오고 있어요").
 - 필드·예시는 Notion "[차량] 픽업 링크 문자 발송"(https://app.notion.com/p/415aa638eaf881bbbd18cf5d4fd3de6d), "[차량] 정차 후 다시 알림 문자 발송"(https://app.notion.com/p/415aa638eaf881068dd4f1dbf92a31cd), "[차량] 픽업 링크 전달 상태 조회"(https://app.notion.com/p/415aa638eaf881a0a737d13571e9265c) 페이지가 정본이다.
+
+### 전달 상태 실시간 연결
+
+`GET /api/v1/Pickup/M/sign/DetailPickupLinkStream?pickupPlanSeq=`(차량, Bearer, SSE). 아이의 링크 열람·출발 알림·"곧 나와요" 전환·문자 발송 결과를 조회 없이 바로 받는다. [ADR-0024]
+
+- 판정 실패는 SSE가 아니라 JSON이다. 400(`pickupPlanSeq` 없음, `ProblemDetails`)·401·404(계획 없음·남의 계획·끝남·만료 시각 지남)는 `DetailPickupLinkStatus`와 같다. 연결 시도는 사용자(JWT `sub`)마다 1분 20회다(넘으면 429 + `Retry-After`).
+- 연결 직후 `linkStatus` 이벤트 하나를 보낸다. `data`는 `DetailPickupLinkStatus`의 `data`와 같은 모양이다. 그 뒤로는 값이 직전과 달라질 때만 다시 보낸다.
+- 서버는 계획이 바뀌었다는 신호, 15초 하트비트, 출발 예정 시각 − `PickupLink:LeaveSoonMin`(`SOON`이 되는 시각), 계획의 만료 시각마다 다시 계산한다. 하트비트마다 다시 계산하므로 결과 없이 30초가 지난 발송(`SENDING`→`FAILED`)처럼 시간만으로 바뀌는 값도 15초 안에 온다. `SOON`은 그 시각에 맞춰 온다.
+- 15초마다 주석 줄 `: ping`을 보낸다.
+- 계획이 끝나면(탑승·취소·만료, 만료 시각이 지난 순간 포함) `closed` 이벤트(`data` null)를 보내고 닫는다.
+- 접근 토큰(JWT) 만료 시각, 연결 30분, 같은 계획의 차량 연결이 5개를 넘을 때(가장 오래된 것)에도 서버가 이벤트 없이 닫는다. 차량은 토큰을 갱신하고 다시 연결한다. 차량 연결 상한은 아이 화면 연결과 따로 센다.
+- 차량은 SSE를 우선으로 쓰고, 플랫폼 제약으로 연결을 유지할 수 없으면 `DetailPickupLinkStatus`를 3초 간격으로 부른다. 두 방식의 값은 같다. 위 "상태가 바뀐 순간에만 알린다" 규칙은 두 방식 모두에 해당한다.
 
 ## 아이 픽업 안내
 

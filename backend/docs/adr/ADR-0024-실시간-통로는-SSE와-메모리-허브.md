@@ -26,5 +26,5 @@
 - 서버가 재시작하면 차 위치가 비고 스트림이 끊긴다. 차량의 다음 보고(3초 안)에 위치가 다시 채워지고, 웹이 다시 연결하면 스냅샷부터 받는다.
 - 커밋 뒤 신호를 빠뜨리면 그 변화는 다음 신호나 재연결 때까지 화면에 늦게 보인다. 그래서 계획을 바꾸는 새 경로를 만들 때는 신호를 붙인다(`docs/architecture/service.md`).
 - Service는 `ResponseModel<T>`를 반환한다는 규칙(ADR-0004)에 스트림 읽기 메서드라는 예외가 하나 생긴다(`service.md`).
-- 차량 쪽 SSE는 같은 허브를 쓰는 후속 작업이다. 기존 조회 API(`DetailPickupLinkStatus`)는 그대로 둔다.
+- 차량 SSE(`DetailPickupLinkStream`)도 같은 허브를 쓴다. 구독 상한은 아이·차량 대상별로 따로 센다(아이 화면 연결이 차량 연결을 밀어내지 않게). 기존 조회 API(`DetailPickupLinkStatus`)는 그대로 둔다.
 - 규칙은 `docs/api.md` "아이 픽업 안내", `docs/security.md`, `docs/architecture/service.md`·`overview.md`에 있다.
