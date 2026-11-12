@@ -250,7 +250,7 @@
 
 - 200의 `message`는 `요청이 정상 처리되었습니다.`, 404는 `잘못된 요청입니다.`다.
 - 후보가 학원당 최대 3곳이라 커서 페이징을 쓰지 않는다. `GetRestrictedZoneList`와 같은 예외다.
-- 필드·예시는 Notion "[차량] 픽업 장소 후보 목록" 페이지가 정본이다. (Notion 페이지 작성 예정)
+- 필드·예시는 Notion "[차량] 픽업 장소 후보 목록"(https://app.notion.com/p/416aa638eaf8810dbf8afded4d868f2a) 페이지가 정본이다.
 
 ## 오늘 픽업 계획
 
@@ -261,7 +261,7 @@
 
 - `pickupSpotSeq`와 픽업 좌표를 함께 보내면 `data: null`인 400이다. 지점·좌표가 모두 없을 때만 기본 지점을 고른다. 진행 중 계획의 경로 시작은 지점 선택도 무시한다.
 - 선택 지점은 대상 학원의 살아 있는 후보 연결·살아 있는 지점·`USE_YN = 1`이어야 한다. 부모가 오늘 고른 지점은 꽉 차도 다음 후보로 넘기지 않는다. 앱은 `GetPickupSpotList`를 다시 불러 고르게 한다. 우리 픽업 장소는 자동 저장하지 않는다.
-- 계획 생성 판정 순서: 입력 400 → 대상 고르기(없으면 101) → `TOO_EARLY` → `NO_ACADEMY_LOCATION` → AREA·TIMETABLE_DAY 잠금 → 101·`NO_ACADEMY_LOCATION`·`TOO_EARLY` 재확인 → `INVALID_PICKUP_SPOT` → `SPOT_UNAVAILABLE` → `SPOT_FULL`. 그사이 만들어진 계획은 기존 규칙대로 시작한다.
+- 계획 생성 판정 순서: 입력 400 → 대상 고르기(없으면 101) → `eventDt`가 −10분보다 이르면 400(`data` null) → `TOO_EARLY` → `NO_ACADEMY_LOCATION` → AREA·TIMETABLE_DAY 잠금 → 101·`NO_ACADEMY_LOCATION`·`TOO_EARLY` 재확인 → `INVALID_PICKUP_SPOT` → `SPOT_UNAVAILABLE` → `SPOT_FULL`. 그사이 만들어진 계획은 기존 규칙대로 시작한다.
 - 장소 바꾸기는 기존 404 → `ALREADY_STOPPED` → 404 → `PLAN_CLOSED` 순서와 clientEventId 규칙을 유지한다. 지점 선택도 좌표처럼 잠금 전에 `NO_ACADEMY_LOCATION`을 검사한다. AREA → 계획 행 잠금·상태 재확인·clientEventId 확인 뒤 선택 지점을 판정한다. 실패하면 기존 계획을 유지한다.
 - 선택 지점의 아이 도착 시각으로 금지 시간을 검사한다. 배정 시작은 아이 도착과 차 도착 예상 중 늦은 시각(장소 바꾸기는 STARTED일 때 기존 slotDt 하한)이며 SlotShiftMaxMin까지 1분씩 정원을 확인한다. 장소 바꾸기는 자기 계획을 정원에서 제외하고 CUSTOM_*를 비우며 REASSIGNED를 남긴다.
 
@@ -633,14 +633,14 @@
 | code | 상황 | HTTP |
 |---|---|---|
 | 200 | 저장했거나 값이 같아 바꿀 것이 없었다 | 200 |
-| 400 | `scheduleSeq`나 `pickupSpotSeq`가 1보다 작다. `scheduleSeq`가 빠지면 `ProblemDetails`다 | 400 |
+| 400 | `scheduleSeq`가 빠졌거나 `scheduleSeq`·`pickupSpotSeq`가 1보다 작다(모델 검증, `ProblemDetails`) | 400 |
 | 401 | 인증 실패이거나 계정이 없다 | 401 |
 | 404 | 시간표가 없거나, 로그인한 계정 아이의 시간표가 아니거나, 이미 지웠다. `data`는 null이다 | 404 |
 | 409 | `data.reason`이 `INVALID_PICKUP_SPOT`이다. 그 학원의 살아 있는 후보가 아니다 | 409 |
 
 - 200의 `message`는 `요청이 정상 처리되었습니다.`, 404·409는 `잘못된 요청입니다.`다.
 - 시간표 목록(`GET /api/v1/Schedule/M/sign/GetScheduleList`, 등록·편집 응답 포함)의 항목에 `pickupSpot`이 있다. 부모가 고른 지점이 지금도 후보면 그 지점(`preferred` true), 아니면 `PRIORITY`가 가장 앞선 후보(`preferred` false), 후보가 없으면 null이다. 시각·금지 시간·정원은 보지 않는다.
-- 필드·예시는 Notion "[차량] 우리 픽업 장소 저장" 페이지가 정본이다. (Notion 페이지 작성 예정)
+- 필드·예시는 Notion "[차량] 우리 픽업 장소 저장"(https://app.notion.com/p/416aa638eaf881e4af7edefd88a216ab) 페이지가 정본이다.
 
 ## 시간표 삭제
 
