@@ -49,6 +49,9 @@ public partial class PickupService : IPickupService
     private readonly PickupLinkOptions _linkOptions;
     private readonly PickupPlanOptions _planOptions;
 
+    private readonly IPickupLiveHub _liveHub;
+    private readonly PickupLiveOptions _liveOptions;
+
     public PickupService(IPickupRepository pickupRepository,
         ILogService logService,
         IHttpContextAccessor httpContextAccessor,
@@ -62,7 +65,9 @@ public partial class PickupService : IPickupService
         IPhoneCryptoService phoneCryptoService,
         ISmsSender smsSender,
         IOptions<PickupLinkOptions> linkOptions,
-        IOptions<PickupPlanOptions> planOptions)
+        IOptions<PickupPlanOptions> planOptions,
+        IPickupLiveHub liveHub,
+        IOptions<PickupLiveOptions> liveOptions)
     {
         this._pickupRepository = pickupRepository;
         this._logService = logService;
@@ -78,6 +83,8 @@ public partial class PickupService : IPickupService
         this._smsSender = smsSender;
         this._linkOptions = linkOptions.Value;
         this._planOptions = planOptions.Value;
+        this._liveHub = liveHub;
+        this._liveOptions = liveOptions.Value;
     }
 
     /// <summary>

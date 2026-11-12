@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using RideMateService.Comm;
 using RideMateService.Comm.Dto.v1.Pickup.Request;
 using RideMateService.Comm.Dto.v1.Pickup.Response;
@@ -287,6 +288,43 @@ public class PickupController : ApiControllerBase
         try
         {
             var model = await _pickupService.UpdatePickupPlanStopService(dto, cancellationToken).ConfigureAwait(false);
+            return ToActionResult(model);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // 앱이 요청을 끊었다. 오류로 기록하지 않는다
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
+
+    /// <summary>차 위치·내비 남은 시간 보고</summary>
+    /// <remarks>경로 시작부터 탑승 전까지 3초마다 부른다. etaSec는 내비 목적지가 이 계획의 픽업 장소일 때만 보낸다. 위치는 서버 메모리에 계획마다 마지막 하나만 두고 DB에 쓰지 않는다. 오프라인 대기열에 쌓아 다시 보내지 않는다. 1초 안에 다시 온 보고는 200으로 받고 버린다.
+    /// 응답 code: 200 정상(data null), 400 검증 실패, 401 인증 실패, 404 계획 없음·남의 계획·끝난 계획, 409 PLAN_CLOSED·NOT_STARTED, 429 요청 초과(사용자마다 1분 60회), 500 서버 처리 실패</remarks>
+    [Produces("application/json")]
+    [HttpPatch]
+    [Route("v1/Pickup/M/sign/UpdatePickupPlanPosition")]
+    [Consumes("application/json")]
+    [EnableRateLimiting(PickupPositionRateLimit.PolicyName)]
+    [SwaggerOperation(Summary = "차 위치·내비 남은 시간 보고")]
+    [ProducesResponseType(typeof(ResponseModel<PickupPlanPositionDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ResponseModel<PickupPlanPositionDto>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ResponseModel<PickupPlanPositionDto>), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(void), StatusCodes.Status429TooManyRequests)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> UpdatePickupPlanPosition([FromBody] UpdatePickupPlanPositionDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _pickupService.UpdatePickupPlanPositionService(dto, cancellationToken).ConfigureAwait(false);
             return ToActionResult(model);
         }
         catch (Exception) when (cancellationToken.IsCancellationRequested)

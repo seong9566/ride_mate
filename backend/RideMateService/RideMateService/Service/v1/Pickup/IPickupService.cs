@@ -112,4 +112,10 @@ public interface IPickupService
     /// </summary>
     Task<ResponseModel<ChildPickupOpenDto>> AddPickupLinkOpenService(string? token,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 차 위치·내비 남은 시간을 보고한다. 위치는 DB에 쓰지 않고 서버 메모리에만 둔다
+    /// </summary>
+    Task<ResponseModel<PickupPlanPositionDto>> UpdatePickupPlanPositionService(UpdatePickupPlanPositionDto dto,
+        CancellationToken cancellationToken = default);
 }

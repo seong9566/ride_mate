@@ -269,4 +269,9 @@ public interface IPickupRepository
     /// 픽업 계획의 마지막 정차 이벤트 종류(STOPPED·WRONG_STOP)를 조회한다. 없으면 null
     /// </summary>
     Task<string?> GetLastStopEventTypeAsync(int pickupPlanId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 위치 보고 대상 계획의 소유자·상태·만료 시각을 잠금 없이 조회한다
+    /// </summary>
+    Task<PositionPlanRow?> GetPositionPlanAsync(int pickupPlanId, CancellationToken cancellationToken = default);
 }

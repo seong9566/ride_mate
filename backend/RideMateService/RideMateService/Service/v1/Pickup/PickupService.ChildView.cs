@@ -10,6 +10,7 @@ public partial class PickupService
     private const string LinkStatusBoarded = "BOARDED";
     private const string LinkStatusClosed = "CLOSED";
     private const string ArrivalSourceSlot = "SLOT";
+    private const string ArrivalSourceNavi = "NAVI";
 
     /// <summary>
     /// 아이 픽업 안내 조회
@@ -23,16 +24,37 @@ public partial class PickupService
             if (!PickupLinkToken.IsWellFormed(token))
                 return ChildPickupNotFound();
 
-            var session = await _pickupRepository.GetLeaveSessionAsync(
-                PickupLinkToken.HashToken(_hashService, token!), cancellationToken).ConfigureAwait(false);
+            var result = await LoadChildPickupAsync(PickupLinkToken.HashToken(_hashService, token!),
+                cancellationToken).ConfigureAwait(false);
+            return result is null ? ChildPickupNotFound() : ChildPickupSuccess(result.Value.Dto);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 그대로 올려보낸다
+        {
+            pickupPlanId = ex.Data["ChildPickupPlanId"] as int?;
+            _logService.LogMessage($"child pickup detail failed: plan={pickupPlanId?.ToString() ?? "unknown"}\n{ex}");
+#if DEBUG
+            _logService.ConsoleWarning($"child pickup detail failed: plan={pickupPlanId?.ToString() ?? "unknown"}\n{ex}");
+#endif
+            return ChildPickupServerError();
+        }
+    }
+
+    private async Task<(ChildPickupDto Dto, DateTime? ExpireDt)?> LoadChildPickupAsync(string tokenHash,
+        CancellationToken cancellationToken)
+    {
+        int? pickupPlanId = null;
+        try
+        {
+            var session = await _pickupRepository.GetLeaveSessionAsync(tokenHash, cancellationToken)
+                .ConfigureAwait(false);
             if (session is null)
-                return ChildPickupNotFound();
+                return null;
 
             pickupPlanId = session.PickupPlanId;
             var plan = await _pickupRepository.GetPlanByIdAsync(session.PickupPlanId, null,
                 cancellationToken).ConfigureAwait(false);
             if (plan is null)
-                return ChildPickupNotFound();
+                return null;
 
             var now = NowToSecond();
             var linkStatus = plan.Status == PlanStatusBoarded
@@ -41,7 +63,7 @@ public partial class PickupService
                     ? LinkStatusClosed
                     : LinkStatusActive;
             if (linkStatus != LinkStatusActive)
-                return ChildPickupSuccess(new ChildPickupDto { linkStatus = linkStatus, serverDt = now });
+                return (new ChildPickupDto { linkStatus = linkStatus, serverDt = now }, null);
 
             var driver = await _pickupRepository.GetChildPickupDriverAsync(plan.PickupPlanId,
                 cancellationToken).ConfigureAwait(false);
@@ -66,7 +88,8 @@ public partial class PickupService
             var events = await _pickupRepository.GetLeaveEventsAsync(plan.PickupPlanId, null,
                 cancellationToken).ConfigureAwait(false);
             var summary = ChildLeaveState.Summarize(events, now, _linkOptions.LeaveSoonMin);
-            return ChildPickupSuccess(new ChildPickupDto
+            var vehicle = ResolveVehicle(plan.PickupPlanId, plan.SlotDt, now);
+            return (new ChildPickupDto
             {
                 linkStatus = linkStatus,
                 serverDt = now,
@@ -85,25 +108,44 @@ public partial class PickupService
                 planStatus = plan.Status,
                 stopAtSpot = stopAtSpot,
                 slotDt = plan.SlotDt,
-                arrivalDt = plan.SlotDt,
-                arrivalSource = plan.SlotDt is null ? null : ArrivalSourceSlot,
-                vehicle = null,
+                arrivalDt = vehicle.ArrivalDt,
+                arrivalSource = vehicle.ArrivalSource,
+                vehicle = vehicle.Vehicle,
                 leave = new ChildPickupLeaveDto
                 {
                     leaveStatus = summary.Status,
                     plannedLeaveDt = summary.PlannedLeaveDt,
                     leavingDt = summary.LeavingDt
                 }
-            });
+            }, plan.ExpireDt);
         }
-        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 그대로 올려보낸다
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
-            _logService.LogMessage($"child pickup detail failed: plan={pickupPlanId?.ToString() ?? "unknown"}\n{ex}");
-#if DEBUG
-            _logService.ConsoleWarning($"child pickup detail failed: plan={pickupPlanId?.ToString() ?? "unknown"}\n{ex}");
-#endif
-            return ChildPickupServerError();
+            // 조회 중 실패해도 바깥 Service의 오류 로그에 계획 ID를 남긴다. 좌표나 토큰은 넣지 않는다
+            if (pickupPlanId is not null)
+                ex.Data["ChildPickupPlanId"] = pickupPlanId.Value;
+            throw;
         }
+    }
+
+    private (ChildPickupVehicleDto? Vehicle, DateTime? ArrivalDt, string? ArrivalSource) ResolveVehicle(
+        int pickupPlanId, DateTime? slotDt, DateTime now)
+    {
+        ChildPickupVehicleDto? vehicle = null;
+        if (_liveOptions.VehiclePositionEnabled
+            && _liveHub.GetVehiclePosition(pickupPlanId) is { } position
+            && (now - position.ReceivedDt).TotalSeconds <= _liveOptions.VehicleStaleSec)
+        {
+            vehicle = new ChildPickupVehicleDto
+            {
+                lat = position.Lat,
+                lng = position.Lng,
+                reportedDt = position.ReceivedDt
+            };
+            if (position.EtaSec is { } etaSec)
+                return (vehicle, position.ReceivedDt.AddSeconds(etaSec), ArrivalSourceNavi);
+        }
+        return (vehicle, slotDt, slotDt is null ? null : ArrivalSourceSlot);
     }
 
     /// <summary>
