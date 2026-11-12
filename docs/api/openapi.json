@@ -1106,6 +1106,187 @@
         ]
       }
     },
+    "/api/v1/Pickup/M/sign/UpdatePickupPlanStop": {
+      "patch": {
+        "tags": [
+          "Pickup"
+        ],
+        "summary": "정차 기록",
+        "requestBody": {
+          "content": {
+            "application/json-patch+json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_UpdatePickupPlanStopDto"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_UpdatePickupPlanStopDto"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_UpdatePickupPlanStopDto"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_UpdatePickupPlanStopDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_PickupPlanDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/Pickup/M/sign/UpdatePickupPlanBoard": {
+      "patch": {
+        "tags": [
+          "Pickup"
+        ],
+        "summary": "탑승 기록",
+        "requestBody": {
+          "content": {
+            "application/json-patch+json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_UpdatePickupPlanBoardDto"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_UpdatePickupPlanBoardDto"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_UpdatePickupPlanBoardDto"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_UpdatePickupPlanBoardDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_PickupPlanDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/Pickup/M/sign/UpdatePickupPlanWait": {
+      "patch": {
+        "tags": [
+          "Pickup"
+        ],
+        "summary": "대기 장소 도착",
+        "requestBody": {
+          "content": {
+            "application/json-patch+json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_UpdatePickupPlanWaitDto"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_UpdatePickupPlanWaitDto"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_UpdatePickupPlanWaitDto"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_UpdatePickupPlanWaitDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_PickupPlanDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/Pickup/M/sign/DeletePickupPlan": {
+      "delete": {
+        "tags": [
+          "Pickup"
+        ],
+        "summary": "부모 픽업 취소",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_DeletePickupPlanDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_PickupPlanDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/api/v1/Pickup/W/AddChildLeave": {
       "post": {
         "tags": [
@@ -2018,6 +2199,47 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_Dto_v1_Pickup_Request_DeletePickupPlanDto": {
+        "required": [
+          "clientEventId",
+          "pickupPlanSeq"
+        ],
+        "type": "object",
+        "properties": {
+          "pickupPlanSeq": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "clientEventId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Pickup_Request_UpdatePickupPlanBoardDto": {
+        "required": [
+          "clientEventId",
+          "eventDt",
+          "pickupPlanSeq"
+        ],
+        "type": "object",
+        "properties": {
+          "pickupPlanSeq": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "clientEventId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "eventDt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_Dto_v1_Pickup_Request_UpdatePickupPlanLocationDto": {
         "required": [
           "clientEventId",
@@ -2074,6 +2296,73 @@
           "driveMin": {
             "maximum": 300,
             "minimum": 0,
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Pickup_Request_UpdatePickupPlanStopDto": {
+        "required": [
+          "clientEventId",
+          "eventDt",
+          "lat",
+          "lng",
+          "pickupPlanSeq"
+        ],
+        "type": "object",
+        "properties": {
+          "pickupPlanSeq": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "clientEventId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "eventDt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lat": {
+            "maximum": 90,
+            "minimum": -90,
+            "type": "number",
+            "format": "double"
+          },
+          "lng": {
+            "maximum": 180,
+            "minimum": -180,
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Pickup_Request_UpdatePickupPlanWaitDto": {
+        "required": [
+          "clientEventId",
+          "eventDt",
+          "parkingLotSeq",
+          "pickupPlanSeq"
+        ],
+        "type": "object",
+        "properties": {
+          "pickupPlanSeq": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "clientEventId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "eventDt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "parkingLotSeq": {
+            "maximum": 2147483647,
+            "minimum": 1,
             "type": "integer",
             "format": "int32"
           }
@@ -2410,6 +2699,18 @@
           },
           "reassigned": {
             "type": "boolean"
+          },
+          "stopCheck": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_PickupStopCheckDto"
+          },
+          "cancelNotice": {
+            "type": "string",
+            "nullable": true
+          },
+          "parkingLotSeq": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -2448,6 +2749,31 @@
           },
           "photoUrl": {
             "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Pickup_Response_PickupStopCheckDto": {
+        "type": "object",
+        "properties": {
+          "atSpot": {
+            "type": "boolean"
+          },
+          "distanceM": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "enforcement": {
+            "type": "string",
+            "nullable": true
+          },
+          "zoneTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
             "nullable": true
           }
         },

@@ -29,4 +29,9 @@ public class PickupPlanOptions
     /// 만료 주기 작업의 간격(초)
     /// </summary>
     public int ExpireIntervalSec { get; set; } = 60;
+
+    /// <summary>
+    /// 정차 위치가 배정 장소에서 이 거리(m) 안이면 배정 장소에 선 것으로 본다
+    /// </summary>
+    public int StopRadiusM { get; set; } = 30;
 }

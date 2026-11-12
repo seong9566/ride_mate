@@ -192,7 +192,7 @@ public static class InfrastructureExtensions
     /// 도보 경로·좌표→주소 변환 클라이언트(타임아웃 3초)와 주차장 실시간 클라이언트를 typed HttpClient로 등록한다.
     /// Kakao:RestApiKey와 PublicData:ServiceKey가 비어 있어도 기동은 하며, 이때 해당 클라이언트는 외부 API를 부르지 않고 null을 돌려준다.
     /// PickupLink:BaseUrl이 http(s) 절대 URI가 아니거나 PickupLink:MaxAttempts·InFlightTimeoutSec·LeaveSoonMin·LeaveMaxAheadMin이 1보다 작으면 기동할 때 InvalidOperationException을 던진다.
-    /// PickupPlan:CreateLeadHours·ExpireAfterHours·ExpireIntervalSec가 1보다 작거나 SlotWindowMin·SlotShiftMaxMin이 0보다 작거나 ExpireAfterHours가 DepartureGuide:PickupWindowHours보다 작아도 같다.
+    /// PickupPlan:CreateLeadHours·ExpireAfterHours·ExpireIntervalSec·StopRadiusM이 1보다 작거나 SlotWindowMin·SlotShiftMaxMin이 0보다 작거나 ExpireAfterHours가 DepartureGuide:PickupWindowHours보다 작아도 같다.
     /// </summary>
     public static IServiceCollection AddMapInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
@@ -228,6 +228,8 @@ public static class InfrastructureExtensions
             throw new InvalidOperationException("PickupPlan:ExpireAfterHours 설정은 1 이상이어야 합니다.");
         if (pickupPlanOptions.ExpireIntervalSec < 1)
             throw new InvalidOperationException("PickupPlan:ExpireIntervalSec 설정은 1 이상이어야 합니다.");
+        if (pickupPlanOptions.StopRadiusM < 1)
+            throw new InvalidOperationException("PickupPlan:StopRadiusM 설정은 1 이상이어야 합니다.");
         // 만료가 대상 창보다 짧으면 창이 남은 픽업의 계획이 먼저 만료돼 하원 뒤 지난 계획을 돌려줄 수 있다
         var departureGuideOptions = configuration.GetSection("DepartureGuide").Get<DepartureGuideOptions>() ?? new DepartureGuideOptions();
         if (pickupPlanOptions.ExpireAfterHours < departureGuideOptions.PickupWindowHours)

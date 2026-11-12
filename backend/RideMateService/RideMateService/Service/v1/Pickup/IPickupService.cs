@@ -73,6 +73,35 @@ public interface IPickupService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 정차 기록. 배정 장소와의 거리와 정차 위치의 단속 구역을 판정해 돌려주고 계획을 STOPPED로 바꾼다.
+    /// 같은 clientEventId를 다시 보내면(계획이 끝났어도) 한 번만 반영하고 200을 돌려준다
+    /// </summary>
+    Task<ResponseModel<PickupPlanDto>> UpdatePickupPlanStopService(UpdatePickupPlanStopDto dto,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 탑승 기록. 진행 중인 모든 상태에서 받아 BOARD_DT를 쓰고 계획을 BOARDED로 끝낸다(익명화, LAST_PICKUP_DATE 반영, 링크 종료).
+    /// 응답은 계획 ID와 상태만 채운다. 같은 clientEventId를 다시 보내면(계획이 끝났어도) 한 번만 반영하고 200을 돌려준다
+    /// </summary>
+    Task<ResponseModel<PickupPlanDto>> UpdatePickupPlanBoardService(UpdatePickupPlanBoardDto dto,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 부모 취소. 진행 중인 모든 상태에서 받아 계획을 CANCELED로 끝낸다(익명화, 링크 종료, LAST_PICKUP_DATE는 그대로라 그날 다시 만들 수 있다).
+    /// 아이가 링크를 받았을 수 있으면 커밋한 뒤 취소 문자를 보내고 결과를 cancelNotice(NONE·SENT·FAILED)로 돌려준다.
+    /// 같은 clientEventId를 다시 보내면(계획이 끝났어도) 한 번만 반영하고 200, cancelNotice NONE을 돌려준다
+    /// </summary>
+    Task<ResponseModel<PickupPlanDto>> DeletePickupPlanService(DeletePickupPlanDto dto,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 대기 장소 도착. PLANNED·STARTED·WAITING 계획을 WAITING으로 바꾸고 계획과 같은 학원가의 주차장을 기록한다.
+    /// 이미 WAITING이면 주차장만 바꾸고 처음 도착 시각(WAIT_START_DT)은 그대로 둔다. 같은 clientEventId를 다시 보내면(계획이 끝났어도) 한 번만 반영하고 200을 돌려준다
+    /// </summary>
+    Task<ResponseModel<PickupPlanDto>> UpdatePickupPlanWaitService(UpdatePickupPlanWaitDto dto,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 만료 주기 작업 한 회차. EXPIRE_DT가 지난 진행 중 계획을 계획마다 따로 트랜잭션으로 EXPIRED로 끝내고 익명화한다.
     /// 끝낸 계획 수를 돌려준다. 한 계획의 오류는 로그만 남기고 다음 계획으로 간다. HTTP 요청 밖(주기 작업)에서 부른다
     /// </summary>

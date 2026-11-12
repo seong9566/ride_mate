@@ -826,7 +826,8 @@ public partial class PickupService
         return null;
     }
 
-    // 계획 응답(설계 6.4). 임의 좌표가 있으면 CUSTOM, 지점이 있으면 SPOT, 둘 다 없으면 pickup·slotDt가 null
+    // 계획 응답(설계 6.4). 임의 좌표가 있으면 CUSTOM, 지점이 있으면 SPOT, 둘 다 없으면 pickup·slotDt가 null.
+    // parkingLotSeq는 STATUS가 WAITING일 때만 채운다(설계 4.5, 그 밖에는 null)
     private async Task<PickupPlanDto> BuildPlanDtoAsync(int pickupPlanId, bool reassigned, IDbTransaction? tx,
         CancellationToken cancellationToken)
     {
@@ -874,7 +875,9 @@ public partial class PickupService
             pickup = location,
             slotDt = location is null ? null : row.SlotDt,
             expireDt = row.ExpireDt,
-            reassigned = reassigned
+            reassigned = reassigned,
+            // 대기 중(WAITING)일 때만 채운다. 출발하면 DB에는 마지막 주차장이 남지만 응답은 null이다
+            parkingLotSeq = row.Status == PlanStatusWaiting ? row.ParkingLotId : null
         };
     }
 

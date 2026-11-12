@@ -114,6 +114,39 @@ public partial class PickupRepository
     }
 
     /// <summary>
+    /// 주차장이 그 학원가(AREA_ID)의 살아 있는 대기 장소인지 본다. 없거나 삭제됐거나 다른 학원가면 false
+    /// </summary>
+    public async Task<bool> IsParkingLotInAreaAsync(int parkingLotId, int areaId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("parkingLotId", parkingLotId);
+            dp.Add("areaId", areaId);
+
+            var sql = @"
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM PARKING_LOT AS p
+                    WHERE p.PARKING_LOT_ID = @parkingLotId
+                      AND p.AREA_ID = @areaId
+                      AND p.DELETE_YN = FALSE)";
+
+            return await _dapper.ExecuteScalarAsync<bool>(
+                new CommandDefinition(sql, dp, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
     /// 학원의 픽업 지점 후보 중 사용 중인 것을 우선순위 순으로 조회한다
     /// </summary>
     public async Task<List<PickupSpotRow>> GetAcademyPickupSpotsAsync(int academyId,
@@ -649,7 +682,8 @@ public partial class PickupRepository
                        t.DISPLAY_NAME AS AcademyName,
                        p.ACADEMY_ID AS AcademyId,
                        a.LAT AS AcademyLat,
-                       a.LNG AS AcademyLng
+                       a.LNG AS AcademyLng,
+                       p.PARKING_LOT_ID AS ParkingLotId
                 FROM PICKUP_PLAN AS p
                 LEFT JOIN PICKUP_SPOT AS s
                        ON s.PICKUP_SPOT_ID = p.PICKUP_SPOT_ID
@@ -991,6 +1025,80 @@ public partial class PickupRepository
     }
 
     /// <summary>
+    /// 오늘 계획에서 그 차량 이벤트 번호로 들어간 이벤트의 유형과 DETAIL을 잠금 없이 조회한다. 끝난 계획의 이벤트도 찾는다. 없으면 null
+    /// </summary>
+    public async Task<PlanEventRow?> GetPlanEventByClientIdAsync(int pickupPlanId, Guid clientEventId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("pickupPlanId", pickupPlanId);
+            // CHAR(36)에 소문자 하이픈 형식으로 저장된다
+            dp.Add("clientEventId", clientEventId.ToString("D"));
+
+            // UK_PICKUP_EVENT_01 (PICKUP_PLAN_ID, CLIENT_EVENT_ID)라 많아야 한 행이다.
+            // 끝난 계획의 이벤트(DELETE_YN = 1)도 찾아야 하므로 DELETE_YN 조건을 붙이지 않는다
+            var sql = @"
+                SELECT e.EVENT_TYPE AS EventType,
+                       e.DETAIL AS Detail
+                FROM PICKUP_EVENT AS e
+                WHERE e.PICKUP_PLAN_ID = @pickupPlanId
+                  AND e.CLIENT_EVENT_ID = @clientEventId";
+
+            return await _dapper.QueryFirstOrDefaultAsync<PlanEventRow>(
+                new CommandDefinition(sql, dp, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 잠근 오늘 계획의 운전자 이름(USER_INFO.USER_NAME, 취소 문자에서는 부모 이름 자리)과 아이 번호(암호문)를 조회한다. 계획이 없거나 끝났거나 살아 있는 계정이 없으면 null.
+    /// 아이가 없거나 삭제됐으면 ChildPhoneEnc는 null이다
+    /// </summary>
+    public async Task<CancelNoticeTargetRow?> GetCancelNoticeTargetAsync(int pickupPlanId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("pickupPlanId", pickupPlanId);
+
+            // 호출자가 계획 행을 잠갔으므로 USER_ID·CHILD_ID는 바뀌지 않는다. 끝난 계획은 USER_ID가 NULL이라 걸리지 않는다
+            var sql = @"
+                SELECT u.USER_NAME AS UserName,
+                       c.PHONE_ENC AS ChildPhoneEnc
+                FROM PICKUP_PLAN AS p
+                INNER JOIN USER_INFO AS u
+                        ON u.USER_ID = p.USER_ID
+                       AND u.DELETE_YN = FALSE
+                LEFT JOIN CHILD AS c
+                       ON c.CHILD_ID = p.CHILD_ID
+                      AND c.USER_ID = p.USER_ID
+                      AND c.DELETE_YN = FALSE
+                WHERE p.PICKUP_PLAN_ID = @pickupPlanId";
+
+            return await _dapper.QueryFirstOrDefaultAsync<CancelNoticeTargetRow>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
     /// 픽업 지점의 정원을 조회한다. 지점이 없거나 삭제됐으면 null
     /// </summary>
     public async Task<byte?> GetPickupSpotCapacityAsync(int pickupSpotId, IDbTransaction transaction,
@@ -1058,7 +1166,8 @@ public partial class PickupRepository
     /// 계획이 없거나 이미 끝났으면 아무것도 바꾸지 않고 false
     /// </summary>
     public async Task<bool> ClosePickupPlanAsync(int pickupPlanId, string closeStatus, bool setLastPickupDate,
-        DateTime now, string updateUser, IDbTransaction transaction, CancellationToken cancellationToken = default)
+        DateTime now, string updateUser, IDbTransaction transaction, CancellationToken cancellationToken = default,
+        Guid? clientEventId = null, DateTime? eventDt = null, DateTime? boardDt = null)
     {
         try
         {
@@ -1067,6 +1176,11 @@ public partial class PickupRepository
             dp.Add("closeStatus", closeStatus);
             dp.Add("now", now);
             dp.Add("updateUser", updateUser);
+            // 끝내는 차량 이벤트의 번호와 시각. 만료처럼 없으면 CLIENT_EVENT_ID NULL, EVENT_DT now다. CHAR(36)에 소문자 하이픈 형식으로 저장된다
+            dp.Add("clientEventId", clientEventId?.ToString("D"));
+            dp.Add("eventDt", eventDt ?? now);
+            // 탑승 시각. 탑승만 넘기고, 만료·취소는 null이라 BOARD_DT를 그대로 둔다
+            dp.Add("boardDt", boardDt);
 
             // 1) 계획이 가리키는 요일과 날짜를 읽는다. 호출자가 쥔 PK 잠금을 다시 잡아 최신 값을 읽는다(같은 트랜잭션이라 기다리지 않는다)
             var planSql = $@"
@@ -1095,12 +1209,13 @@ public partial class PickupRepository
                     new CommandDefinition(lockDaySql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
             }
 
-            // 3) 상태·끝난 시각과 익명화(참조·하원 시각·도보 시간·임의 좌표 칸 NULL, DELETE_YN)를 한 UPDATE로 한다.
+            // 3) 상태·끝난 시각·탑승 시각과 익명화(참조·하원 시각·도보 시간·임의 좌표 칸 NULL, DELETE_YN)를 한 UPDATE로 한다.
             //    나누면 WALK_MIN·CUSTOM_*를 비우는 순간 CK_PICKUP_PLAN_01·02에 걸린다(schema.md 익명화)
             var closeSql = $@"
                 UPDATE PICKUP_PLAN
                 SET STATUS = @closeStatus,
                     CLOSE_DT = @now,
+                    BOARD_DT = COALESCE(@boardDt, BOARD_DT),
                     USER_ID = NULL,
                     CHILD_ID = NULL,
                     TIMETABLE_DAY_ID = NULL,
@@ -1174,7 +1289,7 @@ public partial class PickupRepository
                     (PICKUP_PLAN_ID, EVENT_TYPE, EVENT_DT, CLIENT_EVENT_ID, DETAIL,
                      CREATE_DT, CREATE_USER, UPDATE_DT, UPDATE_USER, DELETE_YN)
                 VALUES
-                    (@pickupPlanId, @closeStatus, @now, NULL, NULL,
+                    (@pickupPlanId, @closeStatus, @eventDt, @clientEventId, NULL,
                      @now, @updateUser, @now, @updateUser, 1)";
             await _dapper.ExecuteAsync(
                 new CommandDefinition(insertEventSql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
