@@ -187,7 +187,7 @@
   2. 없으면 `currentDt`의 날짜·요일로 고른다: 로그인한 계정의 살아 있는 아이 시간표 중 오늘 `PICKUP_YN = 1`이고 `LAST_PICKUP_DATE`가 오늘이 아닌 것에서 오늘 `SKIP` 예외를 빼고(`TIME_CHANGE`는 바뀐 하원 시각), 하원 시각 + 1시간이 `currentDt`보다 늦은 것 중 하원 시각이 가장 이른 하나다.
 - 계획이 있으면 계획이 정답이다. 앱이 보낸 `pickupLat`·`pickupLng`는 무시하고(장소 바꾸기는 `UpdatePickupPlanLocation`) 카카오를 부르지 않는다. `pickup`은 계획의 장소(기본 지점이면 지점·저장된 도보 경로, 임의 좌표면 계획에 저장된 좌표·장소 이름(`spotName`)·도보 경로)이고 `walkSource`는 `STORED`, 도보 시간은 계획의 값이다. 추천 출발은 `slotDt − driveMin − 여유`이고 `childArrivalDt`는 지금처럼 하원 + 정리 + 도보다. 남은 여유(`slackMin`)는 계획이 있어도 `currentDt` 기준이다. 계획에 배정 장소가 없으면 `pickup`과 계산 필드가 null이고 `reasons`는 `NO_SPOT_AVAILABLE` 하나다.
 - 계획이 있으면 학원 좌표가 없어도 `NO_ACADEMY_LOCATION`을 내지 않고 계획의 장소로 계산한다. 이때는 학원 앞 단속 근거(`ACADEMY_FRONT_RESTRICTED`) 판정만 빠진다.
-- 응답에 `pickupPlanSeq`(계획 ID)·`slotDt`(계획의 배정 시각)·`planStatus`(계획 상태)가 있다. 계획이 없으면 셋 다 null이고, 계획에 배정 장소가 없으면 `slotDt`만 null이다. 계획의 배정 시각이 아이 도착 시각보다 늦으면(정원·차 도착 예상·늦은 출발로 미룸) `reasons`에 `SLOT_SHIFTED`가 들어가고 `shiftMin`에 미룬 분이 들어간다. 계획이 임의 좌표면 `CUSTOM_LOCATION`이다.
+- 응답에 `pickupPlanSeq`(계획 ID)·`slotDt`(계획의 배정 시각)·`planStatus`(계획 상태)가 있다. 계획이 없으면 셋 다 null이고, 계획에 배정 장소가 없으면 `slotDt`만 null이다. 계획의 배정 시각이 아이 도착 시각보다 늦으면(정원·차 도착 예상·늦은 출발, 출발한 뒤 장소를 바꿔도 앞당기지 않음 등으로 미룸) `reasons`에 `SLOT_SHIFTED`가 들어가고 `shiftMin`에 미룬 분이 들어간다. 계획이 임의 좌표면 `CUSTOM_LOCATION`이다.
 - 대기 장소 추천(`GET /api/v1/Pickup/M/sign/GetWaitingPlaceList`)은 같은 계산을 쓰므로 진행 중 계획이 있으면 계획의 장소와 배정 시각 기준의 `slackMin`·`reasons`(`SLOT_SHIFTED` 포함)를 쓴다. 한계: 주차장 운영 시간은 계획이 있어도 배정 시각이 아니라 하원 시각까지 운영하는지로 본다.
 
 | code | 상황 | HTTP |
