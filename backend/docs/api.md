@@ -522,7 +522,7 @@
 - 서버가 연결을 닫는 경우
   - 링크가 끝나면(`linkStatus`가 `ACTIVE`가 아니게 되면) 마지막 `snapshot`을 보내고 닫는다. `EXPIRE_DT`가 지나는 시각에도 만료 작업을 기다리지 않고 닫는다. 이미 끝난 링크로 연결하면 `snapshot` 하나를 보내고 바로 닫는다.
   - 연결은 `PickupLive:StreamMaxLifetimeMin`(30분)이 지나면 닫는다.
-  - 한 계획의 연결은 `PickupLive:MaxStreamsPerPlan`(5)까지다. 넘으면 가장 오래된 연결을 닫는다.
+  - 한 계획의 아이 화면 연결은 `PickupLive:MaxStreamsPerPlan`(5)까지다. 넘으면 가장 오래된 아이 화면 연결을 닫는다. 차량 연결은 따로 센다.
 - 다시 연결하면 `snapshot`부터 다시 받는다. 놓친 이벤트를 다시 보내 주지는 않는다(`Last-Event-ID` 재생 없음).
 - 웹이 할 일(참고): 끊기면 1~3초 뒤 다시 연결한다. 3회 연속 실패하면 "연결이 불안정해요" 배너를 띄우고 15초 간격 `DetailChildPickup` 조회로 바꾼다.
 

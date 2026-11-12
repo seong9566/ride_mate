@@ -26,7 +26,7 @@ public class PickupLiveOptions
     public int StreamMaxLifetimeMin { get; set; } = 30;
 
     /// <summary>
-    /// 계획별 최대 구독 수
+    /// 계획별 최대 구독 수. 아이·차량 대상마다 따로 센다
     /// </summary>
     public int MaxStreamsPerPlan { get; set; } = 5;
 
