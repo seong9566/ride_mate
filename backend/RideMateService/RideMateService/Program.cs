@@ -12,6 +12,7 @@ using Microsoft.OpenApi;
 using Newtonsoft.Json;
 using RideMateService.Comm;
 using RideMateService.Comm.Map;
+using RideMateService.Comm.Parking;
 using RideMateService.Comm.Security;
 using RideMateService.Commons.Repository;
 using RideMateService.Extensions;
@@ -184,9 +185,11 @@ builder.Services.AddRateLimitPolicies();
 
 var app = builder.Build();
 
-// 키가 비어 있어도 기동은 하므로(도보 시간이 직선 추정으로 떨어진다) ON/OFF만 남기고 키 값은 남기지 않는다
+// 외부 API 키가 비어 있어도 기동은 하므로 사용 여부만 남기고 키 값은 남기지 않는다
 app.Logger.LogInformation("Kakao walk route: {State}",
     string.IsNullOrWhiteSpace(app.Services.GetRequiredService<IOptions<KakaoOptions>>().Value.RestApiKey) ? "OFF" : "ON");
+app.Logger.LogInformation("Parking realtime: {State}",
+    string.IsNullOrWhiteSpace(app.Services.GetRequiredService<IOptions<PublicDataOptions>>().Value.ServiceKey) ? "OFF" : "ON");
 
 app.UseResponseCompression();
 

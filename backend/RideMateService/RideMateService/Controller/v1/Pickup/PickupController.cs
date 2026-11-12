@@ -53,6 +53,43 @@ public class PickupController : ApiControllerBase
     }
 
     /// <summary>
+    /// 대기 장소 추천 목록
+    /// </summary>
+    /// <remarks>
+    /// 응답 code: 101 오늘 남은 픽업 없음, 200 정상, 400 잘못된 입력, 401 인증 실패, 500 서버 처리 실패
+    /// </remarks>
+    [Produces("application/json")]
+    [HttpGet]
+    [Route("v1/Pickup/M/sign/GetWaitingPlaceList")]
+    [SwaggerOperation(Summary = "대기 장소 추천 목록")]
+    [ProducesResponseType(typeof(ResponseModel<WaitingPlaceListDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ResponseModel<WaitingPlaceListDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ResponseModel<WaitingPlaceListDto>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetWaitingPlaceList([FromQuery] WaitingPlaceQueryDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _pickupService.GetWaitingPlaceListService(dto, cancellationToken).ConfigureAwait(false);
+            return ToActionResult(model);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // 앱이 요청을 끊었다. 오류로 기록하지 않는다
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
+
+    /// <summary>
     /// 학원가 단속 구역 목록
     /// </summary>
     [Produces("application/json")]

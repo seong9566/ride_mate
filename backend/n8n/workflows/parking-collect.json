@@ -1,0 +1,2146 @@
+{
+  "id": "parkingCollect01",
+  "name": "공영 주차장 하루 1회 수집",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 4 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "매일 04:30 실행",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -2920,
+        200
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "수동 실행",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -2920,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const dataKey = String($env.DATA_GO_KR_API_KEY ?? '').trim();\nconst topisKey = String($env.TOPIS_API_KEY ?? '').trim();\n\nreturn [{\n  json: {\n    ok: dataKey.length > 0,\n    stage: 'KEY_CHECK',\n    reason: dataKey.length > 0 ? null : 'DATA_GO_KR_API_KEY_MISSING',\n    hasTopisKey: topisKey.length > 0,\n    pageSize: 1000,\n    standardTotal: 0,\n    kept: 0,\n    seoulMatched: 0,\n    seoulUnmatched: 0,\n    realtimeLinked: 0,\n    mismatched: 0,\n    upserted: 0,\n    softDeleted: 0,\n  },\n}];"
+      },
+      "id": "settings",
+      "name": "설정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "has-data-key",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-data-key",
+      "name": "공공데이터 키 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        -2480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\n\nreturn [{\n  json: {\n    ok: false,\n    stage: String(context.stage || 'UNKNOWN'),\n    reason: String(context.reason || 'UNKNOWN'),\n  },\n}];"
+      },
+      "id": "failure-result",
+      "name": "실패 결과",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7360,
+        760
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT AREA_ID, AREA_NAME, ST_AsText(BOUNDARY) AS BOUNDARY_WKT\nFROM AREA\nWHERE AREA_NAME IN ('대치동', '평촌') AND DELETE_YN = 0\nORDER BY AREA_ID",
+        "options": {}
+      },
+      "id": "select-areas",
+      "name": "학원가 경계 조회",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        -2260,
+        180
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "rmMysqlCred00001",
+          "name": "ridemate-mysql"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const settings = $('설정').first().json;\nconst rows = $input.all().map((item) => item.json);\nconst failed = rows.some((row) => row.error != null);\n\nfunction parsePolygon(wkt) {\n  const match = String(wkt ?? '').trim().match(/^POLYGON\\s*\\(\\((.*)\\)\\)$/i);\n  if (!match) return null;\n  const ringText = match[1].split(/\\)\\s*,\\s*\\(/)[0];\n  const ring = ringText.split(',').map((pair) => {\n    const values = pair.trim().split(/\\s+/).map(Number);\n    return values.length >= 2 && values.every(Number.isFinite)\n      ? { lat: values[0], lng: values[1] }\n      : null;\n  });\n  return ring.length >= 4 && ring.every(Boolean) ? ring : null;\n}\n\nconst areas = failed ? [] : rows\n  .filter((row) => row.AREA_ID != null && row.AREA_NAME != null && row.BOUNDARY_WKT != null)\n  .map((row) => ({\n    areaId: Number(row.AREA_ID),\n    areaName: String(row.AREA_NAME),\n    ring: parsePolygon(row.BOUNDARY_WKT),\n  }))\n  .filter((area) => Number.isSafeInteger(area.areaId) && area.ring);\n\nconst hasDaechi = areas.some((area) => area.areaName === '대치동');\nlet reason = null;\nif (failed) reason = 'DB_AREA_FAILED';\nelse if (areas.length === 0) reason = 'AREA_NOT_FOUND';\nelse if (hasDaechi && !settings.hasTopisKey) reason = 'TOPIS_API_KEY_MISSING';\n\nreturn [{\n  json: {\n    ...settings,\n    ok: reason === null,\n    stage: reason === 'TOPIS_API_KEY_MISSING' ? 'KEY_CHECK' : 'AREA',\n    reason,\n    areas,\n    hasDaechi,\n  },\n}];"
+      },
+      "id": "prepare-areas",
+      "name": "학원가 경계 준비",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2040,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "areas-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-areas",
+      "name": "학원가 경계 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        -1820,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\nreturn [{ json: { ...context, pageNo: 1 } }];"
+      },
+      "id": "standard-first-request-row",
+      "name": "표준데이터 첫 페이지 만들기",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1600,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://api.data.go.kr/openapi/tn_pubr_prkplce_info_api?serviceKey=' + encodeURIComponent(decodeURIComponent(String($env.DATA_GO_KR_API_KEY ?? '').trim())) + '&type=json&pageNo=1&numOfRows=' + $json.pageSize }}",
+        "authentication": "none",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 250
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text",
+              "outputPropertyName": "body"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "request-standard-first",
+      "name": "표준데이터 첫 페이지 호출",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -1380,
+        -40
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "merge-standard-first",
+      "name": "표준데이터 첫 응답 합치기",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -1160,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $('학원가 경계 준비').first().json;\nconst response = $input.first().json;\nconst status = Number(response.statusCode);\n\nfunction parseBody(value) {\n  if (value && typeof value === 'object') return value;\n  try { return JSON.parse(String(value ?? '')); } catch { return null; }\n}\nfunction failureReason(stage, httpStatus, code) {\n  if (httpStatus !== 200) return Number.isInteger(httpStatus) ? 'HTTP_' + httpStatus : 'HTTP_ERROR';\n  const text = String(code ?? '');\n  return /^[A-Z0-9_-]{1,50}$/.test(text) ? text : text ? 'RESULT_CODE_INVALID' : 'RESULT_CODE_MISSING';\n}\nfunction asArray(value) {\n  if (Array.isArray(value)) return value;\n  return value && typeof value === 'object' ? [value] : [];\n}\n\n// 전국 행을 끝까지 들고 가지 않도록 페이지마다 공영이면서 학원가 경계 사각형 ±0.02°(약 2km) 안인 행만 남긴다. 1km 판정은 '표준데이터 범위 필터'가 한다\nfunction keepNear(rows, areas) {\n  const pad = 0.02;\n  const boxes = areas.map((area) => {\n    const lats = area.ring.map((point) => point.lat);\n    const lngs = area.ring.map((point) => point.lng);\n    return { minLat: Math.min(...lats) - pad, maxLat: Math.max(...lats) + pad, minLng: Math.min(...lngs) - pad, maxLng: Math.max(...lngs) + pad };\n  });\n  return rows.filter((row) => {\n    if (String(row.prkplceSe ?? '').trim() !== '공영') return false;\n    const lat = Number(row.latitude);\n    const lng = Number(row.longitude);\n    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;\n    return boxes.some((box) => lat >= box.minLat && lat <= box.maxLat && lng >= box.minLng && lng <= box.maxLng);\n  });\n}\n\nconst parsed = parseBody(response.body);\nconst code = parsed?.header?.resultCode;\nconst total = Number(parsed?.body?.totalCount);\nconst validTotal = Number.isSafeInteger(total) && total >= 0;\nconst ok = status === 200 && code === '00' && validTotal\n  && (Math.ceil(total / context.pageSize) > 1 || asArray(parsed?.body?.items?.item).length === total);\nconst rawItems = ok ? asArray(parsed?.body?.items?.item) : [];\nconst items = keepNear(rawItems, context.areas);\nconst pageCount = validTotal ? Math.ceil(total / context.pageSize) : 0;\nconst extraRequests = [];\nfor (let pageNo = 2; pageNo <= pageCount; pageNo += 1) extraRequests.push({ pageNo });\n\nreturn [{\n  json: {\n    ...context,\n    ok,\n    stage: 'STANDARD',\n    reason: ok ? null : failureReason('STANDARD', status, code),\n    standardTotal: validTotal ? total : 0,\n    standardItems: items,\n    standardRawCount: rawItems.length,\n    extraRequests,\n    hasExtra: extraRequests.length > 0,\n  },\n}];"
+      },
+      "id": "judge-standard-first",
+      "name": "표준데이터 첫 응답 판정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -940,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "standard-first-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-standard-first",
+      "name": "표준데이터 첫 응답 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        -720,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "standard-has-extra",
+              "leftValue": "={{ $json.hasExtra }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-standard-extra",
+      "name": "표준데이터 추가 페이지 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        -500,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\nreturn context.extraRequests.map((request) => ({ json: { pageNo: request.pageNo, pageSize: context.pageSize } }));"
+      },
+      "id": "standard-extra-request-rows",
+      "name": "표준데이터 추가 페이지 만들기",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://api.data.go.kr/openapi/tn_pubr_prkplce_info_api?serviceKey=' + encodeURIComponent(decodeURIComponent(String($env.DATA_GO_KR_API_KEY ?? '').trim())) + '&type=json&pageNo=' + $json.pageNo + '&numOfRows=' + $json.pageSize }}",
+        "authentication": "none",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 250
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text",
+              "outputPropertyName": "body"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "request-standard-extra",
+      "name": "표준데이터 추가 페이지 호출",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -60,
+        -180
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "merge-standard-extra",
+      "name": "표준데이터 추가 응답 합치기",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        160,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $('표준데이터 첫 응답 판정').first().json;\nconst allItems = [...context.standardItems];\nlet rawCount = context.standardRawCount;\nlet reason = null;\n\nfunction parseBody(value) {\n  if (value && typeof value === 'object') return value;\n  try { return JSON.parse(String(value ?? '')); } catch { return null; }\n}\nfunction failureReason(httpStatus, code) {\n  if (httpStatus !== 200) return Number.isInteger(httpStatus) ? 'HTTP_' + httpStatus : 'HTTP_ERROR';\n  const text = String(code ?? '');\n  return /^[A-Z0-9_-]{1,50}$/.test(text) ? text : text ? 'RESULT_CODE_INVALID' : 'RESULT_CODE_MISSING';\n}\nfunction asArray(value) {\n  if (Array.isArray(value)) return value;\n  return value && typeof value === 'object' ? [value] : [];\n}\n\n// 전국 행을 끝까지 들고 가지 않도록 페이지마다 공영이면서 학원가 경계 사각형 ±0.02°(약 2km) 안인 행만 남긴다. 1km 판정은 '표준데이터 범위 필터'가 한다\nfunction keepNear(rows, areas) {\n  const pad = 0.02;\n  const boxes = areas.map((area) => {\n    const lats = area.ring.map((point) => point.lat);\n    const lngs = area.ring.map((point) => point.lng);\n    return { minLat: Math.min(...lats) - pad, maxLat: Math.max(...lats) + pad, minLng: Math.min(...lngs) - pad, maxLng: Math.max(...lngs) + pad };\n  });\n  return rows.filter((row) => {\n    if (String(row.prkplceSe ?? '').trim() !== '공영') return false;\n    const lat = Number(row.latitude);\n    const lng = Number(row.longitude);\n    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;\n    return boxes.some((box) => lat >= box.minLat && lat <= box.maxLat && lng >= box.minLng && lng <= box.maxLng);\n  });\n}\n\nfor (const item of $input.all()) {\n  const response = item.json;\n  const status = Number(response.statusCode);\n  const parsed = parseBody(response.body);\n  const code = parsed?.header?.resultCode;\n  if (status !== 200 || code !== '00') {\n    reason ||= failureReason(status, code);\n    continue;\n  }\n  const rawItems = asArray(parsed?.body?.items?.item);\n  rawCount += rawItems.length;\n  allItems.push(...keepNear(rawItems, context.areas));\n}\n\n// 성공 응답이어도 페이지가 빠졌거나 덜 찼으면 일부만 받은 것이다. 이대로 적재하면 빠진 주차장이 삭제 표시되므로 실패로 끝낸다\nif (reason === null && $input.all().length !== context.extraRequests.length) reason = 'PAGE_COUNT_MISMATCH';\nif (reason === null && rawCount !== context.standardTotal) reason = 'ITEM_COUNT_MISMATCH';\n\nreturn [{\n  json: {\n    ...context,\n    ok: reason === null,\n    stage: 'STANDARD',\n    reason,\n    standardItems: allItems,\n  },\n}];"
+      },
+      "id": "judge-standard-extra",
+      "name": "표준데이터 추가 응답 판정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        380,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "return [{ json: $input.first().json }];"
+      },
+      "id": "standard-complete",
+      "name": "표준데이터 완료",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "standard-pages-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-standard-pages",
+      "name": "표준데이터 전체 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        600,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\nconst metersPerLat = 110540;\n\nfunction pointInPolygon(point, ring) {\n  let inside = false;\n  for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {\n    const xi = ring[i].lng;\n    const yi = ring[i].lat;\n    const xj = ring[j].lng;\n    const yj = ring[j].lat;\n    const crosses = ((yi > point.lat) !== (yj > point.lat))\n      && point.lng < ((xj - xi) * (point.lat - yi)) / (yj - yi) + xi;\n    if (crosses) inside = !inside;\n  }\n  return inside;\n}\n\nfunction segmentDistanceM(point, first, second) {\n  const lngScale = 111320 * Math.cos(point.lat * Math.PI / 180);\n  const ax = (first.lng - point.lng) * lngScale;\n  const ay = (first.lat - point.lat) * metersPerLat;\n  const bx = (second.lng - point.lng) * lngScale;\n  const by = (second.lat - point.lat) * metersPerLat;\n  const dx = bx - ax;\n  const dy = by - ay;\n  const lengthSquared = dx * dx + dy * dy;\n  const t = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, -(ax * dx + ay * dy) / lengthSquared));\n  return Math.hypot(ax + t * dx, ay + t * dy);\n}\n\nfunction polygonDistanceM(point, ring) {\n  if (pointInPolygon(point, ring)) return 0;\n  let minimum = Infinity;\n  for (let i = 0; i < ring.length; i += 1) {\n    minimum = Math.min(minimum, segmentDistanceM(point, ring[i], ring[(i + 1) % ring.length]));\n  }\n  return minimum;\n}\n\nfunction text(value) {\n  return String(value ?? '').trim();\n}\n\nconst lots = [];\nfor (const row of context.standardItems) {\n  if (text(row.prkplceSe) !== '공영') continue;\n  const lat = Number(row.latitude);\n  const lng = Number(row.longitude);\n  if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;\n  if (!text(row.prkplceNo) || !text(row.prkplceNm)) continue;\n  if (!text(row.weekdayOperOpenHhmm) || !text(row.weekdayOperColseHhmm)) continue;\n  const paid = text(row.parkingchrgeInfo) !== '무료';\n  if (paid && (!(Number(row.basicCharge) > 0) || !(Number(row.basicTime) > 0))) continue;\n\n  const point = { lat, lng };\n  let selectedArea = null;\n  let selectedDistance = Infinity;\n  for (const area of context.areas) {\n    const distance = polygonDistanceM(point, area.ring);\n    if (distance < selectedDistance) {\n      selectedArea = area;\n      selectedDistance = distance;\n    }\n  }\n  if (!selectedArea || selectedDistance > 1000) continue;\n  lots.push({ ...row, areaId: selectedArea.areaId, areaName: selectedArea.areaName, areaDistanceM: Math.round(selectedDistance) });\n}\n\nreturn [{\n  json: {\n    ...context,\n    ok: lots.length > 0,\n    stage: 'FILTER',\n    reason: lots.length > 0 ? null : 'NO_PARKING_LOTS_IN_RANGE',\n    kept: lots.length,\n    standardLots: lots,\n  },\n}];"
+      },
+      "id": "filter-standard",
+      "name": "표준데이터 범위 필터",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        820,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "filtered-lots-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-filtered-lots",
+      "name": "표준데이터 필터 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        1040,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "seoul-needed",
+              "leftValue": "={{ $json.hasDaechi }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-seoul-needed",
+      "name": "서울시 조회 여부",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        1260,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "return [{ json: $input.first().json }];"
+      },
+      "id": "seoul-request-row",
+      "name": "서울시 호출 행 만들기",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1480,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'http://openapi.seoul.go.kr:8088/' + String($env.TOPIS_API_KEY ?? '').trim() + '/json/GetParkInfo/1/1000/' + encodeURIComponent('강남구') }}",
+        "authentication": "none",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 250
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text",
+              "outputPropertyName": "body"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "request-seoul",
+      "name": "서울시 공영주차장 호출",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1700,
+        -180
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "merge-seoul",
+      "name": "서울시 응답 합치기",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1920,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $('표준데이터 범위 필터').first().json;\nconst response = $input.first().json;\nconst status = Number(response.statusCode);\n\nfunction parseBody(value) {\n  if (value && typeof value === 'object') return value;\n  try { return JSON.parse(String(value ?? '')); } catch { return null; }\n}\nfunction failureReason(httpStatus, code) {\n  if (httpStatus !== 200) return Number.isInteger(httpStatus) ? 'HTTP_' + httpStatus : 'HTTP_ERROR';\n  const text = String(code ?? '');\n  return /^[A-Z0-9_-]{1,50}$/.test(text) ? text : text ? 'RESULT_CODE_INVALID' : 'RESULT_CODE_MISSING';\n}\nfunction asArray(value) {\n  if (Array.isArray(value)) return value;\n  return value && typeof value === 'object' ? [value] : [];\n}\n\nconst parsed = parseBody(response.body);\nconst code = parsed?.GetParkInfo?.RESULT?.CODE ?? parsed?.RESULT?.CODE;\nconst ok = status === 200 && code === 'INFO-000';\n\nreturn [{\n  json: {\n    ...context,\n    ok,\n    stage: 'SEOUL',\n    reason: ok ? null : failureReason(status, code),\n    seoulRows: ok ? asArray(parsed?.GetParkInfo?.row) : [],\n  },\n}];"
+      },
+      "id": "judge-seoul",
+      "name": "서울시 응답 판정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2140,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "return [{ json: { ...$input.first().json, ok: true, stage: 'SEOUL', reason: null, seoulRows: [] } }];"
+      },
+      "id": "skip-seoul",
+      "name": "서울시 조회 생략",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1700,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "seoul-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-seoul",
+      "name": "서울시 응답 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        2360,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\n\nfunction text(value) {\n  return String(value ?? '').trim();\n}\nfunction normalizeName(value) {\n  return text(value)\n    .replace(/\\s+/g, '')\n    .replace(/공영주차장/g, '')\n    .replace(/주차장/g, '')\n    .replace(/\\(구\\)|\\(시\\)/g, '')\n    .replace(/공영/g, '');\n}\nfunction dongs(value) {\n  return [...text(value).matchAll(/[가-힣0-9]+동/g)].map((match) => match[0]);\n}\nfunction numberOrNull(value) {\n  if (value === null || value === undefined || text(value) === '') return null;\n  const number = Number(value);\n  return Number.isFinite(number) ? Math.round(number) : null;\n}\n// 0원 1일권·0원 1일 최대 요금은 '없음'으로 본다(표준데이터에 dayCmmtkt \"0\"이 있다)\nfunction positiveOrNull(value) {\n  const number = nonNegativeOrNull(value);\n  return number === null || number === 0 ? null : number;\n}\n\nfunction nonNegativeOrNull(value) {\n  const number = numberOrNull(value);\n  return number !== null && number >= 0 ? number : null;\n}\nfunction toTime(value) {\n  const match = text(value).match(/^(\\d{2}):?(\\d{2})$/);\n  if (!match) return null;\n  const hour = Number(match[1]);\n  const minute = Number(match[2]);\n  if ((hour === 24 && minute === 0) || (hour === 23 && minute === 59)) return '23:59:59';\n  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;\n  return match[1] + ':' + match[2] + ':00';\n}\nfunction timePair(openValue, closeValue) {\n  if (!text(openValue) || !text(closeValue)) return [null, null];\n  const open = toTime(openValue);\n  const close = toTime(closeValue);\n  return open && close ? [open, close] : [null, null];\n}\nfunction addPair(unitValue, feeValue) {\n  const unit = nonNegativeOrNull(unitValue);\n  const fee = nonNegativeOrNull(feeValue);\n  return unit !== null && unit > 0 && fee !== null && fee > 0 ? [unit, fee] : [null, null];\n}\nfunction validDate(value) {\n  const date = text(value).slice(0, 10);\n  return /^\\d{4}-\\d{2}-\\d{2}$/.test(date) ? date : null;\n}\nfunction standardValues(row) {\n  const free = text(row.parkingchrgeInfo) === '무료';\n  const weekday = timePair(row.weekdayOperOpenHhmm, row.weekdayOperColseHhmm);\n  const saturday = timePair(row.satOperOperOpenHhmm, row.satOperCloseHhmm);\n  const holiday = timePair(row.holidayOperOpenHhmm, row.holidayCloseOpenHhmm);\n  const additional = addPair(row.addUnitTime, row.addUnitCharge);\n  return {\n    weekdayOpen: weekday[0],\n    weekdayClose: weekday[1],\n    satOpen: saturday[0],\n    satClose: saturday[1],\n    holidayOpen: holiday[0],\n    holidayClose: holiday[1],\n    baseMin: free && !text(row.basicTime) ? 0 : (nonNegativeOrNull(row.basicTime) ?? 0),\n    baseFee: free ? 0 : (nonNegativeOrNull(row.basicCharge) ?? 0),\n    addUnitMin: additional[0],\n    addFee: additional[1],\n  };\n}\nfunction seoulValues(row) {\n  const weekday = timePair(row.WD_OPER_BGNG_TM, row.WD_OPER_END_TM);\n  const saturday = timePair(row.WE_OPER_BGNG_TM, row.WE_OPER_END_TM);\n  const holiday = timePair(row.LHLDY_BGNG, row.LHLDY);\n  const additional = addPair(row.ADD_UNIT_TM_MNT, row.ADD_CRG);\n  return {\n    weekdayOpen: weekday[0],\n    weekdayClose: weekday[1],\n    satOpen: saturday[0],\n    satClose: saturday[1],\n    holidayOpen: holiday[0],\n    holidayClose: holiday[1],\n    baseMin: nonNegativeOrNull(row.PRK_HM) ?? 0,\n    baseFee: nonNegativeOrNull(row.PRK_CRG) ?? 0,\n    addUnitMin: additional[0],\n    addFee: additional[1],\n  };\n}\n// 서울시 값이 틀린 요금(빈 요금 → 0원)이나 빈 운영 시간을 만들면 쓰지 않는다. CHGD_FREE_SE 'Y'가 유료다\nfunction seoulUsable(row, values) {\n  if (values.weekdayOpen === null || values.weekdayClose === null) return false;\n  const paid = text(row.CHGD_FREE_SE) !== 'N' && text(row.CHGD_FREE_NM) !== '무료';\n  return !paid || (values.baseFee > 0 && values.baseMin > 0);\n}\nfunction valuesDiffer(first, second) {\n  return ['baseMin', 'baseFee', 'addUnitMin', 'addFee', 'weekdayOpen', 'weekdayClose']\n    .some((key) => first[key] !== second[key]);\n}\n\nconst matches = new Map();\nconst usedStandard = new Set();\nlet mismatched = 0;\n\nfor (const seoul of context.seoulRows) {\n  const normalized = normalizeName(seoul.PKLT_NM);\n  if (!normalized) continue;\n  const seoulDong = dongs(seoul.ADDR)[0] ?? null;\n  let matchedIndex = -1;\n  for (let index = 0; index < context.standardLots.length; index += 1) {\n    if (usedStandard.has(index)) continue;\n    const standard = context.standardLots[index];\n    if (standard.areaName !== '대치동') continue;\n    if (normalizeName(standard.prkplceNm) !== normalized) continue;\n    const standardDongs = dongs([standard.rdnmadr, standard.lnmadr, standard.prkplceNm].join(' '));\n    if (seoulDong && standardDongs.some((dong) => dong !== seoulDong)) continue;\n    matchedIndex = index;\n    break;\n  }\n  if (matchedIndex < 0) continue;\n  usedStandard.add(matchedIndex);\n  matches.set(matchedIndex, seoul);\n  if (valuesDiffer(standardValues(context.standardLots[matchedIndex]), seoulValues(seoul))) mismatched += 1;\n}\n\nconst lots = context.standardLots.map((standard, index) => {\n  const seoul = matches.get(index) ?? null;\n  const standardDate = validDate(standard.referenceDate);\n  const seoulDate = seoul ? validDate(seoul.LAST_DATA_SYNC_TM) : null;\n  const useSeoul = Boolean(seoul && seoulDate && (!standardDate || seoulDate >= standardDate)\n    && seoulUsable(seoul, seoulValues(seoul)));\n  const selected = useSeoul ? seoulValues(seoul) : standardValues(standard);\n  const dayMaxFee = seoul ? positiveOrNull(seoul.DLY_MAX_CRG) : null;\n  return {\n    areaId: standard.areaId,\n    lotName: text(standard.prkplceNm),\n    address: text(standard.rdnmadr) || text(standard.lnmadr) || null,\n    lat: Number(standard.latitude),\n    lng: Number(standard.longitude),\n    weekdayOpen: selected.weekdayOpen,\n    weekdayClose: selected.weekdayClose,\n    satOpen: selected.satOpen,\n    satClose: selected.satClose,\n    holidayOpen: selected.holidayOpen,\n    holidayClose: selected.holidayClose,\n    baseMin: selected.baseMin,\n    baseFee: selected.baseFee,\n    addUnitMin: selected.addUnitMin,\n    addFee: selected.addFee,\n    dayPassFee: positiveOrNull(standard.dayCmmtkt),\n    dayMaxFee: dayMaxFee && dayMaxFee > 0 ? dayMaxFee : null,\n    totalSpaces: nonNegativeOrNull(standard.prkcmprt),\n    realtimeRef: null,\n    sourceRef: text(standard.prkplceNo),\n    feeSource: useSeoul ? 'SEOUL' : 'STANDARD',\n    feeBaseDate: useSeoul ? seoulDate : standardDate,\n    seoulRef: seoul && text(seoul.PKLT_CD) ? text(seoul.PKLT_CD) : null,\n  };\n});\n\nreturn [{\n  json: {\n    ...context,\n    lots,\n    seoulMatched: matches.size,\n    seoulUnmatched: Math.max(0, context.seoulRows.length - matches.size),\n    mismatched,\n  },\n}];"
+      },
+      "id": "merge-sources",
+      "name": "표준·서울시 값 병합",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2580,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "return [{ json: $input.first().json }];"
+      },
+      "id": "realtime-request-row",
+      "name": "공단 실시간 호출 행 만들기",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2800,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://apis.data.go.kr/B553881/Parking_v1/PrkRealtimeInfo_v1?serviceKey=' + encodeURIComponent(decodeURIComponent(String($env.DATA_GO_KR_API_KEY ?? '').trim())) + '&numOfRows=1000&pageNo=1&format=2&sidoCd=11&sigunguCd=11680' }}",
+        "authentication": "none",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 250
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text",
+              "outputPropertyName": "body"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "request-realtime",
+      "name": "공단 실시간 호출",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        3020,
+        -40
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "merge-realtime",
+      "name": "공단 실시간 응답 합치기",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        3240,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $('표준·서울시 값 병합').first().json;\nconst response = $input.first().json;\nconst status = Number(response.statusCode);\n\nfunction parseBody(value) {\n  if (value && typeof value === 'object') return value;\n  try { return JSON.parse(String(value ?? '')); } catch { return null; }\n}\nfunction failureReason(httpStatus, code) {\n  if (httpStatus !== 200) return Number.isInteger(httpStatus) ? 'HTTP_' + httpStatus : 'HTTP_ERROR';\n  const text = String(code ?? '');\n  return /^[A-Z0-9_-]{1,50}$/.test(text) ? text : text ? 'RESULT_CODE_INVALID' : 'RESULT_CODE_MISSING';\n}\nfunction asArray(value) {\n  if (Array.isArray(value)) return value;\n  return value && typeof value === 'object' ? [value] : [];\n}\n\nconst parsed = parseBody(response.body);\nconst code = parsed?.resultCode;\nconst ok = status === 200 && String(code) === '0';\nconst realtimeIds = ok\n  ? [...new Set(asArray(parsed?.PrkRealtimeInfo).map((row) => String(row.prk_center_id ?? '').trim()).filter(Boolean))]\n  : [];\n\nreturn [{\n  json: {\n    ...context,\n    ok,\n    stage: 'REALTIME',\n    reason: ok ? null : failureReason(status, code),\n    realtimeIds,\n  },\n}];"
+      },
+      "id": "judge-realtime",
+      "name": "공단 실시간 응답 판정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3460,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "realtime-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-realtime",
+      "name": "공단 실시간 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        3680,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\nreturn [{ json: { ...context, pageNo: 1 } }];"
+      },
+      "id": "facility-first-request-row",
+      "name": "공단 시설 첫 페이지 만들기",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3900,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://apis.data.go.kr/B553881/Parking_v1/PrkSttusInfo_v1?serviceKey=' + encodeURIComponent(decodeURIComponent(String($env.DATA_GO_KR_API_KEY ?? '').trim())) + '&numOfRows=' + $json.pageSize + '&pageNo=1&format=2&sidoCd=11&sigunguCd=11680' }}",
+        "authentication": "none",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 250
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text",
+              "outputPropertyName": "body"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "request-facility-first",
+      "name": "공단 시설 첫 페이지 호출",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        4120,
+        -160
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "merge-facility-first",
+      "name": "공단 시설 첫 응답 합치기",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        4340,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $('공단 실시간 응답 판정').first().json;\nconst response = $input.first().json;\nconst status = Number(response.statusCode);\n\nfunction parseBody(value) {\n  if (value && typeof value === 'object') return value;\n  try { return JSON.parse(String(value ?? '')); } catch { return null; }\n}\nfunction failureReason(httpStatus, code) {\n  if (httpStatus !== 200) return Number.isInteger(httpStatus) ? 'HTTP_' + httpStatus : 'HTTP_ERROR';\n  const text = String(code ?? '');\n  return /^[A-Z0-9_-]{1,50}$/.test(text) ? text : text ? 'RESULT_CODE_INVALID' : 'RESULT_CODE_MISSING';\n}\nfunction asArray(value) {\n  if (Array.isArray(value)) return value;\n  return value && typeof value === 'object' ? [value] : [];\n}\n\nconst parsed = parseBody(response.body);\nconst code = parsed?.resultCode;\nconst total = Number(parsed?.totalCount);\nconst validTotal = Number.isSafeInteger(total) && total >= 0;\nconst ok = status === 200 && String(code) === '0' && validTotal\n  && (Math.ceil(total / context.pageSize) > 1 || asArray(parsed?.PrkSttusInfo).length === total);\nconst realtimeSet = new Set(context.realtimeIds);\nconst rawFacilities = ok ? asArray(parsed?.PrkSttusInfo) : [];\nconst facilities = rawFacilities.filter((row) => realtimeSet.has(String(row.prk_center_id ?? '').trim()));\nconst pageCount = validTotal ? Math.ceil(total / context.pageSize) : 0;\nconst extraRequests = [];\nfor (let pageNo = 2; pageNo <= pageCount; pageNo += 1) extraRequests.push({ pageNo });\n\nreturn [{\n  json: {\n    ...context,\n    ok,\n    stage: 'FACILITY',\n    reason: ok ? null : failureReason(status, code),\n    facilities,\n    facilityTotal: validTotal ? total : 0,\n    facilityRawCount: rawFacilities.length,\n    facilityExtraRequests: extraRequests,\n    facilityHasExtra: extraRequests.length > 0,\n  },\n}];"
+      },
+      "id": "judge-facility-first",
+      "name": "공단 시설 첫 응답 판정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4560,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "facility-first-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-facility-first",
+      "name": "공단 시설 첫 응답 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        4780,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "facility-has-extra",
+              "leftValue": "={{ $json.facilityHasExtra }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-facility-extra",
+      "name": "공단 시설 추가 페이지 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        5000,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\nreturn context.facilityExtraRequests.map((request) => ({ json: { pageNo: request.pageNo, pageSize: context.pageSize } }));"
+      },
+      "id": "facility-extra-request-rows",
+      "name": "공단 시설 추가 페이지 만들기",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5220,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://apis.data.go.kr/B553881/Parking_v1/PrkSttusInfo_v1?serviceKey=' + encodeURIComponent(decodeURIComponent(String($env.DATA_GO_KR_API_KEY ?? '').trim())) + '&numOfRows=' + $json.pageSize + '&pageNo=' + $json.pageNo + '&format=2&sidoCd=11&sigunguCd=11680' }}",
+        "authentication": "none",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 250
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text",
+              "outputPropertyName": "body"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "request-facility-extra",
+      "name": "공단 시설 추가 페이지 호출",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        5440,
+        -300
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "merge-facility-extra",
+      "name": "공단 시설 추가 응답 합치기",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        5660,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $('공단 시설 첫 응답 판정').first().json;\nconst realtimeSet = new Set(context.realtimeIds);\nconst facilities = [...context.facilities];\nlet rawCount = context.facilityRawCount;\nlet reason = null;\n\nfunction parseBody(value) {\n  if (value && typeof value === 'object') return value;\n  try { return JSON.parse(String(value ?? '')); } catch { return null; }\n}\nfunction failureReason(httpStatus, code) {\n  if (httpStatus !== 200) return Number.isInteger(httpStatus) ? 'HTTP_' + httpStatus : 'HTTP_ERROR';\n  const text = String(code ?? '');\n  return /^[A-Z0-9_-]{1,50}$/.test(text) ? text : text ? 'RESULT_CODE_INVALID' : 'RESULT_CODE_MISSING';\n}\nfunction asArray(value) {\n  if (Array.isArray(value)) return value;\n  return value && typeof value === 'object' ? [value] : [];\n}\n\nfor (const item of $input.all()) {\n  const response = item.json;\n  const status = Number(response.statusCode);\n  const parsed = parseBody(response.body);\n  const code = parsed?.resultCode;\n  if (status !== 200 || String(code) !== '0') {\n    reason ||= failureReason(status, code);\n    continue;\n  }\n  const rawFacilities = asArray(parsed?.PrkSttusInfo);\n  rawCount += rawFacilities.length;\n  facilities.push(...rawFacilities\n    .filter((row) => realtimeSet.has(String(row.prk_center_id ?? '').trim())));\n}\n\n// 성공 응답이어도 페이지가 빠졌거나 덜 찼으면 실시간 연결이 일부 빠지므로 실패로 끝낸다\nif (reason === null && $input.all().length !== context.facilityExtraRequests.length) reason = 'PAGE_COUNT_MISMATCH';\nif (reason === null && rawCount !== context.facilityTotal) reason = 'ITEM_COUNT_MISMATCH';\n\nreturn [{\n  json: {\n    ...context,\n    ok: reason === null,\n    stage: 'FACILITY',\n    reason,\n    facilities,\n  },\n}];"
+      },
+      "id": "judge-facility-extra",
+      "name": "공단 시설 추가 응답 판정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5880,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "return [{ json: $input.first().json }];"
+      },
+      "id": "facility-complete",
+      "name": "공단 시설 완료",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5220,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "facility-pages-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-facility-pages",
+      "name": "공단 시설 전체 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        6100,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\n\nfunction distanceM(firstLat, firstLng, secondLat, secondLng) {\n  const meanLat = (firstLat + secondLat) * Math.PI / 360;\n  const dy = (secondLat - firstLat) * 110540;\n  const dx = (secondLng - firstLng) * 111320 * Math.cos(meanLat);\n  return Math.hypot(dx, dy);\n}\n\nconst facilities = context.facilities\n  .map((row) => ({\n    id: String(row.prk_center_id ?? '').trim(),\n    lat: Number(row.prk_plce_entrc_la),\n    lng: Number(row.prk_plce_entrc_lo),\n  }))\n  .filter((row) => row.id && Number.isFinite(row.lat) && Number.isFinite(row.lng));\n\nlet realtimeLinked = 0;\nconst lots = context.lots.map((lot) => {\n  let nearest = null;\n  let nearestDistance = Infinity;\n  for (const facility of facilities) {\n    const distance = distanceM(lot.lat, lot.lng, facility.lat, facility.lng);\n    if (distance < nearestDistance) {\n      nearest = facility;\n      nearestDistance = distance;\n    }\n  }\n  if (nearest && nearestDistance <= 100) {\n    realtimeLinked += 1;\n    return { ...lot, realtimeRef: nearest.id };\n  }\n  return lot;\n});\n\nreturn [{ json: { ...context, lots, realtimeLinked } }];"
+      },
+      "id": "link-realtime",
+      "name": "실시간 주차장 연결",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6320,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\nconst replacements = [];\nlet parameter = 1;\nconst groups = context.lots.map((lot) => {\n  const values = [\n    lot.areaId, lot.lotName, lot.address, lot.lat, lot.lng,\n    lot.weekdayOpen, lot.weekdayClose, lot.satOpen, lot.satClose,\n    lot.holidayOpen, lot.holidayClose, lot.baseMin, lot.baseFee,\n    lot.addUnitMin, lot.addFee, lot.dayPassFee, lot.dayMaxFee,\n    lot.totalSpaces, lot.realtimeRef, lot.sourceRef, lot.feeSource,\n    lot.feeBaseDate, lot.seoulRef,\n  ];\n  const placeholders = values.map((value) => {\n    replacements.push(value);\n    const placeholder = '$' + parameter;\n    parameter += 1;\n    return placeholder;\n  });\n  return '(' + placeholders.join(', ') + \", NOW(), 'n8n-parking', NOW(), 'n8n-parking', 0)\";\n});\n\nconst query = \"INSERT INTO PARKING_LOT (AREA_ID, LOT_NAME, ADDRESS, LAT, LNG, WEEKDAY_OPEN_TIME, WEEKDAY_CLOSE_TIME, SAT_OPEN_TIME, SAT_CLOSE_TIME, HOLIDAY_OPEN_TIME, HOLIDAY_CLOSE_TIME, BASE_MIN, BASE_FEE, ADD_UNIT_MIN, ADD_FEE, DAY_PASS_FEE, DAY_MAX_FEE, TOTAL_SPACES, REALTIME_REF, SOURCE_REF, FEE_SOURCE, FEE_BASE_DATE, SEOUL_REF, CREATE_DT, CREATE_USER, UPDATE_DT, UPDATE_USER, DELETE_YN)\\nVALUES \"\n  + groups.join(',\\n')\n  + \"\\nON DUPLICATE KEY UPDATE AVAILABLE_SPACES = IF(REALTIME_REF <=> VALUES(REALTIME_REF), AVAILABLE_SPACES, NULL), AVAILABLE_UPDATE_DT = IF(REALTIME_REF <=> VALUES(REALTIME_REF), AVAILABLE_UPDATE_DT, NULL), AREA_ID = VALUES(AREA_ID), LOT_NAME = VALUES(LOT_NAME), ADDRESS = VALUES(ADDRESS), LAT = VALUES(LAT), LNG = VALUES(LNG), WEEKDAY_OPEN_TIME = VALUES(WEEKDAY_OPEN_TIME), WEEKDAY_CLOSE_TIME = VALUES(WEEKDAY_CLOSE_TIME), SAT_OPEN_TIME = VALUES(SAT_OPEN_TIME), SAT_CLOSE_TIME = VALUES(SAT_CLOSE_TIME), HOLIDAY_OPEN_TIME = VALUES(HOLIDAY_OPEN_TIME), HOLIDAY_CLOSE_TIME = VALUES(HOLIDAY_CLOSE_TIME), BASE_MIN = VALUES(BASE_MIN), BASE_FEE = VALUES(BASE_FEE), ADD_UNIT_MIN = VALUES(ADD_UNIT_MIN), ADD_FEE = VALUES(ADD_FEE), DAY_PASS_FEE = VALUES(DAY_PASS_FEE), DAY_MAX_FEE = VALUES(DAY_MAX_FEE), TOTAL_SPACES = VALUES(TOTAL_SPACES), REALTIME_REF = VALUES(REALTIME_REF), FEE_SOURCE = VALUES(FEE_SOURCE), FEE_BASE_DATE = VALUES(FEE_BASE_DATE), SEOUL_REF = VALUES(SEOUL_REF), UPDATE_DT = NOW(), UPDATE_USER = 'n8n-parking', DELETE_YN = 0\";\n\nreturn [{ json: { ...context, query, replacements } }];"
+      },
+      "id": "prepare-upsert",
+      "name": "주차장 적재 준비",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6540,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.query }}",
+        "options": {
+          "queryReplacement": "={{ $json.replacements }}"
+        }
+      },
+      "id": "upsert-lots",
+      "name": "주차장 적재",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        6760,
+        -60
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "rmMysqlCred00001",
+          "name": "ridemate-mysql"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $('주차장 적재 준비').first().json;\nconst failed = $input.all().some((item) => item.json.error != null);\n\nreturn [{\n  json: {\n    ...context,\n    ok: !failed,\n    stage: 'UPSERT',\n    reason: failed ? 'DB_UPSERT_FAILED' : null,\n    upserted: failed ? 0 : context.lots.length,\n  },\n}];"
+      },
+      "id": "judge-upsert",
+      "name": "주차장 적재 판정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6980,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "upsert-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-upsert",
+      "name": "주차장 적재 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        7200,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\nconst sourceRefs = JSON.stringify(context.lots.map((lot) => String(lot.sourceRef)));\nconst query = \"SELECT COUNT(*) AS STALE_COUNT\\n\"\n  + \"FROM PARKING_LOT p\\n\"\n  + \"JOIN AREA a ON a.AREA_ID = p.AREA_ID\\n\"\n  + \"WHERE a.AREA_NAME IN ('대치동', '평촌') AND p.DELETE_YN = 0\\n\"\n  + \"  AND (p.SOURCE_REF IS NULL OR NOT EXISTS (\\n\"\n  + \"    SELECT 1 FROM JSON_TABLE($1, \\\"$[*]\\\" COLUMNS (SOURCE_REF VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PATH \\\"$\\\")) j\\n\"\n  + \"    WHERE j.SOURCE_REF = p.SOURCE_REF\\n\"\n  + \"  ))\";\n\nreturn [{ json: { ...context, query, replacements: [sourceRefs] } }];"
+      },
+      "id": "prepare-stale-count",
+      "name": "삭제 대상 조회 준비",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7420,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.query }}",
+        "options": {
+          "queryReplacement": "={{ $json.replacements }}"
+        }
+      },
+      "id": "select-stale-count",
+      "name": "삭제 대상 조회",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        7640,
+        -180
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "rmMysqlCred00001",
+          "name": "ridemate-mysql"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $('삭제 대상 조회 준비').first().json;\nconst rows = $input.all().map((item) => item.json);\nconst failed = rows.some((row) => row.error != null);\nconst countRow = rows.find((row) => row.STALE_COUNT != null);\nconst staleCount = countRow ? Number(countRow.STALE_COUNT) : null;\nconst valid = Number.isSafeInteger(staleCount) && staleCount >= 0;\n\nreturn [{\n  json: {\n    ...context,\n    ok: !failed && valid,\n    stage: 'SOFT_DELETE_COUNT',\n    reason: failed ? 'DB_STALE_COUNT_FAILED' : valid ? null : 'DB_STALE_COUNT_INVALID',\n    staleCount: valid ? staleCount : 0,\n  },\n}];"
+      },
+      "id": "judge-stale-count",
+      "name": "삭제 대상 조회 판정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7860,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "stale-count-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-stale-count",
+      "name": "삭제 대상 조회 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        8080,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\nconst sourceRefs = JSON.stringify(context.lots.map((lot) => String(lot.sourceRef)));\nconst query = \"UPDATE PARKING_LOT p\\n\"\n  + \"JOIN AREA a ON a.AREA_ID = p.AREA_ID\\n\"\n  + \"SET p.DELETE_YN = 1, p.UPDATE_USER = 'n8n-parking', p.UPDATE_DT = NOW()\\n\"\n  + \"WHERE a.AREA_NAME IN ('대치동', '평촌') AND p.DELETE_YN = 0\\n\"\n  + \"  AND (p.SOURCE_REF IS NULL OR NOT EXISTS (\\n\"\n  + \"    SELECT 1 FROM JSON_TABLE($1, \\\"$[*]\\\" COLUMNS (SOURCE_REF VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PATH \\\"$\\\")) j\\n\"\n  + \"    WHERE j.SOURCE_REF = p.SOURCE_REF\\n\"\n  + \"  ))\";\n\nreturn [{ json: { ...context, query, replacements: [sourceRefs] } }];"
+      },
+      "id": "prepare-soft-delete",
+      "name": "빠진 주차장 삭제 표시 준비",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        8300,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.query }}",
+        "options": {
+          "queryReplacement": "={{ $json.replacements }}"
+        }
+      },
+      "id": "soft-delete-lots",
+      "name": "빠진 주차장 삭제 표시",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        8520,
+        -180
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "rmMysqlCred00001",
+          "name": "ridemate-mysql"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $('빠진 주차장 삭제 표시 준비').first().json;\nconst failed = $input.all().some((item) => item.json.error != null);\n\nreturn [{\n  json: {\n    ...context,\n    ok: !failed,\n    stage: 'SOFT_DELETE',\n    reason: failed ? 'DB_SOFT_DELETE_FAILED' : null,\n    softDeleted: failed ? 0 : context.staleCount,\n  },\n}];"
+      },
+      "id": "judge-soft-delete",
+      "name": "빠진 주차장 삭제 표시 판정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        8740,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "soft-delete-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-soft-delete",
+      "name": "빠진 주차장 삭제 표시 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        8960,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\n\nreturn [{\n  json: {\n    ok: true,\n    standardTotal: context.standardTotal,\n    kept: context.kept,\n    seoulMatched: context.seoulMatched,\n    seoulUnmatched: context.seoulUnmatched,\n    realtimeLinked: context.realtimeLinked,\n    mismatched: context.mismatched,\n    upserted: context.upserted,\n    softDeleted: context.softDeleted,\n  },\n}];"
+      },
+      "id": "success-result",
+      "name": "성공 결과",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        9180,
+        -300
+      ]
+    }
+  ],
+  "connections": {
+    "매일 04:30 실행": {
+      "main": [
+        [
+          {
+            "node": "설정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "수동 실행": {
+      "main": [
+        [
+          {
+            "node": "설정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "설정": {
+      "main": [
+        [
+          {
+            "node": "공공데이터 키 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "공공데이터 키 확인": {
+      "main": [
+        [
+          {
+            "node": "학원가 경계 조회",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "실패 결과",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "학원가 경계 조회": {
+      "main": [
+        [
+          {
+            "node": "학원가 경계 준비",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "학원가 경계 준비": {
+      "main": [
+        [
+          {
+            "node": "학원가 경계 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "학원가 경계 성공 확인": {
+      "main": [
+        [
+          {
+            "node": "표준데이터 첫 페이지 만들기",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "실패 결과",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "표준데이터 첫 페이지 만들기": {
+      "main": [
+        [
+          {
+            "node": "표준데이터 첫 페이지 호출",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "표준데이터 첫 응답 합치기",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "표준데이터 첫 페이지 호출": {
+      "main": [
+        [
+          {
+            "node": "표준데이터 첫 응답 합치기",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "표준데이터 첫 응답 합치기": {
+      "main": [
+        [
+          {
+            "node": "표준데이터 첫 응답 판정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "표준데이터 첫 응답 판정": {
+      "main": [
+        [
+          {
+            "node": "표준데이터 첫 응답 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "표준데이터 첫 응답 성공 확인": {
+      "main": [
+        [
+          {
+            "node": "표준데이터 추가 페이지 확인",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "실패 결과",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "표준데이터 추가 페이지 확인": {
+      "main": [
+        [
+          {
+            "node": "표준데이터 추가 페이지 만들기",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "표준데이터 완료",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "표준데이터 추가 페이지 만들기": {
+      "main": [
+        [
+          {
+            "node": "표준데이터 추가 페이지 호출",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "표준데이터 추가 응답 합치기",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "표준데이터 추가 페이지 호출": {
+      "main": [
+        [
+          {
+            "node": "표준데이터 추가 응답 합치기",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "표준데이터 추가 응답 합치기": {
+      "main": [
+        [
+          {
+            "node": "표준데이터 추가 응답 판정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "표준데이터 추가 응답 판정": {
+      "main": [
+        [
+          {
+            "node": "표준데이터 전체 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "표준데이터 완료": {
+      "main": [
+        [
+          {
+            "node": "표준데이터 전체 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "표준데이터 전체 성공 확인": {
+      "main": [
+        [
+          {
+            "node": "표준데이터 범위 필터",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "실패 결과",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "표준데이터 범위 필터": {
+      "main": [
+        [
+          {
+            "node": "표준데이터 필터 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "표준데이터 필터 성공 확인": {
+      "main": [
+        [
+          {
+            "node": "서울시 조회 여부",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "실패 결과",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "서울시 조회 여부": {
+      "main": [
+        [
+          {
+            "node": "서울시 호출 행 만들기",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "서울시 조회 생략",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "서울시 호출 행 만들기": {
+      "main": [
+        [
+          {
+            "node": "서울시 공영주차장 호출",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "서울시 응답 합치기",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "서울시 공영주차장 호출": {
+      "main": [
+        [
+          {
+            "node": "서울시 응답 합치기",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "서울시 응답 합치기": {
+      "main": [
+        [
+          {
+            "node": "서울시 응답 판정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "서울시 응답 판정": {
+      "main": [
+        [
+          {
+            "node": "서울시 응답 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "서울시 조회 생략": {
+      "main": [
+        [
+          {
+            "node": "서울시 응답 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "서울시 응답 성공 확인": {
+      "main": [
+        [
+          {
+            "node": "표준·서울시 값 병합",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "실패 결과",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "표준·서울시 값 병합": {
+      "main": [
+        [
+          {
+            "node": "공단 실시간 호출 행 만들기",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "공단 실시간 호출 행 만들기": {
+      "main": [
+        [
+          {
+            "node": "공단 실시간 호출",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "공단 실시간 응답 합치기",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "공단 실시간 호출": {
+      "main": [
+        [
+          {
+            "node": "공단 실시간 응답 합치기",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "공단 실시간 응답 합치기": {
+      "main": [
+        [
+          {
+            "node": "공단 실시간 응답 판정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "공단 실시간 응답 판정": {
+      "main": [
+        [
+          {
+            "node": "공단 실시간 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "공단 실시간 성공 확인": {
+      "main": [
+        [
+          {
+            "node": "공단 시설 첫 페이지 만들기",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "실패 결과",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "공단 시설 첫 페이지 만들기": {
+      "main": [
+        [
+          {
+            "node": "공단 시설 첫 페이지 호출",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "공단 시설 첫 응답 합치기",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "공단 시설 첫 페이지 호출": {
+      "main": [
+        [
+          {
+            "node": "공단 시설 첫 응답 합치기",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "공단 시설 첫 응답 합치기": {
+      "main": [
+        [
+          {
+            "node": "공단 시설 첫 응답 판정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "공단 시설 첫 응답 판정": {
+      "main": [
+        [
+          {
+            "node": "공단 시설 첫 응답 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "공단 시설 첫 응답 성공 확인": {
+      "main": [
+        [
+          {
+            "node": "공단 시설 추가 페이지 확인",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "실패 결과",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "공단 시설 추가 페이지 확인": {
+      "main": [
+        [
+          {
+            "node": "공단 시설 추가 페이지 만들기",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "공단 시설 완료",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "공단 시설 추가 페이지 만들기": {
+      "main": [
+        [
+          {
+            "node": "공단 시설 추가 페이지 호출",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "공단 시설 추가 응답 합치기",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "공단 시설 추가 페이지 호출": {
+      "main": [
+        [
+          {
+            "node": "공단 시설 추가 응답 합치기",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "공단 시설 추가 응답 합치기": {
+      "main": [
+        [
+          {
+            "node": "공단 시설 추가 응답 판정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "공단 시설 추가 응답 판정": {
+      "main": [
+        [
+          {
+            "node": "공단 시설 전체 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "공단 시설 완료": {
+      "main": [
+        [
+          {
+            "node": "공단 시설 전체 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "공단 시설 전체 성공 확인": {
+      "main": [
+        [
+          {
+            "node": "실시간 주차장 연결",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "실패 결과",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "실시간 주차장 연결": {
+      "main": [
+        [
+          {
+            "node": "주차장 적재 준비",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "주차장 적재 준비": {
+      "main": [
+        [
+          {
+            "node": "주차장 적재",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "주차장 적재": {
+      "main": [
+        [
+          {
+            "node": "주차장 적재 판정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "주차장 적재 판정": {
+      "main": [
+        [
+          {
+            "node": "주차장 적재 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "주차장 적재 성공 확인": {
+      "main": [
+        [
+          {
+            "node": "삭제 대상 조회 준비",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "실패 결과",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "삭제 대상 조회 준비": {
+      "main": [
+        [
+          {
+            "node": "삭제 대상 조회",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "삭제 대상 조회": {
+      "main": [
+        [
+          {
+            "node": "삭제 대상 조회 판정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "삭제 대상 조회 판정": {
+      "main": [
+        [
+          {
+            "node": "삭제 대상 조회 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "삭제 대상 조회 성공 확인": {
+      "main": [
+        [
+          {
+            "node": "빠진 주차장 삭제 표시 준비",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "실패 결과",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "빠진 주차장 삭제 표시 준비": {
+      "main": [
+        [
+          {
+            "node": "빠진 주차장 삭제 표시",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "빠진 주차장 삭제 표시": {
+      "main": [
+        [
+          {
+            "node": "빠진 주차장 삭제 표시 판정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "빠진 주차장 삭제 표시 판정": {
+      "main": [
+        [
+          {
+            "node": "빠진 주차장 삭제 표시 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "빠진 주차장 삭제 표시 성공 확인": {
+      "main": [
+        [
+          {
+            "node": "성공 결과",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "실패 결과",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Asia/Seoul",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false,
+    "executionOrder": "v1"
+  },
+  "active": false
+}

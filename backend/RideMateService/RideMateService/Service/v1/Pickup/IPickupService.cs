@@ -13,6 +13,12 @@ public interface IPickupService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 대기 장소 추천 목록
+    /// </summary>
+    Task<ResponseModel<WaitingPlaceListDto>> GetWaitingPlaceListService(WaitingPlaceQueryDto dto,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 학원가 단속 구역 목록
     /// </summary>
     Task<ResponseModel<GetRestrictedZoneList>> GetRestrictedZoneListService(RestrictedZoneListQueryDto dto,

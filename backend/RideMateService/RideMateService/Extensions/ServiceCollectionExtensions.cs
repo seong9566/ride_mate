@@ -1,8 +1,10 @@
 using System.Security.Cryptography;
 using System.Threading.RateLimiting;
+using Microsoft.Extensions.Options;
 using RideMateService.Comm;
 using RideMateService.Comm.Logger;
 using RideMateService.Comm.Map;
+using RideMateService.Comm.Parking;
 using RideMateService.Comm.Security;
 using RideMateService.Comm.Sms;
 using RideMateService.Repository.v1.Auth;
@@ -178,15 +180,18 @@ public static class InfrastructureExtensions
     }
 
     /// <summary>
-    /// 카카오 설정(Kakao)과 출발 안내 설정(DepartureGuide), 픽업 링크 설정(PickupLink), 픽업 계획 설정(PickupPlan)을 등록하고, 도보 경로·좌표→주소 변환 클라이언트를 타임아웃 3초의 typed HttpClient로 등록한다.
-    /// Kakao:RestApiKey가 비어 있어도 기동은 하며, 이때 클라이언트는 카카오를 부르지 않고 null을 돌려준다.
+    /// 카카오 설정(Kakao), 공공데이터 설정(PublicData), 출발 안내 설정(DepartureGuide), 대기 장소 설정(WaitingPlace), 픽업 링크 설정(PickupLink), 픽업 계획 설정(PickupPlan)을 등록하고,
+    /// 도보 경로·좌표→주소 변환 클라이언트(타임아웃 3초)와 주차장 실시간 클라이언트를 typed HttpClient로 등록한다.
+    /// Kakao:RestApiKey와 PublicData:ServiceKey가 비어 있어도 기동은 하며, 이때 해당 클라이언트는 외부 API를 부르지 않고 null을 돌려준다.
     /// PickupLink:BaseUrl이 http(s) 절대 URI가 아니거나 PickupLink:MaxAttempts·InFlightTimeoutSec가 1보다 작으면 기동할 때 InvalidOperationException을 던진다.
     /// PickupPlan:CreateLeadHours·ExpireAfterHours·ExpireIntervalSec가 1보다 작거나 SlotWindowMin·SlotShiftMaxMin이 0보다 작아도 같다.
     /// </summary>
     public static IServiceCollection AddMapInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<KakaoOptions>(configuration.GetSection("Kakao"));
+        services.Configure<PublicDataOptions>(configuration.GetSection("PublicData"));
         services.Configure<DepartureGuideOptions>(configuration.GetSection("DepartureGuide"));
+        services.Configure<WaitingPlaceOptions>(configuration.GetSection("WaitingPlace"));
 
         var pickupLink = configuration.GetSection("PickupLink");
         var pickupLinkOptions = pickupLink.Get<PickupLinkOptions>() ?? new PickupLinkOptions();
@@ -222,6 +227,12 @@ public static class InfrastructureExtensions
         {
             client.BaseAddress = new Uri("https://dapi.kakao.com/");
             client.Timeout = TimeSpan.FromSeconds(3);
+        });
+        services.AddHttpClient<IParkingRealtimeClient, KotsaParkingRealtimeClient>((serviceProvider, client) =>
+        {
+            client.BaseAddress = new Uri("https://apis.data.go.kr/B553881/Parking_v1/");
+            client.Timeout = TimeSpan.FromMilliseconds(
+                serviceProvider.GetRequiredService<IOptions<WaitingPlaceOptions>>().Value.RealtimeTimeoutMs);
         });
         return services;
     }
