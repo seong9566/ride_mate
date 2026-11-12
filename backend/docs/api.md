@@ -244,7 +244,7 @@
 - 계획이 없을 때 학원 좌표나 학원가가 없으면 계획을 만들지 않고 경로 시작이 409 `NO_ACADEMY_LOCATION`이다. 이때 출발 안내는 지금처럼 `NO_ACADEMY_LOCATION` 근거로 동작한다.
 - 임의 좌표는 위도 -90~90, 경도 -180~180 범위만 본다. 학원가 경계나 학원과의 거리는 보지 않는다. 서버는 학원 → 좌표 카카오 도보 경로(실패하면 직선 거리 ÷ 아이 도보 속도를 올린 분, 127분까지)와 카카오 좌표→주소 변환으로 도보 시간과 장소 이름을 정한다. 장소 이름은 도로명 주소의 건물 이름, 도로명 주소, 지번 주소 순으로 있는 것(100자까지)이고, 키가 없거나 실패·3초 시간 초과·결과 없음이면 `부모님이 정한 장소`다. 임의 좌표는 정원을 보지 않고 배정 시각이 `하원 + 정리 시간 + 도보 시간`이다(경로 시작이 계획을 만들 때는 이 값과 차 도착 예상 중 늦은 쪽).
 - `UpdatePickupPlanLocation`에서는 좌표가 둘 다 없으면 "기본 지점으로 되돌리기"다. 위 라우트 절의 "PATCH에서 빠진 필드는 바꾸지 않음" 규칙의 예외다. 한쪽만 오면 400이다. 같은 좌표를 다시 보내도 다시 배정하고 이벤트를 남긴다. 계획이 `STARTED`면 늦은 출발 결과나 경로 시작에서 정한 차 도착 하한을 지키려고 배정 시각을 지금 `slotDt`보다 앞당기지 않는다. 바꿀 수 있는 상태는 `PLANNED`·`STARTED`·`WAITING`이다.
-- `UpdatePickupPlanStart`는 `eventDt`를 시작 시각으로 기록한다. `eventDt`는 오프셋 없는 KST 로컬 시각이고 서버 현재 시각 + 1분을 넘지 않아야 한다. 과거 쪽은 진행 중 계획이 있으면 그 계획의 픽업 날짜(`PICKUP_DATE`) 00:00, 계획을 새로 만들 때는 서버 현재 시각 −10분까지다. 밖이면 `data`가 null인 400이다. `driveMin`은 0~300이다.
+- `UpdatePickupPlanStart`는 `eventDt`를 시작 시각으로 기록한다. `eventDt`는 오프셋 없는 KST 로컬 시각이고 서버 현재 시각 + 1분을 넘지 않아야 한다. 과거 쪽은 진행 중 계획이 있으면 그 계획의 시작 시각(`START_DT`, 없으면 픽업 날짜 `PICKUP_DATE` 00:00), 계획을 새로 만들 때는 서버 현재 시각 −10분까지다. 밖이면 `data`가 null인 400이다. 시작 요청에는 계획 ID가 없으므로, `START_DT` 하한은 끝난 다른 계획의 늦은 재전송이 지금 계획을 다시 시작하지 못하게 막는다. `driveMin`은 0~300이다.
   - 계획이 없으면 만들면서 시작한다. 차 도착 예상(`eventDt + driveMin`, 분 단위 올림)을 배정 시각의 하한으로 쓴다. 기본 지점은 우선순위·금지 시간·정원으로 배정하되 각 지점의 시작 시각이 아이 도착과 차 도착 예상 중 늦은 쪽이다(정원이 차면 다음 지점으로 넘어간다). 임의 좌표는 아이 도착과 차 도착 예상 중 늦은 쪽이 배정 시각이다. 계획을 `STARTED`로 넣고 `PLANNED`·`STARTED` 이벤트를 남긴다. [ADR-0023]
   - 계획을 만드는 사이 다른 요청이 같은 픽업의 계획을 만들었으면(빠르게 두 번 누름) 그 계획을 시작한다. 그래서 두 요청 모두 같은 계획으로 200이다.
   - 진행 중 계획이 있으면 `PLANNED`·`WAITING`을 `STARTED`로 바꾼다(대기 뒤 출발).
@@ -257,7 +257,7 @@
 |---|---|---|
 | 200 | 바꿨다(같은 `clientEventId` 재요청 포함) | 시작했다(계획을 만들었거나, 이미 시작했거나, 같은 `clientEventId` 재요청 포함) |
 | 101 | — | 계획이 없고 오늘 남은 픽업도 없거나, 잠근 뒤 다시 보니 대상이 아니다(스위치 꺼짐·삭제·그날 `SKIP` 등). `data`는 null |
-| 400 | 필수 값 없음·범위 밖은 `ProblemDetails`. 좌표가 한쪽만 왔거나 `clientEventId`가 다른 이벤트에 쓰였으면 `data` null | 필수 값 없음·`driveMin`·위도·경도 범위 밖은 `ProblemDetails`. 좌표가 한쪽만 왔거나 `eventDt`가 범위 밖이거나(진행 중 계획이 있으면 픽업 날짜 이전, 계획을 만들 때는 −10분 이전) `clientEventId`가 다른 이벤트에 쓰였으면 `data` null |
+| 400 | 필수 값 없음·범위 밖은 `ProblemDetails`. 좌표가 한쪽만 왔거나 `clientEventId`가 다른 이벤트에 쓰였으면 `data` null | 필수 값 없음·`driveMin`·위도·경도 범위 밖은 `ProblemDetails`. 좌표가 한쪽만 왔거나 `eventDt`가 범위 밖이거나(진행 중 계획이 있으면 픽업 날짜나 그 계획의 `START_DT` 이전, 계획을 만들 때는 −10분 이전) `clientEventId`가 다른 이벤트에 쓰였으면 `data` null |
 | 401 | 인증 실패 | 인증 실패 |
 | 404 | 계획이 없거나, 로그인한 계정의 계획이 아니거나, 끝났다(`BOARDED`·`EXPIRED`·`CANCELED`). `data`는 null | 고른 진행 중 계획이 잠그는 사이 끝났다. `data`는 null |
 | 409 | `ALREADY_STOPPED`, `PLAN_CLOSED`, `NO_ACADEMY_LOCATION` | `TOO_EARLY`, `NO_ACADEMY_LOCATION`(계획이 없을 때), `ALREADY_STOPPED`, `PLAN_CLOSED`(진행 중 계획일 때) |
@@ -277,7 +277,7 @@
 | `INVALID_PARKING_LOT` | 주차장이 없거나, 삭제됐거나, 계획과 다른 학원가의 주차장이다 | `UpdatePickupPlanWait` |
 
 - 경로 시작의 첫 판정: 입력 검증 400(필수 값·범위·좌표 한쪽만·`eventDt`가 +1분 초과) → 대상 고르기. 대상이 없으면 101이다. 진행 중 계획이 있으면 아래 순서를 그 계획으로 탄다. 없으면 `eventDt`가 −10분보다 이르면 400(`data` null) → `TOO_EARLY` → `NO_ACADEMY_LOCATION`을 보고, `AREA`·`TIMETABLE_DAY`를 잠근 뒤 101·`NO_ACADEMY_LOCATION`·`TOO_EARLY`를 다시 보고 만든다.
-- 판정 순서: `UpdatePickupPlanLocation`과 진행 중 계획의 `UpdatePickupPlanStart`는 입력 검증 400 → 404(없음·남의 계획) → (`UpdatePickupPlanStart`만) `eventDt`가 계획의 픽업 날짜 이전이면 400 → `ALREADY_STOPPED` → 404(끝난 계획) → `PLAN_CLOSED` 순이다. 그다음 `UpdatePickupPlanLocation`은 좌표를 보냈을 때 `NO_ACADEMY_LOCATION`을 보고(잠그기 전에 한 번만 본다), `UpdatePickupPlanStart`는 "이미 시작함 → 200"이다. 잠근 뒤에는 404·`ALREADY_STOPPED`·404·`PLAN_CLOSED`를 다시 보고(`UpdatePickupPlanStart`는 "이미 시작함 → 200"도), 그다음 `clientEventId`를 확인한다: 같은 유형 이벤트면 200, 이 계획의 다른 이벤트에 쓰였으면 400(`data` null).
+- 판정 순서: `UpdatePickupPlanLocation`과 진행 중 계획의 `UpdatePickupPlanStart`는 입력 검증 400 → 404(없음·남의 계획) → (`UpdatePickupPlanStart`만) `eventDt`가 계획의 픽업 날짜 이전이면 400 → `ALREADY_STOPPED` → 404(끝난 계획) → `PLAN_CLOSED` 순이다. 그다음 `UpdatePickupPlanLocation`은 좌표를 보냈을 때 `NO_ACADEMY_LOCATION`을 보고(잠그기 전에 한 번만 본다), `UpdatePickupPlanStart`는 "이미 시작함 → 200"이다. 잠근 뒤에는 404·`ALREADY_STOPPED`·404·`PLAN_CLOSED`를 다시 보고(`UpdatePickupPlanStart`는 "이미 시작함 → 200"도), 그다음 `clientEventId`를 확인한다: 같은 유형 이벤트면 200, 이 계획의 다른 이벤트에 쓰였으면 400(`data` null). `UpdatePickupPlanStart`는 마지막으로 `eventDt`가 그 계획의 `START_DT`보다 이르면 400(`data` null)이다.
 - 필드·예시는 Notion "[차량] 픽업 장소 바꾸기"(https://app.notion.com/p/416aa638eaf881b38b78ca310e6de212), "[차량] 경로 시작"(https://app.notion.com/p/416aa638eaf881819262e44ed3ec9ff1), "[차량] 대기 장소 도착"(https://app.notion.com/p/416aa638eaf8815eaa1cfa03fa0029f3), "[차량] 정차 기록"(https://app.notion.com/p/416aa638eaf881bd963bfd868d4396ea), "[차량] 탑승 기록"(https://app.notion.com/p/416aa638eaf881d584e3c1255b50895a), "[차량] 오늘 픽업 취소"(https://app.notion.com/p/416aa638eaf881b0a1d1d96704739225) 페이지가 정본이다.
 
 ### 상태 바꾸기 — 대기 장소 도착·정차·탑승·취소
@@ -285,6 +285,7 @@
 `UpdatePickupPlanWait`·`UpdatePickupPlanStop`·`UpdatePickupPlanBoard`·`DeletePickupPlan`은 경로 시작과 같은 골격이다: 401 → 입력 검증 400 → 잠금 없이 판정 → 계획 행을 PK로 잠그는 트랜잭션 → 잠근 값으로 다시 판정 → 쓰기. 재배정을 하지 않아 `AREA`는 잠그지 않는다. 잠금 순서와 끝내기·익명화는 `architecture/schema.md`의 `PICKUP_PLAN` 절이다.
 
 - `eventDt`(취소에는 없다)는 오프셋 없는 KST 로컬 시각이다. 서버 현재 시각 + 1분을 넘으면 입력 검증에서 400이다. 과거 쪽은 계획의 픽업 날짜(`PICKUP_DATE`) 00:00까지 받는다. 그래서 계획이 만료되기 전이면 오프라인으로 늦게 온 대기·정차·탑승도 반영한다. 이 하한은 재요청 확인 뒤, API별 409 앞에서 본다. 밖이면 `data`가 null인 400이다. 기록하는 시각(`WAIT_START_DT`·`STOP_DT`·`BOARD_DT`, 이벤트 `EVENT_DT`)은 `eventDt` 그대로다.
+- 차량 앱은 경로 시작·대기 장소 도착·정차·탑승 요청을 일어난 순서대로 하나씩 보내고, 앞 요청의 응답(200·4xx)을 받은 뒤 다음을 보낸다. 서버는 이벤트끼리 `eventDt`를 비교하지 않는다. 그래서 순서가 뒤바뀌면 늦게 도착한 대기·정차가 그보다 나중의 출발 상태를 덮어쓴다.
 - 받는 상태:
 
 | API | 받는 상태 | 바꾸는 것 |

@@ -520,7 +520,7 @@ public partial class PickupService
         if (plan is null)
             return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 404 };
 
-        // 진행 중 계획의 시작은 계획의 픽업 날짜 00:00이 하한이다(정차·탑승·대기와 같다)
+        // 진행 중 계획의 시작은 계획의 픽업 날짜 00:00이 하한이다. 시작 기록이 있으면 잠근 뒤 그 시각(START_DT)으로 다시 본다
         if (IsBeforePlanDay(eventDt, plan.PickupDate))
             return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
 
@@ -587,6 +587,14 @@ public partial class PickupService
         {
             await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
             return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 404 };
+        }
+
+        // 진행 중 계획의 시작은 그 계획의 시작 시각(START_DT) 이후만 받는다. 시작 요청에는 계획 ID가 없어,
+        // 끝난 다른 계획의 늦은 재전송이 이 계획을 다시 시작하고 START_DT를 과거로 덮지 않게 한다
+        if (entity.StartDt is { } startedAt && eventDt < startedAt)
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
         }
 
         entity.Status = PlanStatusStarted;
