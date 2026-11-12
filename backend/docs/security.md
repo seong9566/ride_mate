@@ -32,6 +32,8 @@
 - `CODE_HASH`는 `"otp:" + 숫자만 남긴 전화번호 + ":" + 6자리 인증번호`를 HMAC 입력으로 쓴다.
 - `QR_LOGIN.DEVICE_CODE_HASH`는 `"qr-device:" + device_code`, `USER_CODE_HASH`는 `"qr-user:" + user_code`를 HMAC 입력으로 쓴다. 두 코드 원문은 DB나 로그에 남기지 않는다.
 - 픽업 링크 토큰 원문은 `"pickup-link:" + PICKUP_PLAN_ID + ":" + TOKEN_NONCE`의 HMAC을 base64url로 쓴 값이고, `PICKUP_SESSION.TOKEN_HASH`는 `"pickup-link-token:" + 토큰 원문`을 HMAC 입력으로 쓴다. 토큰 원문은 저장하지 않고 `TOKEN_NONCE`로 다시 계산한다.
+- 아이 휴대폰 웹은 링크 토큰을 `X-Pickup-Token` 헤더로만 보낸다. URL·쿼리에 싣지 않아 접근 로그에 남지 않게 한다. 서버도 토큰 원문을 로그에 남기지 않고 계획 ID만 남긴다.
+- 아이 출발 알림 API(`Pickup/W/AddChildLeave`·`DeleteChildLeave`)는 인증 없이 열려 있다. 토큰은 추측할 수 없지만 같은 토큰으로 계속 부르면 이벤트 행이 쌓이므로, 차 계정 목록과 같은 방식으로 클라이언트(IPv4 주소, IPv6는 /64)마다 1분에 30번으로 제한한다(넘으면 429 + `Retry-After`). 배포 환경에는 아직 `UseForwardedHeaders`가 없어 모든 요청이 프록시 주소 하나로 묶이고, 그래서 지금은 모든 아이가 1분 30회를 나눠 쓴다. 이 위험은 받아들이고 T26에서 고친다.
 - QR 로그인은 3분 동안 유효하고 차량은 3초 간격으로 승인 상태를 조회한다. 초 단위로 내린 서버 시각이 마지막 조회 시각 + 2초보다 이르면 `slow_down`이며, 승인된 QR은 만료 시각 뒤 60초까지 차량이 토큰으로 바꿀 수 있다. 차와 휴대폰에는 같은 숫자 4자리 `match_code`를 보여준다.
 - `device_code`는 QR에 넣지 않고 발급받은 차량만 보관한다. 승인 뒤에도 이 값을 받은 기기만 차량 토큰을 받을 수 있다.
 - 발송은 `ISmsSender`. `Sms:Provider`로 Dev/솔라피를 고른다. Dev는 실제로 발송하지 않고 가린 전화번호와 메시지를 콘솔 로그에 남기며, Development 환경에서만 기동한다(그 밖의 환경에서 Dev이거나 비어 있으면 기동 실패). 솔라피 키(`Sms:Solapi:*`)는 환경변수나 git 제외 설정 파일로만 넣고, 번호·메시지 본문·사업자 응답 본문은 로그에 남기지 않는다. [ADR-0019]

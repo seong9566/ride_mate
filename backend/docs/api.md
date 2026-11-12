@@ -278,9 +278,50 @@
 | 401 | 인증 실패 | 401 |
 | 404 | 계획이 없거나, 로그인한 계정의 계획이 아니거나, 끝났거나(`BOARDED`·`EXPIRED`·`CANCELED`), `EXPIRE_DT`가 지났다 | 404 |
 
-- `data`는 `{ linkStatus, sentDt, remainingAttempts, opened, openedDt, leaving, leavingDt, remindStatus }`다. `linkStatus`·`remindStatus`는 `NONE`(시도 없음), `SENDING`(진행 중), `SENT`(접수된 시도가 있음), `FAILED`(접수된 시도가 없고 마지막 시도가 실패. 결과 없이 30초가 지난 진행 중 발송 포함) 중 하나다. `sentDt`는 처음 접수된 링크 발송의 `EVENT_DT`이고, `remainingAttempts`는 링크 발송의 남은 횟수다.
-- `opened`·`openedDt`·`leaving`·`leavingDt`는 `LINK_OPENED`·`CHILD_LEAVING` 이벤트의 유무와 첫 이벤트의 `EVENT_DT`다. 이 이벤트를 기록하는 API(링크를 여는 웹)는 아직 없어서 지금은 항상 false와 null이다.
+- `data`는 `{ linkStatus, sentDt, remainingAttempts, opened, openedDt, leaving, leavingDt, leaveStatus, plannedLeaveDt, remindStatus }`다. `linkStatus`·`remindStatus`는 `NONE`(시도 없음), `SENDING`(진행 중), `SENT`(접수된 시도가 있음), `FAILED`(접수된 시도가 없고 마지막 시도가 실패. 결과 없이 30초가 지난 진행 중 발송 포함) 중 하나다. `sentDt`는 처음 접수된 링크 발송의 `EVENT_DT`이고, `remainingAttempts`는 링크 발송의 남은 횟수다.
+- `leaving`·`leavingDt`는 아이 출발 알림 API가 기록한 `CHILD_LEAVING` 이벤트의 유무와 첫 이벤트의 `EVENT_DT`다. `opened`·`openedDt`(`LINK_OPENED`)를 기록하는 API는 아직 없어서 지금은 항상 false와 null이다.
+- `leaveStatus`·`plannedLeaveDt`는 아래 "아이 출발 알림"의 출발 상태와 예정 시각이다. `plannedLeaveDt`는 `SCHEDULED`·`SOON`일 때만 값이 있다. 차량은 상태가 바뀐 순간에만 알린다(`SCHEDULED`가 되거나 `plannedLeaveDt`가 바뀌면 "22:03에 나온대요", `SOON`이 되면 "곧 나와요", `LEAVING`이 되면 "나오고 있어요").
 - 필드·예시는 Notion "[차량] 픽업 링크 문자 발송"(https://app.notion.com/p/415aa638eaf881bbbd18cf5d4fd3de6d), "[차량] 정차 후 다시 알림 문자 발송"(https://app.notion.com/p/415aa638eaf881068dd4f1dbf92a31cd), "[차량] 픽업 링크 전달 상태 조회"(https://app.notion.com/p/415aa638eaf881a0a737d13571e9265c) 페이지가 정본이다.
+
+## 아이 출발 알림
+
+아이 휴대폰 웹(픽업 링크를 연 화면)이 부른다. 아이는 로그인하지 않으므로 인증 구간 `sign`이 없고, 링크 토큰으로 계획을 찾는다.
+
+| 주소 | 용도 |
+|---|---|
+| `POST /api/v1/Pickup/W/AddChildLeave` | "지금 나가요"와 출발 시각 설정·변경("5분 뒤 나가요", "시간 직접 설정", "변경") |
+| `DELETE /api/v1/Pickup/W/DeleteChildLeave` | 출발 시각 취소. 본문 없음 |
+
+- 링크 토큰(링크 주소 마지막 43자)은 요청 헤더 `X-Pickup-Token`으로만 보낸다. URL·쿼리·본문에 싣지 않는다. 헤더가 없거나 형식(43자 base64url)이 틀려도 없는 링크와 같은 404다.
+- `AddChildLeave` 본문은 `{ "leaveDt": "2026-11-12T22:03:00" }`이다. `leaveDt`가 null이거나 빠지면(`{}`) "지금 나가요"다. "5분 뒤 나가요"는 웹이 지금 + 5분을 계산해 보낸다.
+- `leaveDt`는 오프셋 없는 로컬(KST) 시각이다. 오프셋이나 `Z`가 붙으면 KST로 바꾼다. 초 이하는 버린다. 서버 현재 시각(분 단위 내림) − 1분 이상, 현재 + `PickupLink:LeaveMaxAheadMin`(60)분 이하, 계획의 `EXPIRE_DT` 전이어야 한다.
+- "지금 나가요"는 한 번만 기록되고 되돌릴 수 없다. 출발 시각은 그 전까지 몇 번이고 바꾸거나 취소할 수 있다.
+- 같은 요청이 다시 오면(이미 지금 나가요, 같은 시각으로 다시 설정, 이미 취소된 상태에서 취소) 이벤트를 늘리지 않고 200과 지금 상태를 돌려준다.
+- 응답 `data`는 `{ reason, leaveStatus, plannedLeaveDt, leavingDt }`다. 웹은 이 값으로 출발 시간 카드와 버튼을 그린다.
+
+| code | 상황 | HTTP |
+|---|---|---|
+| 200 | 처리했거나, 같은 요청이라 바꿀 것이 없었다 | 200 |
+| 400 | `leaveDt`가 범위 밖이다. `data`는 null | 400 |
+| 404 | 토큰 헤더가 없거나 형식이 틀렸거나 없는 링크다. `data`는 null | 404 |
+| 409 | 처리할 수 없는 상태. `data.reason`에 사유가 들어간다 | 409 |
+| 429 | 요청 빈도 제한(클라이언트마다 1분 30회). 본문 없음, `Retry-After` 헤더 | 429 |
+
+| `reason` (409) | 상황 |
+|---|---|
+| `LINK_CLOSED` | 계획이 탑승·만료·취소로 끝났거나 `EXPIRE_DT`가 지났거나 링크가 닫혔다. 웹은 "이 링크는 끝났어요" 화면을 보여준다 |
+| `ALREADY_LEAVING` | 이미 "지금 나가요"를 눌러 출발 시각을 바꾸거나 취소할 수 없다. `data`에 지금 상태(`LEAVING`, `leavingDt`)가 들어 있다 |
+
+출발 상태 `leaveStatus`는 저장하지 않고 이벤트 이력과 서버 현재 시각으로 매번 계산한다.
+
+| 값 | 뜻 |
+|---|---|
+| `NONE` | 출발 알림이 없거나 취소됐다 |
+| `SCHEDULED` | 출발 시각이 정해졌고 아직 `PickupLink:LeaveSoonMin`(1)분 넘게 남았다 |
+| `SOON` | 출발 시각 1분 전부터. 시각이 지나도 아이가 바꾸거나 취소하거나 "지금 나가요"를 누르기 전에는 그대로다 |
+| `LEAVING` | "지금 나가요"를 눌렀다 |
+
+- 필드·예시는 Notion "[웹] 아이 출발 알림"(https://app.notion.com/p/416aa638eaf881beab73d70736cd6c39), "[웹] 아이 출발 시각 취소"(https://app.notion.com/p/416aa638eaf881e6a672c69124ffa4ae) 페이지가 정본이다.
 
 ## 시간표 삭제
 
