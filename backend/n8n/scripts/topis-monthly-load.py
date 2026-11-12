@@ -124,6 +124,8 @@ def normalize_link_id(value):
 def normalize_date(value):
     if value is None or isinstance(value, bool):
         return None
+    if isinstance(value, (datetime, date)):
+        return value.strftime("%Y-%m-%d")
     if isinstance(value, float):
         if not value.is_integer():
             return None
@@ -151,7 +153,7 @@ def normalize_speed(value):
 
 
 def quote(value):
-    return "'" + value.replace("'", "''") + "'"
+    return "'" + value.replace("\\", "\\\\").replace("'", "''") + "'"
 
 
 def write_batch(values):
@@ -163,12 +165,12 @@ def write_batch(values):
         "INSERT INTO TRAFFIC_HOURLY_SPEED "
         "(TRAFFIC_LINK_ID, SPEED_DATE, HOUR_NO, SPEED_KMH, CREATE_DT, "
         "CREATE_USER, UPDATE_DT, UPDATE_USER, DELETE_YN) "
-        "SELECT l.TRAFFIC_LINK_ID, v.d, v.h, v.s, NOW(), 'SYSTEM', NOW(), "
-        "'SYSTEM', 0 FROM (VALUES "
+        "SELECT src.tid, src.d, src.h, src.s, NOW(), 'SYSTEM', NOW(), "
+        "'SYSTEM', 0 FROM (SELECT l.TRAFFIC_LINK_ID AS tid, v.d, v.h, v.s FROM (VALUES "
         f"{rows}"
         ") AS v(link_id, d, h, s) JOIN TRAFFIC_LINK l ON l.LINK_ID = v.link_id "
-        "AND l.SOURCE = 'TOPIS' AND l.AREA_CODE = 'DAECHI' AND l.DELETE_YN = 0 "
-        "ON DUPLICATE KEY UPDATE SPEED_KMH = VALUES(SPEED_KMH), "
+        "AND l.SOURCE = 'TOPIS' AND l.AREA_CODE = 'DAECHI' AND l.DELETE_YN = 0) AS src "
+        "ON DUPLICATE KEY UPDATE SPEED_KMH = src.s, "
         "UPDATE_DT = NOW(), UPDATE_USER = 'SYSTEM', DELETE_YN = 0;"
     )
 

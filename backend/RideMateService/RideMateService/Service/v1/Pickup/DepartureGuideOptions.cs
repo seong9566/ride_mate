@@ -54,11 +54,7 @@ public class DepartureCongestionOptions
     /// <summary>
     /// 학원가별 진입 구간 거리(m)
     /// </summary>
-    public Dictionary<string, int> EntryDistanceM { get; set; } = new()
-    {
-        ["DAECHI"] = 1500,
-        ["PYEONGCHON"] = 1500
-    };
+    public Dictionary<string, int> EntryDistanceM { get; set; } = new();
 
     /// <summary>
     /// 최대 혼잡 보정 시간(분)

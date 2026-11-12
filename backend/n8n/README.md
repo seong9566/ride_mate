@@ -73,21 +73,23 @@ docker compose exec -T -e N8N_RUNNERS_BROKER_PORT=5691 n8n n8n execute --id=traf
 
 TOPIS 월별 XLSX는 파일당 약 35MB여서 n8n으로 읽을 때 Docker 메모리 부족으로 종료됐다(2026-11-12 실측: exit 137, OOMKilled). 따라서 월 1회 자동 적재는 하지 않고, 로컬 Python 스크립트로 필요한 때 한 번 적재한다. 이 데이터는 우리 수집 이력이 충분히 쌓이기 전 대치동 혼잡 보정의 임시 근거이며, 2026-11-12에 2026-08~10월 자료를 적재했다.
 
-먼저 로컬 맥에 `openpyxl`을 설치한다.
+먼저 로컬 맥에 `openpyxl`을 설치한다. Homebrew Python은 전역 `pip install`을 막으므로(PEP 668) 가상환경을 쓴다.
 
 ```sh
-pip install openpyxl
+python3 -m venv /tmp/topis-venv
+/tmp/topis-venv/bin/pip install openpyxl
 ```
 
 그다음 `backend/`에서 링크 목록 생성, 월별 자료 적재, MONTHLY 집계를 순서대로 실행한다. `--months`를 생략하면 TOPIS 목록의 최신 3개월을 사용한다.
 
 ```sh
 docker compose exec -T mysql sh -c 'mysql -uridemate -p"$MYSQL_PASSWORD" ridemate -N -e "SELECT LINK_ID FROM TRAFFIC_LINK WHERE SOURCE=\"TOPIS\" AND AREA_CODE=\"DAECHI\" AND DELETE_YN=0"' > /tmp/daechi-links.txt
-python3 n8n/scripts/topis-monthly-load.py --links /tmp/daechi-links.txt | docker compose exec -T mysql sh -c 'mysql --default-character-set=utf8mb4 -uridemate -p"$MYSQL_PASSWORD" ridemate'
+/tmp/topis-venv/bin/python n8n/scripts/topis-monthly-load.py --links /tmp/daechi-links.txt > /tmp/topis-monthly.sql
+docker compose exec -T mysql sh -c 'mysql --default-character-set=utf8mb4 -uridemate -p"$MYSQL_PASSWORD" ridemate' < /tmp/topis-monthly.sql
 docker compose exec -T mysql sh -c 'mysql --default-character-set=utf8mb4 -uridemate -p"$MYSQL_PASSWORD" ridemate' < n8n/scripts/topis-monthly-profile.sql
 ```
 
-적재와 집계는 모두 upsert하므로 같은 입력으로 다시 실행해도 중복 행이 쌓이지 않는다.
+적재 스크립트가 실패하면(종료 코드 1, 표준 에러에 `오류:`) SQL 파일을 실행하지 않는다. 적재와 집계는 모두 upsert하므로 같은 입력으로 다시 실행해도 중복 행이 쌓이지 않는다.
 
 ## 공영 주차장 하루 1회 수집
 
