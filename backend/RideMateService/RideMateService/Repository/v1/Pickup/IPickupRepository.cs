@@ -195,6 +195,12 @@ public interface IPickupRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 오늘 계획의 탑승 시각(BOARD_DT)을 쓴다. 계획을 끝내는(익명화) UPDATE보다 먼저, 같은 트랜잭션에서 부른다
+    /// </summary>
+    Task SetBoardDtAsync(int pickupPlanId, DateTime boardDt, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 오늘 계획에서 그 차량 이벤트 번호(CLIENT_EVENT_ID)로 이미 들어간 이벤트의 유형을 조회한다. 없으면 null
     /// </summary>
     Task<string?> GetPlanEventTypeAsync(int pickupPlanId, Guid clientEventId, IDbTransaction transaction,
@@ -223,8 +229,10 @@ public interface IPickupRepository
     /// 순서: TIMETABLE_DAY 잠금(계획이 가리키면) → 계획 UPDATE 한 문장(상태·CLOSE_DT, 참조·하원 시각·도보 시간·임의 좌표 칸 NULL, DELETE_YN, 감사)
     /// → END_TIME_CHANGED 이벤트 DETAIL NULL → setLastPickupDate면 TIMETABLE_DAY.LAST_PICKUP_DATE = 계획의 PICKUP_DATE
     /// → 세션 CLOSE_DT·DELETE_YN → 이벤트 DELETE_YN → closeStatus 이벤트(DELETE_YN = 1) 삽입.
+    /// 끝내는 이벤트의 CLIENT_EVENT_ID·EVENT_DT는 clientEventId·eventDt이고, 넘기지 않으면(만료) NULL·now다.
     /// 계획이 없거나 이미 끝났으면 아무것도 바꾸지 않고 false
     /// </summary>
     Task<bool> ClosePickupPlanAsync(int pickupPlanId, string closeStatus, bool setLastPickupDate, DateTime now,
-        string updateUser, IDbTransaction transaction, CancellationToken cancellationToken = default);
+        string updateUser, IDbTransaction transaction, CancellationToken cancellationToken = default,
+        Guid? clientEventId = null, DateTime? eventDt = null);
 }

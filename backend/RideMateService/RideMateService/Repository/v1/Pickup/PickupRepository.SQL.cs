@@ -958,6 +958,37 @@ public partial class PickupRepository
     }
 
     /// <summary>
+    /// 오늘 계획의 탑승 시각(BOARD_DT)을 쓴다. 계획을 끝내는(익명화) UPDATE보다 먼저, 같은 트랜잭션에서 부른다
+    /// </summary>
+    public async Task SetBoardDtAsync(int pickupPlanId, DateTime boardDt, IDbTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("pickupPlanId", pickupPlanId);
+            dp.Add("boardDt", boardDt);
+
+            // UPDATE_DT·UPDATE_USER는 바로 뒤 끝내기 UPDATE가 채운다
+            var sql = @"
+                UPDATE PICKUP_PLAN
+                SET BOARD_DT = @boardDt
+                WHERE PICKUP_PLAN_ID = @pickupPlanId";
+
+            await _dapper.ExecuteAsync(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
     /// 오늘 계획에서 그 차량 이벤트 번호로 이미 들어간 이벤트의 유형을 조회한다. 없으면 null
     /// </summary>
     public async Task<string?> GetPlanEventTypeAsync(int pickupPlanId, Guid clientEventId,
@@ -1093,7 +1124,8 @@ public partial class PickupRepository
     /// 계획이 없거나 이미 끝났으면 아무것도 바꾸지 않고 false
     /// </summary>
     public async Task<bool> ClosePickupPlanAsync(int pickupPlanId, string closeStatus, bool setLastPickupDate,
-        DateTime now, string updateUser, IDbTransaction transaction, CancellationToken cancellationToken = default)
+        DateTime now, string updateUser, IDbTransaction transaction, CancellationToken cancellationToken = default,
+        Guid? clientEventId = null, DateTime? eventDt = null)
     {
         try
         {
@@ -1102,6 +1134,9 @@ public partial class PickupRepository
             dp.Add("closeStatus", closeStatus);
             dp.Add("now", now);
             dp.Add("updateUser", updateUser);
+            // 끝내는 차량 이벤트의 번호와 시각. 만료처럼 없으면 CLIENT_EVENT_ID NULL, EVENT_DT now다. CHAR(36)에 소문자 하이픈 형식으로 저장된다
+            dp.Add("clientEventId", clientEventId?.ToString("D"));
+            dp.Add("eventDt", eventDt ?? now);
 
             // 1) 계획이 가리키는 요일과 날짜를 읽는다. 호출자가 쥔 PK 잠금을 다시 잡아 최신 값을 읽는다(같은 트랜잭션이라 기다리지 않는다)
             var planSql = $@"
@@ -1209,7 +1244,7 @@ public partial class PickupRepository
                     (PICKUP_PLAN_ID, EVENT_TYPE, EVENT_DT, CLIENT_EVENT_ID, DETAIL,
                      CREATE_DT, CREATE_USER, UPDATE_DT, UPDATE_USER, DELETE_YN)
                 VALUES
-                    (@pickupPlanId, @closeStatus, @now, NULL, NULL,
+                    (@pickupPlanId, @closeStatus, @eventDt, @clientEventId, NULL,
                      @now, @updateUser, @now, @updateUser, 1)";
             await _dapper.ExecuteAsync(
                 new CommandDefinition(insertEventSql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
