@@ -37,7 +37,7 @@ public partial class UserRepository
     }
 
     /// <summary>
-    /// 그 계정의 집·차·초기 설정 완료 시각을 돌려준다. 계정이 없거나 지워졌으면 null이다. 쓰기 트랜잭션 안에서 부르면 그 트랜잭션을 넘긴다.
+    /// 그 계정의 집·차·초기 설정 완료 시각·자동 발송 여부를 돌려준다. 계정이 없거나 지워졌으면 null이다. 쓰기 트랜잭션 안에서 부르면 그 트랜잭션을 넘긴다.
     /// </summary>
     public async Task<UserSetupRow?> GetUserSetupRowAsync(int userId, IDbTransaction transaction,
         CancellationToken cancellationToken = default)
@@ -54,7 +54,8 @@ public partial class UserRepository
                        t.CAR_MODEL AS CarModel,
                        t.CAR_COLOR AS CarColor,
                        t.CAR_NO_LAST4 AS CarNoLast4,
-                       t.SETUP_DONE_DT AS SetupDoneDt
+                       t.SETUP_DONE_DT AS SetupDoneDt,
+                       t.AUTO_SEND_YN AS AutoSendYn
                 FROM USER_INFO AS t
                 WHERE t.USER_ID = @userId
                   AND t.DELETE_YN = FALSE";

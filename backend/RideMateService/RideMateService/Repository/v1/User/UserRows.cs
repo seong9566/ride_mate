@@ -1,7 +1,7 @@
 namespace RideMateService.Repository.v1.User;
 
 /// <summary>
-/// 운전자 계정의 집·차·초기 설정 완료 시각
+/// 운전자 계정의 집·차·초기 설정 완료 시각·자동 발송 여부
 /// </summary>
 public class UserSetupRow
 {
@@ -12,6 +12,7 @@ public class UserSetupRow
     public string? CarColor { get; set; }
     public string? CarNoLast4 { get; set; }
     public DateTime? SetupDoneDt { get; set; }
+    public bool AutoSendYn { get; set; }
 }
 
 /// <summary>

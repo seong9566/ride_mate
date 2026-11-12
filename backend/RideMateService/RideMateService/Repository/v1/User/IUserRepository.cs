@@ -22,6 +22,12 @@ public interface IUserRepository
     Task<bool> UpdateSetupDoneAsync(int userId, DateTime setupDoneDt, string updateUser,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// 자동 발송 여부와 수정 감사 컬럼만 바꾼다. 바뀐 행이 없으면 false를 돌려준다.
+    /// </summary>
+    Task<bool> UpdateAutoSendAsync(int userId, bool autoSendYn, DateTime updateDt, string updateUser,
+        CancellationToken cancellationToken = default);
+
     // ====== Dapper
 
     /// <summary>
@@ -31,7 +37,7 @@ public interface IUserRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 그 계정의 집·차·초기 설정 완료 시각을 돌려준다. 계정이 없거나 지워졌으면 null이다. 쓰기 트랜잭션 안에서 부르면 그 트랜잭션을 넘긴다.
+    /// 그 계정의 집·차·초기 설정 완료 시각·자동 발송 여부를 돌려준다. 계정이 없거나 지워졌으면 null이다. 쓰기 트랜잭션 안에서 부르면 그 트랜잭션을 넘긴다.
     /// </summary>
     Task<UserSetupRow?> GetUserSetupRowAsync(int userId, IDbTransaction transaction,
         CancellationToken cancellationToken = default);

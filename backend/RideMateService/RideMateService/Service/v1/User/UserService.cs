@@ -303,7 +303,77 @@ public class UserService : IUserService
         }
     }
 
-    // 로그인한 계정(JWT sub)의 ID — 클레임이 없거나 숫자가 아니면 null. 부른 쪽이 401로 바꾼다
+    /// <summary>
+    /// 자동 발송 설정 저장
+    /// </summary>
+    public Task<ResponseModel<SettingDto>> UpdateSettingService(UpdateSettingDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        return RetryOnDeadlockAsync(() => UpdateSettingCoreAsync(dto, cancellationToken), cancellationToken);
+    }
+
+    // 교착은 RetryOnDeadlockAsync가 다시 실행하므로 여기서는 500으로 바꾸지 않고 올려보낸다
+    private async Task<ResponseModel<SettingDto>> UpdateSettingCoreAsync(UpdateSettingDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // 1) 입력 검증 — API 모델 검증을 거치지 않은 호출도 같은 규칙으로 거절한다
+            if (dto?.autoSendYn is null)
+                return Fail<SettingDto>(400, "잘못된 요청입니다.");
+
+            // 2) 인증 확인 — sub 클레임이 없으면 거절하고, 계정이 있는지는 아래 잠금 조회가 확인한다
+            var loginUserId = GetLoginUserId();
+            if (loginUserId is null)
+                return Fail<SettingDto>(401, "잘못된 요청입니다.");
+
+            DateTime thisTime = NowToSecond();
+            var transaction = await _context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            await using var transactionScope = transaction.ConfigureAwait(false);
+            var dbTransaction = transaction.GetDbTransaction();
+
+            // 3) 다른 조회보다 먼저 계정을 잠가 같은 계정의 동시 요청을 직렬화한다
+            var lockedUserId = await _userRepository.LockUserInfoAsync(loginUserId.Value, dbTransaction,
+                cancellationToken).ConfigureAwait(false);
+            if (lockedUserId is null) // 계정이 없거나 지워졌다
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return Fail<SettingDto>(401, "잘못된 요청입니다.");
+            }
+
+            // 4) 자동 발송 여부만 바꾼다
+            if (!await _userRepository.UpdateAutoSendAsync(lockedUserId.Value, dto.autoSendYn.Value, thisTime,
+                    AuditUser, cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return Fail<SettingDto>(500, "서버에서 요청을 처리하지 못하였습니다.");
+            }
+
+            // 5) 응답 — 저장된 값을 읽는다. 커밋 전에 읽어 읽기가 실패하면 저장도 취소된다
+            var row = await _userRepository.GetUserSetupRowAsync(lockedUserId.Value, dbTransaction,
+                cancellationToken).ConfigureAwait(false);
+            if (row is null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return Fail<SettingDto>(500, "서버에서 요청을 처리하지 못하였습니다.");
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+            return new ResponseModel<SettingDto>
+            {
+                message = "요청이 정상 처리되었습니다.",
+                data = new SettingDto { autoSendYn = row.AutoSendYn },
+                code = 200
+            };
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && !IsDeadlock(ex)) // 요청 취소·교착은 그대로 올려보낸다
+        {
+            LogServiceException(ex);
+            return Fail<SettingDto>(500, "서버에서 요청을 처리하지 못하였습니다.");
+        }
+    }
+
     /// <summary>
     /// 계정 정보 조회
     /// </summary>
@@ -368,6 +438,7 @@ public class UserService : IUserService
         }
     }
 
+    // 로그인한 계정(JWT sub)의 ID — 클레임이 없거나 숫자가 아니면 null. 부른 쪽이 401로 바꾼다
     private int? GetLoginUserId()
     {
         return int.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("sub"), out var userId)
