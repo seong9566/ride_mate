@@ -27,7 +27,7 @@ public class PickupWebController : ApiControllerBase
     /// </summary>
     /// <remarks>
     /// X-Pickup-Token 헤더로 픽업 링크 토큰을 전달한다.
-    /// 응답 code: 200 정상, 400 잘못된 출발 시각, 404 링크 없음, 409 링크 종료 또는 이미 출발, 429 요청 초과, 500 서버 처리 실패
+    /// 응답 code: 200 정상, 400 leaveNow·leaveDt 조합 오류·출발 시각 범위 밖(본문 형식 오류는 ProblemDetails), 404 링크 없음, 409 링크 종료 또는 이미 출발, 429 요청 초과, 500 서버 처리 실패
     /// </remarks>
     [Produces("application/json")]
     [HttpPost]
@@ -39,7 +39,7 @@ public class PickupWebController : ApiControllerBase
     [ProducesResponseType(typeof(ResponseModel<ChildLeaveDto>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ResponseModel<ChildLeaveDto>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ResponseModel<ChildLeaveDto>), StatusCodes.Status409Conflict)]
-    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    [ProducesResponseType(typeof(void), StatusCodes.Status429TooManyRequests)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> AddChildLeave(
         [FromHeader(Name = "X-Pickup-Token")] string? token,
@@ -72,7 +72,7 @@ public class PickupWebController : ApiControllerBase
     /// </summary>
     /// <remarks>
     /// X-Pickup-Token 헤더로 픽업 링크 토큰을 전달한다.
-    /// 응답 code: 200 정상, 400 잘못된 요청, 404 링크 없음, 409 링크 종료 또는 이미 출발, 429 요청 초과, 500 서버 처리 실패
+    /// 응답 code: 200 정상, 404 링크 없음, 409 링크 종료 또는 이미 출발, 429 요청 초과, 500 서버 처리 실패
     /// </remarks>
     [Produces("application/json")]
     [HttpDelete]
@@ -80,10 +80,9 @@ public class PickupWebController : ApiControllerBase
     [EnableRateLimiting(ChildLeaveRateLimit.PolicyName)]
     [SwaggerOperation(Summary = "아이 출발 예정 시각 취소(휴대폰 웹)")]
     [ProducesResponseType(typeof(ResponseModel<ChildLeaveDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ResponseModel<ChildLeaveDto>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ResponseModel<ChildLeaveDto>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ResponseModel<ChildLeaveDto>), StatusCodes.Status409Conflict)]
-    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    [ProducesResponseType(typeof(void), StatusCodes.Status429TooManyRequests)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> DeleteChildLeave(
         [FromHeader(Name = "X-Pickup-Token")] string? token,

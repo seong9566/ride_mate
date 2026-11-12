@@ -24,6 +24,11 @@ public partial class PickupService
         {
             var leaveDt = NormalizeLeaveDt(dto?.leaveDt);
 
+            // 지금 나가요는 되돌릴 수 없으므로 leaveNow: true로만 받는다. 빈 값·키 오타가 지금 나가요로 기록되지 않게 둘 중 하나만 허용한다
+            var leaveNow = dto?.leaveNow == true;
+            if (leaveNow == leaveDt.HasValue)
+                return LeaveBadRequest();
+
             if (!PickupLinkToken.IsWellFormed(token))
                 return LeaveNotFound();
 
