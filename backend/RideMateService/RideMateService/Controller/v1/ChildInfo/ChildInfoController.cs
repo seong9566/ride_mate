@@ -58,10 +58,11 @@ public class ChildInfoController : ApiControllerBase
     /// </summary>
     /// <remarks>
     /// childName·phone·sendChannel은 보낸 것만 바꾸고 빠지거나 null이면 그대로 둔다. 셋 다 없으면 400이다.
-    /// 지금 번호와 같은 번호를 보내면 바꾸지 않은 것으로 본다.
+    /// 지금 번호와 같은 번호를 보내면 바꾸지 않은 것으로 보고, 바뀐 것이 없으면 쓰지 않고 저장된 값을 200으로 돌려준다.
     ///
     /// 응답 code
     /// - 200: 수정 완료. data에 저장된 값
+    /// - 101: 아이 정보 동의가 없음
     /// - 102: 아이 번호가 부모 번호와 같음
     /// - 103: 다른 계정에 이미 등록된 번호
     /// - 400: 잘못된 요청 (형식 오류, 바꿀 값 없음)
@@ -75,6 +76,7 @@ public class ChildInfoController : ApiControllerBase
     [Route("v1/ChildInfo/M/sign/UpdateChild")]
     [SwaggerOperation(Summary = "아이 정보 수정")]
     [ProducesResponseType(typeof(ResponseModel<AddChildResultDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ResponseModel<AddChildResultDto>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> UpdateChild([FromBody] UpdateChildDto dto, CancellationToken cancellationToken)
     {
         try
