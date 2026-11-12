@@ -49,7 +49,7 @@ public partial class PickupService
     }
 
     /// <summary>아이 픽업 실시간 이벤트를 읽는다. 오류는 기록하고 스트림을 끝낸다</summary>
-    public async IAsyncEnumerable<ChildPickupStreamEvent> ReadChildPickupStreamAsync(
+    public async IAsyncEnumerable<SseEvent> ReadChildPickupStreamAsync(
         ChildPickupStreamTicket ticket, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         // 실제 반복자의 구독·대기·조회·비교 오류를 MoveNextAsync 경계에서 처리한다.
@@ -75,7 +75,7 @@ public partial class PickupService
         }
     }
 
-    private async Task<bool> TryReadChildPickupEventAsync(IAsyncEnumerator<ChildPickupStreamEvent> reader,
+    private async Task<bool> TryReadChildPickupEventAsync(IAsyncEnumerator<SseEvent> reader,
         int pickupPlanId, CancellationToken cancellationToken)
     {
         try
@@ -102,11 +102,11 @@ public partial class PickupService
 #endif
     }
 
-    private async IAsyncEnumerable<ChildPickupStreamEvent> ReadChildPickupEventsAsync(
+    private async IAsyncEnumerable<SseEvent> ReadChildPickupEventsAsync(
         ChildPickupStreamTicket ticket, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var connectedDt = DateTime.Now;
-        using var sub = _liveHub.Subscribe(ticket.PickupPlanId);
+        using var sub = _liveHub.Subscribe(ticket.PickupPlanId, PickupLiveAudience.Child);
         var initial = await LoadChildPickupAsync(ticket.TokenHash, cancellationToken).ConfigureAwait(false);
         if (initial is null)
             yield break;
@@ -168,14 +168,14 @@ public partial class PickupService
             if (moved && _liveOptions.VehiclePositionEnabled)
             {
                 var position = VehicleEvent(ticket.PickupPlanId, last.slotDt);
-                yield return new ChildPickupStreamEvent("vehicle", position);
+                yield return new SseEvent("vehicle", position);
                 lastVehicleHadPosition = position.lat is not null;
             }
             if (now >= deadline)
                 yield break;
             if (now >= nextHeartbeat)
             {
-                yield return new ChildPickupStreamEvent(null, null);
+                yield return new SseEvent(null, null);
                 nextHeartbeat = nextHeartbeat.AddSeconds(_liveOptions.HeartbeatSec);
             }
             if (lastVehicleHadPosition && (staleAt is null || now >= staleAt))
@@ -183,7 +183,7 @@ public partial class PickupService
                 var position = VehicleEvent(ticket.PickupPlanId, last.slotDt);
                 if (position.lat is null)
                 {
-                    yield return new ChildPickupStreamEvent("vehicle", position);
+                    yield return new SseEvent("vehicle", position);
                     lastVehicleHadPosition = false;
                 }
             }
@@ -227,9 +227,9 @@ public partial class PickupService
     }
 
     // ChildPickupDto에 필드를 더하면 여기 복사에도 더한다(조회 API와 스트림 스냅샷의 모양이 같아야 한다)
-    private static ChildPickupStreamEvent SnapshotEvent(ChildPickupDto dto, string? change)
+    private static SseEvent SnapshotEvent(ChildPickupDto dto, string? change)
     {
-        return new ChildPickupStreamEvent("snapshot", new ChildPickupSnapshotEventDto
+        return new SseEvent("snapshot", new ChildPickupSnapshotEventDto
         {
             linkStatus = dto.linkStatus,
             serverDt = dto.serverDt,
