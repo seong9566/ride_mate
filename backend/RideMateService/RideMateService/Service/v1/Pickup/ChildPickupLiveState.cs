@@ -14,8 +14,7 @@ public static class ChildPickupLiveState
             return "STATUS_CHANGED";
         if (!Same(previous.pickup, next.pickup) || previous.slotDt != next.slotDt)
             return "PLACE_CHANGED";
-        if (previous.planStatus != next.planStatus || previous.stopAtSpot != next.stopAtSpot
-            || previous.linkStatus != next.linkStatus)
+        if (previous.planStatus != next.planStatus || previous.stopAtSpot != next.stopAtSpot)
             return "STATUS_CHANGED";
         if (!Same(previous.leave, next.leave))
             return "LEAVE_CHANGED";

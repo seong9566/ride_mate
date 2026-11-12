@@ -35,8 +35,7 @@ public class ChildPickupVehicleEventDto
 /// <summary>서비스 내부에서 사용하는 스트림 연결 판정 결과</summary>
 /// <param name="PickupPlanId">픽업 계획 ID</param>
 /// <param name="TokenHash">링크 토큰 해시</param>
-/// <param name="ExpireDt">링크 만료 시각</param>
-public sealed record ChildPickupStreamTicket(int PickupPlanId, string TokenHash, DateTime? ExpireDt);
+public sealed record ChildPickupStreamTicket(int PickupPlanId, string TokenHash);
 
 /// <summary>아이 픽업 SSE 이벤트</summary>
 /// <param name="EventName">이벤트 이름. null이면 하트비트 주석 줄</param>

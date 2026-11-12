@@ -307,7 +307,7 @@ public class PickupController : ApiControllerBase
 
     /// <summary>차 위치·내비 남은 시간 보고</summary>
     /// <remarks>경로 시작부터 탑승 전까지 3초마다 부른다. etaSec는 내비 목적지가 이 계획의 픽업 장소일 때만 보낸다. 위치는 서버 메모리에 계획마다 마지막 하나만 두고 DB에 쓰지 않는다. 오프라인 대기열에 쌓아 다시 보내지 않는다. 1초 안에 다시 온 보고는 200으로 받고 버린다.
-    /// 응답 code: 200 정상(data null), 400 검증 실패, 401 인증 실패, 404 계획 없음·남의 계획·끝난 계획, 409 PLAN_CLOSED·NOT_STARTED, 429 요청 초과(사용자마다 1분 60회), 500 서버 처리 실패</remarks>
+    /// 응답 code: 200 정상(data null), 400 검증 실패, 401 인증 실패, 404 계획 없음·남의 계획·끝난 계획, 409 PLAN_CLOSED·NOT_STARTED, 429 요청 초과(사용자마다 1분 120회), 500 서버 처리 실패</remarks>
     [Produces("application/json")]
     [HttpPatch]
     [Route("v1/Pickup/M/sign/UpdatePickupPlanPosition")]

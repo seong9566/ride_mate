@@ -6,7 +6,7 @@ namespace RideMateService.Service.v1.Pickup;
 
 public partial class PickupService
 {
-    /// <summary>アイ 픽업 실시간 연결을 판정한다</summary>
+    /// <summary>아이 픽업 실시간 연결을 판정한다</summary>
     public async Task<ResponseModel<ChildPickupStreamTicket>> OpenChildPickupStreamService(string? token,
         CancellationToken cancellationToken = default)
     {
@@ -26,7 +26,7 @@ public partial class PickupService
             {
                 code = 200,
                 message = "요청이 정상 처리되었습니다.",
-                data = new ChildPickupStreamTicket(pickupPlanId.Value, tokenHash, result.Value.ExpireDt)
+                data = new ChildPickupStreamTicket(pickupPlanId.Value, tokenHash)
             };
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -129,6 +129,12 @@ public partial class PickupService
                 wake = expires;
             if (soonAt is { } soon && soon < wake)
                 wake = soon;
+            // 보낸 차 위치가 오래되는 시각에도 깨어나 위치 칸이 빈 vehicle을 보낸다(하트비트까지 기다리면 최대 15초 늦다).
+            // 받은 시각은 초 단위라 1초를 더해야 깨어난 시각에 확실히 오래된 위치로 판정된다
+            var staleAt = lastVehicleHadPosition && _liveHub.GetVehiclePosition(ticket.PickupPlanId) is { } held
+                ? held.ReceivedDt.AddSeconds(_liveOptions.VehicleStaleSec + 1) : (DateTime?)null;
+            if (staleAt is { } staleWake && staleWake < wake)
+                wake = staleWake;
             if (!await WaitForChildPickupSignalAsync(sub, wake, cancellationToken).ConfigureAwait(false))
                 yield break;
 
@@ -171,14 +177,14 @@ public partial class PickupService
             {
                 yield return new ChildPickupStreamEvent(null, null);
                 nextHeartbeat = nextHeartbeat.AddSeconds(_liveOptions.HeartbeatSec);
-                if (lastVehicleHadPosition)
+            }
+            if (lastVehicleHadPosition && (staleAt is null || now >= staleAt))
+            {
+                var position = VehicleEvent(ticket.PickupPlanId, last.slotDt);
+                if (position.lat is null)
                 {
-                    var position = VehicleEvent(ticket.PickupPlanId, last.slotDt);
-                    if (position.lat is null)
-                    {
-                        yield return new ChildPickupStreamEvent("vehicle", position);
-                        lastVehicleHadPosition = false;
-                    }
+                    yield return new ChildPickupStreamEvent("vehicle", position);
+                    lastVehicleHadPosition = false;
                 }
             }
         }
@@ -220,6 +226,7 @@ public partial class PickupService
         };
     }
 
+    // ChildPickupDto에 필드를 더하면 여기 복사에도 더한다(조회 API와 스트림 스냅샷의 모양이 같아야 한다)
     private static ChildPickupStreamEvent SnapshotEvent(ChildPickupDto dto, string? change)
     {
         return new ChildPickupStreamEvent("snapshot", new ChildPickupSnapshotEventDto
