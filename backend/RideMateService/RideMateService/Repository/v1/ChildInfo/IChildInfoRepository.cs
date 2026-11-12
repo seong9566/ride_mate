@@ -15,6 +15,12 @@ public interface IChildInfoRepository
     /// </summary>
     Task<bool> AddChildAsync(Child model, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// 살아 있는 아이의 이름·암호화한 번호·번호 해시·발송 채널을 바꾼다. 같은 번호의 다른 살아 있는 아이가 있으면 MySQL 중복 키 예외(1062)를 로그 없이 올려보낸다. 바뀐 행이 없으면 false다.
+    /// </summary>
+    Task<bool> UpdateChildAsync(int childId, string childName, byte[] phoneEnc, string? phoneHash, string sendChannel,
+        DateTime updateDt, string updateUser, CancellationToken cancellationToken = default);
+
     // ====== Dapper
 
     /// <summary>
@@ -30,7 +36,7 @@ public interface IChildInfoRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 그 계정의 살아 있는 아이를 돌려준다. 없으면 null이다. 아이 ID·이름·암호화한 번호·발송 채널만 채워진다.
+    /// 그 계정의 살아 있는 아이를 돌려준다. 없으면 null이다. 아이 ID·이름·암호화한 번호·번호 해시·발송 채널만 채워진다.
     /// </summary>
     Task<Child?> GetLiveChildAsync(int userId, IDbTransaction transaction,
         CancellationToken cancellationToken = default);
