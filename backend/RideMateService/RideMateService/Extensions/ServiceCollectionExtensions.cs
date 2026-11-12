@@ -193,8 +193,8 @@ public static class InfrastructureExtensions
     }
 
     /// <summary>
-    /// 인증 설정(Jwt·Crypto·QrLogin)을 검증하고 해시·전화번호 암호화·토큰 서비스를 Singleton으로 등록한다.
-    /// 설정이 비었거나 URI·키 형식과 길이가 맞지 않거나 두 키가 같으면 기동할 때 InvalidOperationException을 던진다.
+    /// 인증 설정(Jwt·Crypto·QrLogin·PhoneVerification)을 검증하고 해시·전화번호 암호화·토큰 서비스를 Singleton으로 등록한다.
+    /// 설정이 비었거나 URI·키 형식과 길이가 맞지 않거나 두 키가 같거나 PhoneVerification:CleanupIntervalMin이 1보다 작으면 기동할 때 InvalidOperationException을 던진다.
     /// </summary>
     public static IServiceCollection AddAuthInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
@@ -219,6 +219,11 @@ public static class InfrastructureExtensions
         services.Configure<JwtOptions>(jwt);
         services.Configure<CryptoOptions>(crypto);
         services.Configure<QrLoginOptions>(qrLogin);
+        var phoneVerification = configuration.GetSection("PhoneVerification");
+        var phoneVerificationOptions = phoneVerification.Get<PhoneVerificationOptions>() ?? new PhoneVerificationOptions();
+        if (phoneVerificationOptions.CleanupIntervalMin < 1)
+            throw new InvalidOperationException("PhoneVerification:CleanupIntervalMin 설정은 1 이상이어야 합니다.");
+        services.Configure<PhoneVerificationOptions>(phoneVerification);
         services.AddSingleton<IHashService, HashService>();
         services.AddSingleton<IPhoneCryptoService, PhoneCryptoService>();
         services.AddSingleton<ITokenService, TokenService>();

@@ -133,7 +133,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 - 틀린 횟수와 잠금은 용도와 관계없이 번호 단위다. 새 행을 만들 때 그 번호의 직전 행이 인증되지 않았고 만든 지 10분이 지나지 않았으면 `FAIL_CNT`를 이어받는다. 다시 받는다고 횟수가 0으로 돌아가지 않는다.
 - 잠금 중인지는 그 번호의 가장 최근 행에서 `LOCK_UNTIL_DT`로 판단한다. 잠긴 동안에는 새 인증번호를 보내지 않는다.
 - 같은 번호로는 1분에 한 번만 보낸다(가정값).
-- 인증에 성공했거나 만료된 지 24시간이 지난 행은 주기 작업이 `PHONE_HASH`·`CODE_HASH`를 빈 문자열로 바꾸고 `DELETE_YN`을 켠다. 동의 증빙에 필요한 시각과 방법은 `CONSENT`에 있다.
+- 주기 작업(`PhoneVerificationCleanupWorker`, 서버 시작 때와 10분마다)이 `DELETE_YN = 0`인 행 중 인증에 성공한 지 10분이 지난 행(`VERIFY_DT`가 있고 10분 전보다 이전, 용도와 관계없다)과 인증하지 않고 만료된 지 24시간이 지난 행(`VERIFY_DT`가 없고 `EXPIRE_DT`가 24시간 전보다 이전)의 `PHONE_HASH`·`CODE_HASH`를 빈 문자열로 바꾸고 `DELETE_YN`을 켠다. 한 번에 500행씩, 대상이 없을 때까지 되풀이한다. 행은 지우지 않는다(`CONSENT.PHONE_VERIFICATION_ID`가 가리킨다). 인증 성공 뒤 10분은 보호자 동의 저장(`AddConsent`)이 인증 행을 찾는 시간(`GuardianConsentValidMinutes`)이라 그 전에는 지우지 않는다. 동의 증빙에 필요한 시각과 방법은 `CONSENT`에 있다.
 - `GUARDIAN`은 로그인한 운전자 계정의 번호로만 보낸다.
 - 틀린 횟수를 올릴 때는 그 행을 `FOR UPDATE`로 잠그고 읽는다. 동시에 여러 번 시도해도 횟수가 빠지지 않는다.
 - 인덱스: `(PHONE_HASH, PURPOSE, PHONE_VERIFICATION_ID)`

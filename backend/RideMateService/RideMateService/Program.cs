@@ -16,6 +16,7 @@ using RideMateService.Comm.Parking;
 using RideMateService.Comm.Security;
 using RideMateService.Commons.Repository;
 using RideMateService.Extensions;
+using RideMateService.Service.v1.Auth;
 using RideMateService.Service.v1.Pickup;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -86,6 +87,7 @@ builder.Services.AddDomainModules();
 #region 백그라운드 워커
 
 builder.Services.AddHostedService<PickupPlanExpiryWorker>();
+builder.Services.AddHostedService<PhoneVerificationCleanupWorker>();
 #endregion
 
 #region 공용 서비스

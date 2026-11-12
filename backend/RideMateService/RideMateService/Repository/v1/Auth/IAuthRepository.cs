@@ -79,6 +79,12 @@ public interface IAuthRepository
     /// </summary>
     Task<bool> AddLoginSessionAsync(LoginSession model, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// 정리 대상 휴대폰 인증번호의 번호 해시·인증번호 해시를 비우고 삭제 표시한다. ID와 함께 대상 조건을 다시 걸어, 그 사이 바뀐 행은 건드리지 않는다. 바뀐 행 수를 돌려준다.
+    /// </summary>
+    Task<int> CleanupPhoneVerificationsAsync(IReadOnlyCollection<int> phoneVerificationIds, DateTime verifiedBefore,
+        DateTime expiredBefore, DateTime thisTime, string updateUser, CancellationToken cancellationToken = default);
+
     // ====== Dapper
 
     /// <summary>
@@ -155,4 +161,10 @@ public interface IAuthRepository
     /// </summary>
     Task<List<GetLoginSessionList>> GetLoginSessionListAsync(string deviceId, DateTime thisTime, int limit,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 정리 대상 휴대폰 인증번호 ID를 ID 순으로 limit개까지 조회한다(인증 성공이 verifiedBefore 이전이거나, 인증 없이 EXPIRE_DT가 expiredBefore 이전인 살아 있는 행)
+    /// </summary>
+    Task<IReadOnlyList<int>> GetCleanupPhoneVerificationIdsAsync(DateTime verifiedBefore, DateTime expiredBefore,
+        int limit, CancellationToken cancellationToken = default);
 }

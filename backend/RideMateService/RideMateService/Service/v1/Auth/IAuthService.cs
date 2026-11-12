@@ -84,4 +84,10 @@ public interface IAuthService
     /// 보호자 동의 저장
     /// </summary>
     Task<ResponseModel<bool>> AddConsentService(AddConsentDto dto, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 인증번호 행 정리 한 회차. 인증 성공 뒤 10분이 지난 행과 인증 없이 만료된 지 24시간이 지난 행의 번호 해시·인증번호 해시를 비우고 삭제 표시한다.
+    /// 500행 묶음을 대상이 없을 때까지 반복해 정리한 행 수를 돌려준다. 묶음 하나의 오류는 로그만 남기고 그 회차를 끝낸다. HTTP 요청 밖(주기 작업)에서 부른다
+    /// </summary>
+    Task<int> CleanupPhoneVerificationsService(CancellationToken cancellationToken = default);
 }

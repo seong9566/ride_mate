@@ -434,6 +434,42 @@ public partial class AuthRepository
         }
     }
 
+    /// <summary>
+    /// 정리 대상 휴대폰 인증번호 ID를 ID 순으로 limit개까지 조회한다(인증 성공이 verifiedBefore 이전이거나, 인증 없이 EXPIRE_DT가 expiredBefore 이전인 살아 있는 행)
+    /// </summary>
+    public async Task<IReadOnlyList<int>> GetCleanupPhoneVerificationIdsAsync(DateTime verifiedBefore,
+        DateTime expiredBefore, int limit, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("verifiedBefore", verifiedBefore);
+            dp.Add("expiredBefore", expiredBefore);
+            dp.Add("limit", limit);
+
+            var sql = @"
+                SELECT t.PHONE_VERIFICATION_ID
+                FROM PHONE_VERIFICATION AS t
+                WHERE t.DELETE_YN = FALSE
+                  AND ((t.VERIFY_DT IS NOT NULL AND t.VERIFY_DT < @verifiedBefore)
+                       OR (t.VERIFY_DT IS NULL AND t.EXPIRE_DT < @expiredBefore))
+                ORDER BY t.PHONE_VERIFICATION_ID
+                LIMIT @limit";
+
+            var rows = await _dapper.QueryAsync<int>(
+                new CommandDefinition(sql, dp, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            return rows.ToList();
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
     private sealed class QrLoginLockRow
     {
         public int QrLoginId { get; set; }
