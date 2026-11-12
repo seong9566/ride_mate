@@ -6,6 +6,7 @@ using RideMateService.Comm;
 using RideMateService.Comm.Dto.v1.User.Request;
 using RideMateService.Comm.Dto.v1.User.Response;
 using RideMateService.Comm.Logger;
+using RideMateService.Comm.Security;
 using RideMateService.Commons.Repository;
 using RideMateService.Repository.v1.User;
 
@@ -24,16 +25,19 @@ public class UserService : IUserService
     private readonly ILogService _logService;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly RideMateContext _context; // 트랜잭션 시작·완료에만 쓴다
+    private readonly IPhoneCryptoService _phoneCryptoService;
 
     public UserService(IUserRepository userRepository,
         ILogService logService,
         IHttpContextAccessor httpContextAccessor,
-        RideMateContext context)
+        RideMateContext context,
+        IPhoneCryptoService phoneCryptoService)
     {
         this._userRepository = userRepository;
         this._logService = logService;
         this._httpContextAccessor = httpContextAccessor;
         this._context = context;
+        this._phoneCryptoService = phoneCryptoService;
     }
 
     /// <summary>
@@ -300,6 +304,70 @@ public class UserService : IUserService
     }
 
     // 로그인한 계정(JWT sub)의 ID — 클레임이 없거나 숫자가 아니면 null. 부른 쪽이 401로 바꾼다
+    /// <summary>
+    /// 계정 정보 조회
+    /// </summary>
+    public async Task<ResponseModel<DetailUserDto>> DetailUserService(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // 1) 인증 확인 — sub 클레임이 없으면 거절한다
+            var loginUserId = GetLoginUserId();
+            if (loginUserId is null)
+                return Fail<DetailUserDto>(401, "잘못된 요청입니다.");
+
+            // 2) 계정·집·자동 발송 여부·아이를 한 번에 읽는다
+            var row = await _userRepository.GetUserDetailRowAsync(loginUserId.Value,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (row is null) // 계정이 없거나 지워졌다
+                return Fail<DetailUserDto>(401, "잘못된 요청입니다.");
+
+            return new ResponseModel<DetailUserDto>
+            {
+                message = "요청이 정상 처리되었습니다.",
+                data = new DetailUserDto
+                {
+                    child = row.ChildId is null
+                        ? null
+                        : new DetailUserChildDto
+                        {
+                            childSeq = row.ChildId.Value,
+                            childName = row.ChildName ?? string.Empty,
+                            phoneMasked = MaskStoredPhone(row.PhoneEnc),
+                            sendChannel = row.SendChannel ?? string.Empty
+                        },
+                    home = row.DestAddress is null
+                        ? null
+                        : new HomeDto { address = row.DestAddress, lat = row.DestLat, lng = row.DestLng },
+                    autoSendYn = row.AutoSendYn
+                },
+                code = 200
+            };
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 그대로 올려보낸다
+        {
+            LogServiceException(ex);
+            return Fail<DetailUserDto>(500, "서버에서 요청을 처리하지 못하였습니다.");
+        }
+    }
+
+    // 저장된 번호를 복호화해 가린다. 복호화할 수 없으면 조회를 막지 않도록 빈 문자열을 돌려준다
+    private string MaskStoredPhone(byte[]? phoneEnc)
+    {
+        if (phoneEnc is null || phoneEnc.Length == 0)
+            return string.Empty;
+
+        try
+        {
+            var phoneDigits = _phoneCryptoService.Decrypt(phoneEnc);
+            return phoneDigits[..3] + "-****-" + phoneDigits[^4..];
+        }
+        catch (Exception)
+        {
+            return string.Empty;
+        }
+    }
+
     private int? GetLoginUserId()
     {
         return int.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("sub"), out var userId)

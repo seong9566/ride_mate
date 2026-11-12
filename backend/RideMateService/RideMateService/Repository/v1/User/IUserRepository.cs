@@ -47,4 +47,10 @@ public interface IUserRepository
     /// </summary>
     Task<bool> HasPickupOnScheduleAsync(int userId, IDbTransaction transaction,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 그 계정의 집·자동 발송 여부와 살아 있는 아이 한 명(CHILD_ID가 가장 작은 아이)을 돌려준다. 계정이 없거나 지워졌으면 null이다.
+    /// </summary>
+    Task<UserDetailRow?> GetUserDetailRowAsync(int userId, IDbTransaction? transaction = null,
+        CancellationToken cancellationToken = default);
 }

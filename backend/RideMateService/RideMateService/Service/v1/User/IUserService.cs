@@ -21,4 +21,9 @@ public interface IUserService
     /// 초기 설정 완료
     /// </summary>
     Task<ResponseModel<SetupCompleteDto>> UpdateSetupCompleteService(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 계정 정보 조회
+    /// </summary>
+    Task<ResponseModel<DetailUserDto>> DetailUserService(CancellationToken cancellationToken = default);
 }
