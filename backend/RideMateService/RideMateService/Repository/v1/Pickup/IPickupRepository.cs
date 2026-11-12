@@ -274,4 +274,15 @@ public interface IPickupRepository
     /// 위치 보고 대상 계획의 소유자·상태·만료 시각을 잠금 없이 조회한다
     /// </summary>
     Task<PositionPlanRow?> GetPositionPlanAsync(int pickupPlanId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 로그인한 부모의 살아 있는 아이의 살아 있는 시간표에서 학원과 학원가를 조회한다. 없거나 남의 시간표면 null
+    /// </summary>
+    Task<SpotRequestScheduleRow?> GetSpotRequestScheduleAsync(int userId, int timetableId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 픽업 장소 추가 요청 등록. 저장 뒤 model의 요청 ID가 채워진다
+    /// </summary>
+    Task<bool> AddPickupSpotRequestAsync(PickupSpotRequest model, CancellationToken cancellationToken = default);
 }

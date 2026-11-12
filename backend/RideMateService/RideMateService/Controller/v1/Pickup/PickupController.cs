@@ -488,4 +488,46 @@ public class PickupController : ApiControllerBase
             return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
         }
     }
+
+    /// <summary>
+    /// 픽업 장소 추가 요청
+    /// </summary>
+    /// <remarks>
+    /// 후보 지점에 원하는 곳이 없을 때 운영팀에 남기는 요청이다. 계정·아이·시간표를 가리키는 값은 저장하지 않는다.
+    /// 응답 code: 200 정상, 400 잘못된 입력(좌표는 둘 다 있거나 둘 다 없어야 한다), 401 인증 실패, 404 내 시간표가 아님, 429 요청 초과(사용자마다 1시간 5건), 500 서버 처리 실패
+    /// </remarks>
+    [Produces("application/json")]
+    [HttpPost]
+    [Route("v1/Pickup/M/sign/AddPickupSpotRequest")]
+    [Consumes("application/json")]
+    [EnableRateLimiting(PickupSpotRequestRateLimit.PolicyName)]
+    [SwaggerOperation(Summary = "픽업 장소 추가 요청")]
+    [ProducesResponseType(typeof(ResponseModel<AddPickupSpotRequestResultDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ResponseModel<AddPickupSpotRequestResultDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ResponseModel<AddPickupSpotRequestResultDto>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ResponseModel<AddPickupSpotRequestResultDto>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(void), StatusCodes.Status429TooManyRequests)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> AddPickupSpotRequest([FromBody] AddPickupSpotRequestDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _pickupService.AddPickupSpotRequestService(dto, cancellationToken).ConfigureAwait(false);
+            return ToActionResult(model);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // 앱이 요청을 끊었다. 오류로 기록하지 않는다
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
 }

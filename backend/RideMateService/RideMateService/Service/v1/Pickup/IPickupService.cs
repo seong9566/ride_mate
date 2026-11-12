@@ -137,4 +137,10 @@ public interface IPickupService
     /// </summary>
     IAsyncEnumerable<SseEvent> ReadPickupLinkStreamAsync(PickupLinkStreamTicket ticket,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 픽업 장소 추가 요청. 계정·아이·시간표를 가리키는 값은 저장하지 않는다
+    /// </summary>
+    Task<ResponseModel<AddPickupSpotRequestResultDto>> AddPickupSpotRequestService(AddPickupSpotRequestDto dto,
+        CancellationToken cancellationToken = default);
 }
