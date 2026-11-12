@@ -53,4 +53,10 @@ public interface IPickupService
     /// </summary>
     Task<ResponseModel<PickupPlanDto>> UpdatePickupPlanStartService(UpdatePickupPlanStartDto dto,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 만료 주기 작업 한 회차. EXPIRE_DT가 지난 진행 중 계획을 계획마다 따로 트랜잭션으로 EXPIRED로 끝내고 익명화한다.
+    /// 끝낸 계획 수를 돌려준다. 한 계획의 오류는 로그만 남기고 다음 계획으로 간다. HTTP 요청 밖(주기 작업)에서 부른다
+    /// </summary>
+    Task<int> ExpirePickupPlansService(CancellationToken cancellationToken = default);
 }

@@ -970,4 +970,174 @@ public partial class PickupRepository
             throw;
         }
     }
+
+    /// <summary>
+    /// 만료 시각이 지난 진행 중 계획(끝나지 않은 STATUS, EXPIRE_DT &lt;= now)의 ID를 잠금 없이 PK 순으로 조회한다
+    /// </summary>
+    public async Task<List<int>> GetExpiredPlanIdsAsync(DateTime now, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("now", now);
+
+            // 일반 조회로 후보만 찾는다. 끝낼지는 계획마다 PK로 잠근 뒤 최신 값으로 다시 본다(schema.md 만료 처리)
+            var sql = $@"
+                SELECT p.PICKUP_PLAN_ID
+                FROM PICKUP_PLAN AS p
+                WHERE p.STATUS IN ({LivePlanStatuses})
+                  AND p.EXPIRE_DT <= @now
+                ORDER BY p.PICKUP_PLAN_ID";
+
+            var rows = await _dapper.QueryAsync<int>(
+                new CommandDefinition(sql, dp, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            return rows.ToList();
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 오늘 계획을 끝내고 익명화한다. 호출자가 계획 행을 이미 PK로 잠갔다고 본다.
+    /// 계획이 없거나 이미 끝났으면 아무것도 바꾸지 않고 false
+    /// </summary>
+    public async Task<bool> ClosePickupPlanAsync(int pickupPlanId, string closeStatus, bool setLastPickupDate,
+        DateTime now, string updateUser, IDbTransaction transaction, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("pickupPlanId", pickupPlanId);
+            dp.Add("closeStatus", closeStatus);
+            dp.Add("now", now);
+            dp.Add("updateUser", updateUser);
+
+            // 1) 계획이 가리키는 요일과 날짜를 읽는다. 호출자가 쥔 PK 잠금을 다시 잡아 최신 값을 읽는다(같은 트랜잭션이라 기다리지 않는다)
+            var planSql = $@"
+                SELECT p.TIMETABLE_DAY_ID AS TimetableDayId,
+                       p.PICKUP_DATE AS PickupDate,
+                       (p.STATUS IN ({LivePlanStatuses})) AS Live
+                FROM PICKUP_PLAN AS p FORCE INDEX (PRIMARY)
+                WHERE p.PICKUP_PLAN_ID = @pickupPlanId
+                FOR UPDATE";
+            var plan = await _dapper.QueryFirstOrDefaultAsync<ClosePlanRow>(
+                new CommandDefinition(planSql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            if (plan is null || !plan.Live)
+                return false;
+
+            // 2) 계획 행을 고치기 전에 TIMETABLE_DAY를 잠근다 — 계획 PK → TIMETABLE_DAY → 계획 UPDATE 순서(schema.md 상태 바꾸기).
+            //    잠금 조회라 DELETE_YN 조건을 붙이지 않는다
+            if (plan.TimetableDayId is { } timetableDayId)
+            {
+                dp.Add("timetableDayId", timetableDayId);
+                var lockDaySql = @"
+                    SELECT td.TIMETABLE_DAY_ID
+                    FROM TIMETABLE_DAY AS td
+                    WHERE td.TIMETABLE_DAY_ID = @timetableDayId
+                    FOR UPDATE";
+                await _dapper.QueryFirstOrDefaultAsync<int?>(
+                    new CommandDefinition(lockDaySql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            }
+
+            // 3) 상태·끝난 시각과 익명화(참조·하원 시각·도보 시간·임의 좌표 칸 NULL, DELETE_YN)를 한 UPDATE로 한다.
+            //    나누면 WALK_MIN·CUSTOM_*를 비우는 순간 CK_PICKUP_PLAN_01·02에 걸린다(schema.md 익명화)
+            var closeSql = $@"
+                UPDATE PICKUP_PLAN
+                SET STATUS = @closeStatus,
+                    CLOSE_DT = @now,
+                    USER_ID = NULL,
+                    CHILD_ID = NULL,
+                    TIMETABLE_DAY_ID = NULL,
+                    ACADEMY_ID = NULL,
+                    END_TIME = NULL,
+                    WALK_MIN = NULL,
+                    CUSTOM_LAT = NULL,
+                    CUSTOM_LNG = NULL,
+                    CUSTOM_NAME = NULL,
+                    CUSTOM_WALK_PATH = NULL,
+                    DELETE_YN = 1,
+                    UPDATE_DT = @now,
+                    UPDATE_USER = @updateUser
+                WHERE PICKUP_PLAN_ID = @pickupPlanId
+                  AND STATUS IN ({LivePlanStatuses})";
+            var closed = await _dapper.ExecuteAsync(
+                new CommandDefinition(closeSql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            if (closed == 0)
+                return false;
+
+            // 4) 하원 시각이 든 END_TIME_CHANGED 이벤트의 DETAIL을 비운다
+            var clearDetailSql = @"
+                UPDATE PICKUP_EVENT
+                SET DETAIL = NULL,
+                    UPDATE_DT = @now,
+                    UPDATE_USER = @updateUser
+                WHERE PICKUP_PLAN_ID = @pickupPlanId
+                  AND EVENT_TYPE = 'END_TIME_CHANGED'";
+            await _dapper.ExecuteAsync(
+                new CommandDefinition(clearDetailSql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+            // 5) 탑승·만료로 끝나면 그날 다시 만들지 않게 LAST_PICKUP_DATE를 계획의 날짜로 바꾼다(취소는 바꾸지 않는다)
+            if (setLastPickupDate && plan.TimetableDayId is not null)
+            {
+                // DateOnly를 그대로 넘기면 드라이버가 문화권 형식 문자열로 보낸다
+                dp.Add("pickupDate", plan.PickupDate.ToDateTime(TimeOnly.MinValue), DbType.Date);
+                var lastPickupSql = @"
+                    UPDATE TIMETABLE_DAY
+                    SET LAST_PICKUP_DATE = @pickupDate,
+                        UPDATE_DT = @now,
+                        UPDATE_USER = @updateUser
+                    WHERE TIMETABLE_DAY_ID = @timetableDayId";
+                await _dapper.ExecuteAsync(
+                    new CommandDefinition(lastPickupSql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            }
+
+            // 6) 링크도 계획과 함께 끝난다
+            var closeSessionSql = @"
+                UPDATE PICKUP_SESSION
+                SET CLOSE_DT = @now,
+                    DELETE_YN = 1,
+                    UPDATE_DT = @now,
+                    UPDATE_USER = @updateUser
+                WHERE PICKUP_PLAN_ID = @pickupPlanId";
+            await _dapper.ExecuteAsync(
+                new CommandDefinition(closeSessionSql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+            // 7) 이벤트 이력도 익명화 표시를 켠다
+            var deleteEventsSql = @"
+                UPDATE PICKUP_EVENT
+                SET DELETE_YN = 1,
+                    UPDATE_DT = @now,
+                    UPDATE_USER = @updateUser
+                WHERE PICKUP_PLAN_ID = @pickupPlanId";
+            await _dapper.ExecuteAsync(
+                new CommandDefinition(deleteEventsSql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+            // 8) 끝난 이벤트(BOARDED·EXPIRED·CANCELED)를 넣는다. 익명화 대상이라 DELETE_YN을 켠 채 넣는다
+            var insertEventSql = @"
+                INSERT INTO PICKUP_EVENT
+                    (PICKUP_PLAN_ID, EVENT_TYPE, EVENT_DT, CLIENT_EVENT_ID, DETAIL,
+                     CREATE_DT, CREATE_USER, UPDATE_DT, UPDATE_USER, DELETE_YN)
+                VALUES
+                    (@pickupPlanId, @closeStatus, @now, NULL, NULL,
+                     @now, @updateUser, @now, @updateUser, 1)";
+            await _dapper.ExecuteAsync(
+                new CommandDefinition(insertEventSql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+            return true;
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
 }

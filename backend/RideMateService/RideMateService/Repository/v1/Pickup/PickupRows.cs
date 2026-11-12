@@ -199,3 +199,13 @@ public class PlanLockRow
     public DateTime ExpireDt { get; set; }
     public int? TimetableDayId { get; set; }
 }
+
+/// <summary>
+/// 끝낼 오늘 계획의 요일 참조와 날짜. Live는 STATUS가 아직 끝나지 않았는지다
+/// </summary>
+public class ClosePlanRow
+{
+    public int? TimetableDayId { get; set; }
+    public DateOnly PickupDate { get; set; }
+    public bool Live { get; set; }
+}

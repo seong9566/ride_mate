@@ -17,6 +17,8 @@ public partial class PickupService
 {
     private const string PlanStatusPlanned = "PLANNED";
     private const string PlanStatusStarted = "STARTED";
+    private const string PlanStatusExpired = "EXPIRED";
+    private const string AuditSystem = "SYSTEM";
     private const string EventPlanned = "PLANNED";
     private const string EventReassigned = "REASSIGNED";
     private const string ReassignReasonLocationChanged = "LOCATION_CHANGED";
@@ -633,6 +635,66 @@ public partial class PickupService
 #endif
             return new ResponseModel<PickupPlanDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
         }
+    }
+
+    /// <summary>
+    /// 만료 주기 작업 한 회차(설계 10절). EXPIRE_DT가 지난 진행 중 계획을 계획마다 따로 트랜잭션으로 EXPIRED로 끝내고 익명화한다.
+    /// 끝낸 계획 수를 돌려준다. HTTP 요청 밖에서 부르므로 HttpContext를 쓰지 않는다
+    /// </summary>
+    public async Task<int> ExpirePickupPlansService(CancellationToken cancellationToken = default)
+    {
+        // 1) 후보는 일반 조회로 찾는다. 끝낼지는 계획마다 잠근 뒤 다시 본다
+        var candidateIds = await _pickupRepository.GetExpiredPlanIdsAsync(DateTime.Now, cancellationToken)
+            .ConfigureAwait(false);
+
+        var expired = 0;
+        foreach (var pickupPlanId in candidateIds)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                if (await ExpirePickupPlanAsync(pickupPlanId, cancellationToken).ConfigureAwait(false))
+                    expired++;
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 한 계획의 오류는 그 계획만 건너뛴다
+            {
+                // 계획 ID만 남긴다. 예외 본문은 Repository가 이미 남겼다
+                _logService.LogMessage($"pickup plan expire failed: plan={pickupPlanId}, {ex.GetType().Name}");
+            }
+        }
+
+        return expired;
+    }
+
+    // 계획 하나를 만료로 끝낸다. 잠근 값으로 이미 끝났거나 만료 시각이 미뤄졌으면(늦은 출발 재배정) 건너뛰고 false
+    private async Task<bool> ExpirePickupPlanAsync(int pickupPlanId, CancellationToken cancellationToken)
+    {
+        // 2) 트랜잭션 — 예외로 빠져나가면 await using이 트랜잭션을 롤백한다
+        var transaction = await _context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transactionScope = transaction.ConfigureAwait(false);
+        var dbTransaction = transaction.GetDbTransaction();
+
+        // 2-1) 계획 행을 PK로 잠그는 것이 첫 문장이다(계획 끝내기 = 계획 PK → TIMETABLE_DAY → UPDATE)
+        var locked = await _pickupRepository.LockPickupPlanByIdAsync(pickupPlanId, dbTransaction, cancellationToken)
+            .ConfigureAwait(false);
+        // 기준 시각은 잠금을 얻은 뒤에 잡는다. 잠금을 기다린 사이 재배정이 만료 시각을 미뤘을 수 있다
+        var thisTime = DateTime.Now;
+        if (locked is null || ClosedPlanStatuses.Contains(locked.Status) || locked.ExpireDt > thisTime)
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return false;
+        }
+
+        // 2-2) 끝내기와 익명화, LAST_PICKUP_DATE 반영, 링크·이벤트 정리, EXPIRED 이벤트
+        if (!await _pickupRepository.ClosePickupPlanAsync(pickupPlanId, PlanStatusExpired, true, thisTime, AuditSystem,
+                dbTransaction, cancellationToken).ConfigureAwait(false))
+        {
+            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            return false;
+        }
+
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+        return true;
     }
 
     // 분 단위 올림. 초 이하가 0이 아니면 다음 분이다
