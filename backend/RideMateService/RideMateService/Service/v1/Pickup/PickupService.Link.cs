@@ -61,7 +61,7 @@ public partial class PickupService
     }
 
     /// <summary>
-    /// 픽업 링크 전달 상태 조회(링크·다시 알림 발송, 열람, 지금 나가요). 차량이 10초 간격으로 부른다
+    /// 픽업 링크 전달 상태 조회(링크·다시 알림 발송, 열람, 지금 나가요). 실시간 연결(DetailPickupLinkStream)을 쓸 수 없을 때 차량이 간격을 두고 부른다
     /// </summary>
     public async Task<ResponseModel<DetailPickupLinkStatusDto>> DetailPickupLinkStatusService(
         PickupLinkStatusQueryDto dto, CancellationToken cancellationToken = default)
