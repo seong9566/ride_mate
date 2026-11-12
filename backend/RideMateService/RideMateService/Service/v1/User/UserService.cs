@@ -6,6 +6,7 @@ using RideMateService.Comm;
 using RideMateService.Comm.Dto.v1.User.Request;
 using RideMateService.Comm.Dto.v1.User.Response;
 using RideMateService.Comm.Logger;
+using RideMateService.Comm.Security;
 using RideMateService.Commons.Repository;
 using RideMateService.Repository.v1.User;
 
@@ -24,16 +25,19 @@ public class UserService : IUserService
     private readonly ILogService _logService;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly RideMateContext _context; // 트랜잭션 시작·완료에만 쓴다
+    private readonly IPhoneCryptoService _phoneCryptoService;
 
     public UserService(IUserRepository userRepository,
         ILogService logService,
         IHttpContextAccessor httpContextAccessor,
-        RideMateContext context)
+        RideMateContext context,
+        IPhoneCryptoService phoneCryptoService)
     {
         this._userRepository = userRepository;
         this._logService = logService;
         this._httpContextAccessor = httpContextAccessor;
         this._context = context;
+        this._phoneCryptoService = phoneCryptoService;
     }
 
     /// <summary>
@@ -296,6 +300,141 @@ public class UserService : IUserService
         {
             LogServiceException(ex);
             return Fail<SetupCompleteDto>(500, "서버에서 요청을 처리하지 못하였습니다.");
+        }
+    }
+
+    /// <summary>
+    /// 자동 발송 설정 저장
+    /// </summary>
+    public Task<ResponseModel<SettingDto>> UpdateSettingService(UpdateSettingDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        return RetryOnDeadlockAsync(() => UpdateSettingCoreAsync(dto, cancellationToken), cancellationToken);
+    }
+
+    // 교착은 RetryOnDeadlockAsync가 다시 실행하므로 여기서는 500으로 바꾸지 않고 올려보낸다
+    private async Task<ResponseModel<SettingDto>> UpdateSettingCoreAsync(UpdateSettingDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // 1) 입력 검증 — API 모델 검증을 거치지 않은 호출도 같은 규칙으로 거절한다
+            if (dto?.autoSendYn is null)
+                return Fail<SettingDto>(400, "잘못된 요청입니다.");
+
+            // 2) 인증 확인 — sub 클레임이 없으면 거절하고, 계정이 있는지는 아래 잠금 조회가 확인한다
+            var loginUserId = GetLoginUserId();
+            if (loginUserId is null)
+                return Fail<SettingDto>(401, "잘못된 요청입니다.");
+
+            DateTime thisTime = NowToSecond();
+            var transaction = await _context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            await using var transactionScope = transaction.ConfigureAwait(false);
+            var dbTransaction = transaction.GetDbTransaction();
+
+            // 3) 다른 조회보다 먼저 계정을 잠가 같은 계정의 동시 요청을 직렬화한다
+            var lockedUserId = await _userRepository.LockUserInfoAsync(loginUserId.Value, dbTransaction,
+                cancellationToken).ConfigureAwait(false);
+            if (lockedUserId is null) // 계정이 없거나 지워졌다
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return Fail<SettingDto>(401, "잘못된 요청입니다.");
+            }
+
+            // 4) 자동 발송 여부만 바꾼다
+            if (!await _userRepository.UpdateAutoSendAsync(lockedUserId.Value, dto.autoSendYn.Value, thisTime,
+                    AuditUser, cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return Fail<SettingDto>(500, "서버에서 요청을 처리하지 못하였습니다.");
+            }
+
+            // 5) 응답 — 저장된 값을 읽는다. 커밋 전에 읽어 읽기가 실패하면 저장도 취소된다
+            var row = await _userRepository.GetUserSetupRowAsync(lockedUserId.Value, dbTransaction,
+                cancellationToken).ConfigureAwait(false);
+            if (row is null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return Fail<SettingDto>(500, "서버에서 요청을 처리하지 못하였습니다.");
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+            return new ResponseModel<SettingDto>
+            {
+                message = "요청이 정상 처리되었습니다.",
+                data = new SettingDto { autoSendYn = row.AutoSendYn },
+                code = 200
+            };
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && !IsDeadlock(ex)) // 요청 취소·교착은 그대로 올려보낸다
+        {
+            LogServiceException(ex);
+            return Fail<SettingDto>(500, "서버에서 요청을 처리하지 못하였습니다.");
+        }
+    }
+
+    /// <summary>
+    /// 계정 정보 조회
+    /// </summary>
+    public async Task<ResponseModel<DetailUserDto>> DetailUserService(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // 1) 인증 확인 — sub 클레임이 없으면 거절한다
+            var loginUserId = GetLoginUserId();
+            if (loginUserId is null)
+                return Fail<DetailUserDto>(401, "잘못된 요청입니다.");
+
+            // 2) 계정·집·자동 발송 여부·아이를 한 번에 읽는다
+            var row = await _userRepository.GetUserDetailRowAsync(loginUserId.Value,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (row is null) // 계정이 없거나 지워졌다
+                return Fail<DetailUserDto>(401, "잘못된 요청입니다.");
+
+            return new ResponseModel<DetailUserDto>
+            {
+                message = "요청이 정상 처리되었습니다.",
+                data = new DetailUserDto
+                {
+                    child = row.ChildId is null
+                        ? null
+                        : new DetailUserChildDto
+                        {
+                            childSeq = row.ChildId.Value,
+                            childName = row.ChildName ?? string.Empty,
+                            phoneMasked = MaskStoredPhone(row.PhoneEnc),
+                            sendChannel = row.SendChannel ?? string.Empty
+                        },
+                    home = row.DestAddress is null
+                        ? null
+                        : new HomeDto { address = row.DestAddress, lat = row.DestLat, lng = row.DestLng },
+                    autoSendYn = row.AutoSendYn
+                },
+                code = 200
+            };
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 그대로 올려보낸다
+        {
+            LogServiceException(ex);
+            return Fail<DetailUserDto>(500, "서버에서 요청을 처리하지 못하였습니다.");
+        }
+    }
+
+    // 저장된 번호를 복호화해 가린다. 복호화할 수 없으면 조회를 막지 않도록 빈 문자열을 돌려준다
+    private string MaskStoredPhone(byte[]? phoneEnc)
+    {
+        if (phoneEnc is null || phoneEnc.Length == 0)
+            return string.Empty;
+
+        try
+        {
+            var phoneDigits = _phoneCryptoService.Decrypt(phoneEnc);
+            return phoneDigits[..3] + "-****-" + phoneDigits[^4..];
+        }
+        catch (Exception)
+        {
+            return string.Empty;
         }
     }
 

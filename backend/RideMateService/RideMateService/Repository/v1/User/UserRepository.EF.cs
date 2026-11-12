@@ -103,4 +103,33 @@ public partial class UserRepository
             throw; // Service가 500으로 바꾼다
         }
     }
+
+    /// <summary>
+    /// 자동 발송 여부와 수정 감사 컬럼만 바꾼다. 바뀐 행이 없으면 false를 돌려준다.
+    /// </summary>
+    public async Task<bool> UpdateAutoSendAsync(int userId, bool autoSendYn, DateTime updateDt, string updateUser,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var affected = await _context.UserInfos
+                .Where(x => x.UserId == userId
+                            && x.DeleteYn == false)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.AutoSendYn, autoSendYn)
+                    .SetProperty(x => x.UpdateDt, updateDt)
+                    .SetProperty(x => x.UpdateUser, updateUser), cancellationToken)
+                .ConfigureAwait(false);
+
+            return affected > 0;
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw; // Service가 500으로 바꾼다
+        }
+    }
 }

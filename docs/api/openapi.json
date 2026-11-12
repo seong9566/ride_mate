@@ -1620,6 +1620,65 @@
           }
         ]
       }
+    },
+    "/api/v1/User/M/sign/UpdateSetting": {
+      "patch": {
+        "tags": [
+          "User"
+        ],
+        "summary": "설정 저장",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_User_Request_UpdateSettingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_User_Response_SettingDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/User/M/sign/DetailUser": {
+      "get": {
+        "tags": [
+          "User"
+        ],
+        "summary": "계정 정보 조회",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_User_Response_DetailUserDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -3172,6 +3231,18 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_Dto_v1_User_Request_UpdateSettingDto": {
+        "required": [
+          "autoSendYn"
+        ],
+        "type": "object",
+        "properties": {
+          "autoSendYn": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_Dto_v1_User_Request_UpdateVehicleDto": {
         "type": "object",
         "properties": {
@@ -3192,6 +3263,43 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_Dto_v1_User_Response_DetailUserChildDto": {
+        "type": "object",
+        "properties": {
+          "childSeq": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "childName": {
+            "type": "string",
+            "nullable": true
+          },
+          "phoneMasked": {
+            "type": "string",
+            "nullable": true
+          },
+          "sendChannel": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_User_Response_DetailUserDto": {
+        "type": "object",
+        "properties": {
+          "child": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_User_Response_DetailUserChildDto"
+          },
+          "home": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_User_Response_HomeDto"
+          },
+          "autoSendYn": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_Dto_v1_User_Response_HomeDto": {
         "type": "object",
         "properties": {
@@ -3208,6 +3316,15 @@
             "type": "number",
             "format": "double",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_User_Response_SettingDto": {
+        "type": "object",
+        "properties": {
+          "autoSendYn": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -3510,6 +3627,24 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_User_Response_DetailUserDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_User_Response_DetailUserDto"
+          },
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_User_Response_HomeDto": {
         "type": "object",
         "properties": {
@@ -3519,6 +3654,24 @@
           },
           "data": {
             "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_User_Response_HomeDto"
+          },
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_User_Response_SettingDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_User_Response_SettingDto"
           },
           "code": {
             "type": "integer",
