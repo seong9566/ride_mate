@@ -324,4 +324,39 @@ public partial class AuthRepository
             throw; // Service가 500으로 바꾼다
         }
     }
+
+    /// <summary>
+    /// 정리 대상 휴대폰 인증번호의 번호 해시·인증번호 해시를 비우고 삭제 표시한다. ID와 함께 대상 조건을 다시 걸어, 그 사이 바뀐 행은 건드리지 않는다. 바뀐 행 수를 돌려준다.
+    /// </summary>
+    public async Task<int> CleanupPhoneVerificationsAsync(IReadOnlyCollection<int> phoneVerificationIds,
+        DateTime verifiedBefore, DateTime expiredBefore, DateTime thisTime, string updateUser,
+        CancellationToken cancellationToken = default)
+    {
+        if (phoneVerificationIds.Count == 0)
+            return 0;
+
+        try
+        {
+            return await _context.PhoneVerifications
+                .Where(x => phoneVerificationIds.Contains(x.PhoneVerificationId)
+                            && x.DeleteYn == false
+                            && ((x.VerifyDt != null && x.VerifyDt < verifiedBefore)
+                                || (x.VerifyDt == null && x.ExpireDt < expiredBefore)))
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.PhoneHash, string.Empty)
+                    .SetProperty(x => x.CodeHash, string.Empty)
+                    .SetProperty(x => x.DeleteYn, true)
+                    .SetProperty(x => x.UpdateDt, thisTime)
+                    .SetProperty(x => x.UpdateUser, updateUser), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw; // Service가 로그만 남기고 그 회차를 끝낸다
+        }
+    }
 }
