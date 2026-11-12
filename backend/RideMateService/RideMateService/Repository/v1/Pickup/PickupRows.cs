@@ -237,6 +237,15 @@ public class ClosePlanRow
 }
 
 /// <summary>
+/// 취소 문자 받는 사람과 문구 값. ChildPhoneEnc는 아이가 없거나 삭제됐으면 null이다
+/// </summary>
+public class CancelNoticeTargetRow
+{
+    public string UserName { get; set; } = string.Empty;
+    public byte[]? ChildPhoneEnc { get; set; }
+}
+
+/// <summary>
 /// 차량 이벤트 번호로 찾은 이벤트 한 건(재요청 응답 만들기용)
 /// </summary>
 public class PlanEventRow

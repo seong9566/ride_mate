@@ -1057,6 +1057,45 @@ public partial class PickupRepository
     }
 
     /// <summary>
+    /// 잠근 오늘 계획의 운전자 이름과 아이 번호(암호문)를 조회한다. 계획이 없거나 끝났거나 살아 있는 계정이 없으면 null.
+    /// 아이가 없거나 삭제됐으면 ChildPhoneEnc는 null이다
+    /// </summary>
+    public async Task<CancelNoticeTargetRow?> GetCancelNoticeTargetAsync(int pickupPlanId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("pickupPlanId", pickupPlanId);
+
+            // 호출자가 계획 행을 잠갔으므로 USER_ID·CHILD_ID는 바뀌지 않는다. 끝난 계획은 USER_ID가 NULL이라 걸리지 않는다
+            var sql = @"
+                SELECT u.USER_NAME AS UserName,
+                       c.PHONE_ENC AS ChildPhoneEnc
+                FROM PICKUP_PLAN AS p
+                INNER JOIN USER_INFO AS u
+                        ON u.USER_ID = p.USER_ID
+                       AND u.DELETE_YN = FALSE
+                LEFT JOIN CHILD AS c
+                       ON c.CHILD_ID = p.CHILD_ID
+                      AND c.USER_ID = p.USER_ID
+                      AND c.DELETE_YN = FALSE
+                WHERE p.PICKUP_PLAN_ID = @pickupPlanId";
+
+            return await _dapper.QueryFirstOrDefaultAsync<CancelNoticeTargetRow>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
     /// 픽업 지점의 정원을 조회한다. 지점이 없거나 삭제됐으면 null
     /// </summary>
     public async Task<byte?> GetPickupSpotCapacityAsync(int pickupSpotId, IDbTransaction transaction,

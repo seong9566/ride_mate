@@ -22,4 +22,12 @@ public static class PickupLinkMessage
     {
         return $"[라이드메이트] {userName} 차가 {spotName}에 도착했어! 지금 나와\n{url}";
     }
+
+    /// <summary>
+    /// 부모 취소 문자. 링크는 넣지 않는다(끝난 링크다)
+    /// </summary>
+    public static string Cancel(string userName)
+    {
+        return $"[라이드메이트] 오늘 {userName} 차 픽업은 취소됐어. 부모님께 연락해 줘";
+    }
 }

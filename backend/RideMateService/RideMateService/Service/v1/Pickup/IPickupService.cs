@@ -75,6 +75,14 @@ public interface IPickupService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 부모 취소. 진행 중인 모든 상태에서 받아 계획을 CANCELED로 끝낸다(익명화, 링크 종료, LAST_PICKUP_DATE는 그대로라 그날 다시 만들 수 있다).
+    /// 아이가 링크를 받았을 수 있으면 커밋한 뒤 취소 문자를 보내고 결과를 cancelNotice(NONE·SENT·FAILED)로 돌려준다.
+    /// 같은 clientEventId를 다시 보내면(계획이 끝났어도) 한 번만 반영하고 200, cancelNotice NONE을 돌려준다
+    /// </summary>
+    Task<ResponseModel<PickupPlanDto>> DeletePickupPlanService(DeletePickupPlanDto dto,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 만료 주기 작업 한 회차. EXPIRE_DT가 지난 진행 중 계획을 계획마다 따로 트랜잭션으로 EXPIRED로 끝내고 익명화한다.
     /// 끝낸 계획 수를 돌려준다. 한 계획의 오류는 로그만 남기고 다음 계획으로 간다. HTTP 요청 밖(주기 작업)에서 부른다
     /// </summary>

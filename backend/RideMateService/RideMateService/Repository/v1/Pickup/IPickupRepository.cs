@@ -214,6 +214,13 @@ public interface IPickupRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 잠근 오늘 계획의 운전자 이름(USER_INFO.USER_NAME)과 아이 번호(암호문)를 조회한다. 계획을 끝내기(익명화) 전에 부른다.
+    /// 계획이 없거나 끝났거나 살아 있는 계정이 없으면 null. 아이가 없거나 삭제됐으면 ChildPhoneEnc는 null이다
+    /// </summary>
+    Task<CancelNoticeTargetRow?> GetCancelNoticeTargetAsync(int pickupPlanId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 픽업 지점의 정원(CAPACITY)을 조회한다. 지점이 없거나 삭제됐으면 null
     /// </summary>
     Task<byte?> GetPickupSpotCapacityAsync(int pickupSpotId, IDbTransaction transaction,

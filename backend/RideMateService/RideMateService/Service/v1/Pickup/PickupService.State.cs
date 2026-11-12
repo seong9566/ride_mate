@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore.Storage;
 using RideMateService.Comm;
@@ -20,7 +21,15 @@ public partial class PickupService
     private const string PlanStatusBoarded = "BOARDED";
     private const string EventBoarded = "BOARDED";
     private static readonly string[] StopEventTypes = { EventStopped, EventWrongStop };
+    private const string PlanStatusCanceled = "CANCELED";
+    private const string EventCanceled = "CANCELED";
+    private const string CancelNoticeNone = "NONE";
+    private const string CancelNoticeSent = "SENT";
+    private const string CancelNoticeFailed = "FAILED";
     private static readonly string[] BoardEventTypes = { EventBoarded };
+    private static readonly string[] CancelEventTypes = { EventCanceled };
+    // 도착했는지 알 수 없는 발송 실패 결과 코드(SolapiSmsSender). 그 밖의 실패는 사업자가 거절한 것이다
+    private static readonly string[] UnknownDeliveryResultCodes = { "TIMEOUT", "ERROR" };
     private static readonly string[] StoppableStatuses = { "PLANNED", "STARTED", "WAITING", "STOPPED" };
 
     /// <summary>
@@ -362,6 +371,200 @@ public partial class PickupService
         }
     }
 
+    /// <summary>
+    /// 부모 취소(설계 4.4). 계획을 CANCELED로 끝내고(익명화, 링크 종료, LAST_PICKUP_DATE는 그대로) 커밋한 뒤,
+    /// 아이가 링크를 받았을 수 있으면 잠금 밖에서 취소 문자를 보낸다
+    /// </summary>
+    public Task<ResponseModel<PickupPlanDto>> DeletePickupPlanService(DeletePickupPlanDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        return RetryOnDeadlockAsync(() => DeletePickupPlanCoreAsync(dto, cancellationToken), cancellationToken);
+    }
+
+    // 교착은 RetryOnDeadlockAsync가 다시 실행하므로 여기서는 500으로 바꾸지 않고 올려보낸다
+    private async Task<ResponseModel<PickupPlanDto>> DeletePickupPlanCoreAsync(DeletePickupPlanDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // 1) 인증 확인 — 로그인 사용자(USER_ID)는 HttpContext의 클레임 sub에서 꺼낸다
+            if (!int.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("sub"), out var userId))
+                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 401 };
+
+            // 2) 입력 검증 — 필수값
+            if (dto?.pickupPlanSeq is null || dto.clientEventId is null)
+                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
+
+            var now = DateTime.Now;
+            var pickupPlanId = dto.pickupPlanSeq.Value;
+            var clientEventId = dto.clientEventId.Value;
+
+            // 3) 잠금 없이 소유·만료를 먼저 본다. 없거나 끝난 계획이면 같은 요청의 재전송인지 보고, 아니면 404
+            var plan = await _pickupRepository.GetPlanByIdAsync(pickupPlanId, null, cancellationToken).ConfigureAwait(false);
+            if (plan is null || plan.UserId is null || ClosedPlanStatuses.Contains(plan.Status))
+                return await TryReplayEndedAsync(plan, pickupPlanId, clientEventId, CancelEventTypes, cancellationToken)
+                           .ConfigureAwait(false)
+                       ?? new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 404 };
+
+            if (plan.UserId != userId)
+                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 404 };
+
+            // 같은 요청의 재전송은 만료 409보다 먼저 본다(네 API가 같은 순서다). CANCELED 이벤트는 계획을 끝내는 트랜잭션에서만 들어가므로
+            // 보통은 위 끝난 계획 분기에서 걸린다
+            var replay = await TryReplayEndedAsync(plan, pickupPlanId, clientEventId, CancelEventTypes, cancellationToken)
+                .ConfigureAwait(false);
+            if (replay is not null)
+                return replay;
+
+            // 진행 중인 모든 상태(PLANNED·STARTED·WAITING·STOPPED·LOOPING)에서 받는다
+            if (plan.ExpireDt <= now)
+                return PlanConflict(ReasonPlanClosed);
+
+            string? noticeUserName = null;
+            string? noticePhone = null;
+
+            // 4) 트랜잭션 — 예외로 빠져나가면 await using이 트랜잭션을 롤백한다. 문자는 커밋한 뒤 이 블록 밖에서 보낸다
+            {
+                var transaction = await _context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+                await using var transactionScope = transaction.ConfigureAwait(false);
+                var dbTransaction = transaction.GetDbTransaction();
+
+                // 4-1) 계획 행을 PK로 잠그는 것이 첫 문장이다(재배정이 없어 AREA는 잠그지 않는다). 잠근 값으로 다시 판정한다
+                var locked = await _pickupRepository.LockPickupPlanByIdAsync(pickupPlanId, dbTransaction, cancellationToken)
+                    .ConfigureAwait(false);
+                // 기준 시각은 잠금을 얻은 뒤에 잡는다
+                var thisTime = DateTime.Now;
+                if (locked is null)
+                {
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 404 };
+                }
+
+                // 잠금을 기다리는 사이 계획이 끝났으면(탑승·취소·만료) 같은 요청의 재전송인지 본다
+                if (locked.UserId is null || ClosedPlanStatuses.Contains(locked.Status))
+                {
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    var ended = await _pickupRepository.GetPlanByIdAsync(pickupPlanId, null, cancellationToken).ConfigureAwait(false);
+                    return await TryReplayEndedAsync(ended, pickupPlanId, clientEventId, CancelEventTypes, cancellationToken)
+                               .ConfigureAwait(false)
+                           ?? new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 404 };
+                }
+
+                if (locked.UserId != userId)
+                {
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 404 };
+                }
+
+                // 4-2) 같은 clientEventId의 취소 이벤트가 이미 있으면 같은 요청을 다시 부른 것이다(만료 409보다 먼저 본다). 문자는 보내지 않는다
+                var sameEventType = await _pickupRepository.GetPlanEventTypeAsync(pickupPlanId, clientEventId, dbTransaction,
+                    cancellationToken).ConfigureAwait(false);
+                if (sameEventType == EventCanceled)
+                {
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return PlanOk(new PickupPlanDto
+                    {
+                        pickupPlanSeq = pickupPlanId,
+                        status = locked.Status,
+                        reassigned = false,
+                        cancelNotice = CancelNoticeNone
+                    });
+                }
+
+                if (locked.ExpireDt <= thisTime)
+                {
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return PlanConflict(ReasonPlanClosed);
+                }
+
+                // 다른 유형의 이벤트가 그 번호를 쓰고 있으면 잘못된 요청이다
+                if (sameEventType is not null)
+                {
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
+                }
+
+                // 4-3) 아이가 링크를 받았을 수 있으면 취소 문자 대상이다. 익명화하면 참조가 사라지므로 번호와 부모 이름을 지금 읽어 둔다.
+                //      아이가 삭제됐거나 번호가 없거나 복호화할 수 없으면 대상이 아니다. 로그에는 계획 ID만 남긴다
+                var events = await _pickupRepository.GetLinkEventsAsync(pickupPlanId, dbTransaction, cancellationToken)
+                    .ConfigureAwait(false);
+                if (ChildMayHaveLink(events))
+                {
+                    var target = await _pickupRepository.GetCancelNoticeTargetAsync(pickupPlanId, dbTransaction,
+                        cancellationToken).ConfigureAwait(false);
+                    if (target?.ChildPhoneEnc is { Length: > 0 } phoneEnc)
+                    {
+                        try
+                        {
+                            noticePhone = _phoneCryptoService.Decrypt(phoneEnc);
+                            noticeUserName = target.UserName;
+                        }
+                        catch (CryptographicException)
+                        {
+                            _logService.LogMessage($"pickup cancel notice child phone decrypt failed: plan={pickupPlanId}");
+                        }
+                    }
+                }
+
+                // 4-4) 계획 PK → TIMETABLE_DAY 순서로 끝내고 익명화한다. LAST_PICKUP_DATE는 바꾸지 않아 그날 다시 만들 수 있다.
+                //      CANCELED 이벤트에는 요청의 clientEventId와 서버 시각이 들어간다
+                if (!await _pickupRepository.ClosePickupPlanAsync(pickupPlanId, PlanStatusCanceled, false, thisTime, AuditUser,
+                        dbTransaction, cancellationToken, clientEventId, thisTime).ConfigureAwait(false))
+                {
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return new ResponseModel<PickupPlanDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+                }
+
+                await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+
+            // 5) 잠금 밖에서 취소 문자를 보낸다. 요청이 끊겨도 보낸다. 결과는 응답으로만 알리고 실패해도 다시 보내지 않는다
+            var cancelNotice = CancelNoticeNone;
+            if (noticePhone is not null && noticeUserName is not null)
+            {
+                var result = await _smsSender.SendAsync(noticePhone, PickupLinkMessage.Cancel(noticeUserName),
+                    CancellationToken.None).ConfigureAwait(false);
+                cancelNotice = result.Success ? CancelNoticeSent : CancelNoticeFailed;
+                if (!result.Success)
+                    _logService.LogMessage($"pickup cancel notice failed: plan={pickupPlanId}, code={result.ResultCode}");
+            }
+
+            // 끝난 계획은 개인정보 칸이 비어 있어 계획 ID와 상태, 취소 문자 결과만 돌려준다
+            return PlanOk(new PickupPlanDto
+            {
+                pickupPlanSeq = pickupPlanId,
+                status = PlanStatusCanceled,
+                reassigned = false,
+                cancelNotice = cancelNotice
+            });
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && !IsDeadlock(ex)) // 요청 취소·교착은 그대로 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return new ResponseModel<PickupPlanDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+        }
+    }
+
+    // 취소 문자 대상인지(설계 4.4). LINK_SENT 중 하나라도 성공했거나, 결과가 없거나(진행 중), 도착했는지 모르는 실패(TIMEOUT·ERROR)면
+    // 아이가 링크를 받았을 수 있다. 사업자가 거절한 실패만 있거나 링크 발송이 없으면 false
+    private static bool ChildMayHaveLink(IReadOnlyList<LinkEventRow> events)
+    {
+        foreach (var row in events.Where(e => e.EventType == EventLinkSent))
+        {
+            var detail = PickupLinkSendState.ParseDetail(row.Detail);
+            if (detail?.success is null or true)
+                return true;
+
+            if (detail.resultCode is not null && UnknownDeliveryResultCodes.Contains(detail.resultCode))
+                return true;
+        }
+
+        return false;
+    }
+
     // 진행 중 계획에 같은 정차 요청이 다시 왔을 때의 응답. 지금 계획과 처음 이벤트(유형·DETAIL)로 만든 판정을 돌려준다
     private async Task<ResponseModel<PickupPlanDto>> ReplayLiveStopAsync(int pickupPlanId, string eventType,
         string? detail, CancellationToken cancellationToken)
@@ -371,8 +574,8 @@ public partial class PickupService
         return PlanOk(replayed);
     }
 
-    // 끝난 계획의 재요청(설계 4.1). 계획이 없거나 끝났을 때 부른다(탑승은 진행 중 계획의 재전송 확인에도 쓴다). 같은 계획·같은 clientEventId의 이벤트가 이 API의 유형(eventTypes)이면
-    // 처음 요청이 반영된 것으로 보고 200 최소 응답(pickupPlanSeq, 지금 상태, 정차면 stopCheck)을 돌려준다. 아니면 null(호출자가 404)
+    // 끝난 계획의 재요청(설계 4.1). 계획이 없거나 끝났을 때 부른다(탑승·취소는 진행 중 계획의 재전송 확인에도 쓴다). 같은 계획·같은 clientEventId의 이벤트가 이 API의 유형(eventTypes)이면
+    // 처음 요청이 반영된 것으로 보고 200 최소 응답(pickupPlanSeq, 지금 상태, 정차면 stopCheck, 취소면 cancelNotice NONE)을 돌려준다. 아니면 null(호출자가 404)
     private async Task<ResponseModel<PickupPlanDto>?> TryReplayEndedAsync(LivePlanRow? plan, int pickupPlanId,
         Guid clientEventId, string[] eventTypes, CancellationToken cancellationToken)
     {
@@ -391,7 +594,9 @@ public partial class PickupService
             reassigned = false,
             stopCheck = StopEventTypes.Contains(sameEvent.EventType)
                 ? StopCheckFromEvent(sameEvent.EventType, sameEvent.Detail)
-                : null
+                : null,
+            // 취소 문자는 처음 요청에서만 보낸다. 재요청은 보내지 않으므로 NONE이다
+            cancelNotice = sameEvent.EventType == EventCanceled ? CancelNoticeNone : null
         });
     }
 
