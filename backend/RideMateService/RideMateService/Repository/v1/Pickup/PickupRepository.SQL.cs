@@ -992,37 +992,6 @@ public partial class PickupRepository
     }
 
     /// <summary>
-    /// 오늘 계획의 탑승 시각(BOARD_DT)을 쓴다. 계획을 끝내는(익명화) UPDATE보다 먼저, 같은 트랜잭션에서 부른다
-    /// </summary>
-    public async Task SetBoardDtAsync(int pickupPlanId, DateTime boardDt, IDbTransaction transaction,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var dp = new DynamicParameters();
-            dp.Add("pickupPlanId", pickupPlanId);
-            dp.Add("boardDt", boardDt);
-
-            // UPDATE_DT·UPDATE_USER는 바로 뒤 끝내기 UPDATE가 채운다
-            var sql = @"
-                UPDATE PICKUP_PLAN
-                SET BOARD_DT = @boardDt
-                WHERE PICKUP_PLAN_ID = @pickupPlanId";
-
-            await _dapper.ExecuteAsync(
-                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
-        {
-            _logService.LogMessage(ex.ToString());
-#if DEBUG
-            _logService.ConsoleWarning(ex.ToString());
-#endif
-            throw;
-        }
-    }
-
-    /// <summary>
     /// 오늘 계획에서 그 차량 이벤트 번호로 이미 들어간 이벤트의 유형을 조회한다. 없으면 null
     /// </summary>
     public async Task<string?> GetPlanEventTypeAsync(int pickupPlanId, Guid clientEventId,
@@ -1091,7 +1060,7 @@ public partial class PickupRepository
     }
 
     /// <summary>
-    /// 잠근 오늘 계획의 운전자 이름과 아이 번호(암호문)를 조회한다. 계획이 없거나 끝났거나 살아 있는 계정이 없으면 null.
+    /// 잠근 오늘 계획의 운전자 이름(USER_INFO.USER_NAME, 취소 문자에서는 부모 이름 자리)과 아이 번호(암호문)를 조회한다. 계획이 없거나 끝났거나 살아 있는 계정이 없으면 null.
     /// 아이가 없거나 삭제됐으면 ChildPhoneEnc는 null이다
     /// </summary>
     public async Task<CancelNoticeTargetRow?> GetCancelNoticeTargetAsync(int pickupPlanId, IDbTransaction transaction,
@@ -1198,7 +1167,7 @@ public partial class PickupRepository
     /// </summary>
     public async Task<bool> ClosePickupPlanAsync(int pickupPlanId, string closeStatus, bool setLastPickupDate,
         DateTime now, string updateUser, IDbTransaction transaction, CancellationToken cancellationToken = default,
-        Guid? clientEventId = null, DateTime? eventDt = null)
+        Guid? clientEventId = null, DateTime? eventDt = null, DateTime? boardDt = null)
     {
         try
         {
@@ -1210,6 +1179,8 @@ public partial class PickupRepository
             // 끝내는 차량 이벤트의 번호와 시각. 만료처럼 없으면 CLIENT_EVENT_ID NULL, EVENT_DT now다. CHAR(36)에 소문자 하이픈 형식으로 저장된다
             dp.Add("clientEventId", clientEventId?.ToString("D"));
             dp.Add("eventDt", eventDt ?? now);
+            // 탑승 시각. 탑승만 넘기고, 만료·취소는 null이라 BOARD_DT를 그대로 둔다
+            dp.Add("boardDt", boardDt);
 
             // 1) 계획이 가리키는 요일과 날짜를 읽는다. 호출자가 쥔 PK 잠금을 다시 잡아 최신 값을 읽는다(같은 트랜잭션이라 기다리지 않는다)
             var planSql = $@"
@@ -1238,12 +1209,13 @@ public partial class PickupRepository
                     new CommandDefinition(lockDaySql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
             }
 
-            // 3) 상태·끝난 시각과 익명화(참조·하원 시각·도보 시간·임의 좌표 칸 NULL, DELETE_YN)를 한 UPDATE로 한다.
+            // 3) 상태·끝난 시각·탑승 시각과 익명화(참조·하원 시각·도보 시간·임의 좌표 칸 NULL, DELETE_YN)를 한 UPDATE로 한다.
             //    나누면 WALK_MIN·CUSTOM_*를 비우는 순간 CK_PICKUP_PLAN_01·02에 걸린다(schema.md 익명화)
             var closeSql = $@"
                 UPDATE PICKUP_PLAN
                 SET STATUS = @closeStatus,
                     CLOSE_DT = @now,
+                    BOARD_DT = COALESCE(@boardDt, BOARD_DT),
                     USER_ID = NULL,
                     CHILD_ID = NULL,
                     TIMETABLE_DAY_ID = NULL,

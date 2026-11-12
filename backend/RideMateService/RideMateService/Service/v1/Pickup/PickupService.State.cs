@@ -349,12 +349,10 @@ public partial class PickupService
                 return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
             }
 
-            // 4-3) BOARD_DT는 익명화 UPDATE보다 먼저 쓴다. 이어서 계획 PK → TIMETABLE_DAY 순서로 끝내고 익명화한다.
+            // 4-3) 계획 PK → TIMETABLE_DAY 순서로 끝내고 익명화한다. BOARD_DT는 그 끝내기 UPDATE 안에서 eventDt로 함께 쓴다.
             //      BOARDED 이벤트에는 요청의 clientEventId와 eventDt가 들어간다
-            await _pickupRepository.SetBoardDtAsync(pickupPlanId, eventDt, dbTransaction, cancellationToken)
-                .ConfigureAwait(false);
             if (!await _pickupRepository.ClosePickupPlanAsync(pickupPlanId, PlanStatusBoarded, true, thisTime, AuditUser,
-                    dbTransaction, cancellationToken, clientEventId, eventDt).ConfigureAwait(false))
+                    dbTransaction, cancellationToken, clientEventId, eventDt, boardDt: eventDt).ConfigureAwait(false))
             {
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
                 return new ResponseModel<PickupPlanDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
@@ -488,7 +486,7 @@ public partial class PickupService
                     return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
                 }
 
-                // 4-3) 아이가 링크를 받았을 수 있으면 취소 문자 대상이다. 익명화하면 참조가 사라지므로 번호와 부모 이름을 지금 읽어 둔다.
+                // 4-3) 아이가 링크를 받았을 수 있으면 취소 문자 대상이다. 익명화하면 참조가 사라지므로 번호와 운전자 이름(USER_INFO.USER_NAME, 취소 문자에서는 부모 이름 자리)을 지금 읽어 둔다.
                 //      아이가 삭제됐거나 번호가 없거나 복호화할 수 없으면 대상이 아니다. 로그에는 계획 ID만 남긴다
                 var events = await _pickupRepository.GetLinkEventsAsync(pickupPlanId, dbTransaction, cancellationToken)
                     .ConfigureAwait(false);

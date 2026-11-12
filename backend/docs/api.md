@@ -288,6 +288,8 @@
 | `UpdatePickupPlanBoard` | 진행 중인 모든 상태 | `BOARD_DT = eventDt`, 계획을 `BOARDED`로 끝낸다(익명화, `LAST_PICKUP_DATE`, 링크 종료, `BOARDED` 이벤트) |
 | `DeletePickupPlan` | 진행 중인 모든 상태 | 계획을 `CANCELED`로 끝낸다(익명화, 링크 종료, `CANCELED` 이벤트). `LAST_PICKUP_DATE`는 바꾸지 않아 그날 `AddPickupPlan`으로 다시 만들 수 있다 |
 
+- 취소는 `LAST_PICKUP_DATE`를 바꾸지 않으므로 같은 픽업이 곧바로 다시 계획 대상이 된다. 앱은 취소한 픽업을 기억해 그날 `AddPickupPlan`을 자동으로 다시 부르지 않는다(부모가 직접 다시 만드는 것은 된다).
+
 - `PLANNED`·`WAITING`에서 바로 정차해도 받는다(경로 시작 이벤트가 늦게 오거나 내비를 앱 밖에서 시작한 경우). 탑승은 정차가 빠지거나 늦게 와도 기록한다.
 - 대기 장소 도착의 주차장(`parkingLotSeq`, 대기 장소 추천의 주차장 ID)은 있고, 삭제되지 않았고, 계획과 같은 학원가여야 한다. 아니면 409 `INVALID_PARKING_LOT`이다. 잠그기 전에 한 번만 본다. 도착 판정은 차량 앱이 한다.
 - 대기 뒤 출발은 `UpdatePickupPlanStart`다(`WAITING`을 받는다). 출발하면 `START_DT`를 새 출발 시각으로 덮어쓰고 늦은 출발 재배정을 한다.
@@ -320,7 +322,7 @@
 끝난 응답의 모양:
 
 - 탑승·취소 응답은 `pickupPlanSeq`, `status`(`BOARDED`·`CANCELED`), `reassigned: false`(취소는 `cancelNotice`도)만 채우고 나머지는 null이다. 끝난 계획은 개인정보 칸이 비어 있다.
-- 대기 장소 도착·정차 응답은 다른 계획 API와 같이 지금 계획 전체다(정차는 `stopCheck`를 더한다).
+- 진행 중 계획의 대기 장소 도착·정차 응답은 다른 계획 API와 같이 지금 계획 전체다(정차는 `stopCheck`를 더한다). 이미 끝난 계획에 같은 요청을 다시 보낸 경우(아래 재요청)는 대기·정차도 최소 모양이다.
 
 같은 요청을 다시 보낸 경우(재요청):
 

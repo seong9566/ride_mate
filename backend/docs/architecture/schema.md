@@ -571,7 +571,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `START_DT` | DATETIME | Y | 경로를 시작한 시각 |
 | `WAIT_START_DT` | DATETIME | Y | 대기 장소에 처음 도착한 시각. `UpdatePickupPlanWait`가 비어 있을 때만 `eventDt`로 채운다. 다른 주차장으로 옮기거나 출발했다가 다시 대기해도 바꾸지 않는다 |
 | `STOP_DT` | DATETIME | Y | 처음 정차한 시각(잘못된 위치 포함). `UpdatePickupPlanStop`이 비어 있을 때만 `eventDt`로 채운다. 차를 옮겨 다시 서거나 한 바퀴 돌고 다시 서도 바꾸지 않는다 |
-| `BOARD_DT` | DATETIME | Y | 탑승 감지 시각. `UpdatePickupPlanBoard`가 `eventDt`로 채운다(끝내기·익명화 UPDATE보다 먼저, 같은 트랜잭션) |
+| `BOARD_DT` | DATETIME | Y | 탑승 감지 시각. `UpdatePickupPlanBoard`가 `eventDt`로 채운다(끝내기 UPDATE 안에서 함께 쓴다 — 계획 PK → `TIMETABLE_DAY` 잠금 뒤의 익명화 UPDATE 한 문장) |
 | `CLOSE_DT` | DATETIME | Y | 계획이 끝난 시각 |
 
 | `STATUS` | 뜻 |
