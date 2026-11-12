@@ -991,6 +991,41 @@ public partial class PickupRepository
     }
 
     /// <summary>
+    /// 오늘 계획에서 그 차량 이벤트 번호로 들어간 이벤트의 유형과 DETAIL을 잠금 없이 조회한다. 끝난 계획의 이벤트도 찾는다. 없으면 null
+    /// </summary>
+    public async Task<PlanEventRow?> GetPlanEventByClientIdAsync(int pickupPlanId, Guid clientEventId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("pickupPlanId", pickupPlanId);
+            // CHAR(36)에 소문자 하이픈 형식으로 저장된다
+            dp.Add("clientEventId", clientEventId.ToString("D"));
+
+            // UK_PICKUP_EVENT_01 (PICKUP_PLAN_ID, CLIENT_EVENT_ID)라 많아야 한 행이다.
+            // 끝난 계획의 이벤트(DELETE_YN = 1)도 찾아야 하므로 DELETE_YN 조건을 붙이지 않는다
+            var sql = @"
+                SELECT e.EVENT_TYPE AS EventType,
+                       e.DETAIL AS Detail
+                FROM PICKUP_EVENT AS e
+                WHERE e.PICKUP_PLAN_ID = @pickupPlanId
+                  AND e.CLIENT_EVENT_ID = @clientEventId";
+
+            return await _dapper.QueryFirstOrDefaultAsync<PlanEventRow>(
+                new CommandDefinition(sql, dp, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
     /// 픽업 지점의 정원을 조회한다. 지점이 없거나 삭제됐으면 null
     /// </summary>
     public async Task<byte?> GetPickupSpotCapacityAsync(int pickupSpotId, IDbTransaction transaction,

@@ -235,3 +235,12 @@ public class ClosePlanRow
     public DateOnly PickupDate { get; set; }
     public bool Live { get; set; }
 }
+
+/// <summary>
+/// 차량 이벤트 번호로 찾은 이벤트 한 건(재요청 응답 만들기용)
+/// </summary>
+public class PlanEventRow
+{
+    public string EventType { get; set; } = string.Empty;
+    public string? Detail { get; set; }
+}

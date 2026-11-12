@@ -201,6 +201,13 @@ public interface IPickupRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 오늘 계획에서 그 차량 이벤트 번호(CLIENT_EVENT_ID)로 들어간 이벤트의 유형과 DETAIL을 잠금 없이 조회한다.
+    /// 끝난 계획의 이벤트도 찾는다(DELETE_YN 조건 없음). 없으면 null
+    /// </summary>
+    Task<PlanEventRow?> GetPlanEventByClientIdAsync(int pickupPlanId, Guid clientEventId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 픽업 지점의 정원(CAPACITY)을 조회한다. 지점이 없거나 삭제됐으면 null
     /// </summary>
     Task<byte?> GetPickupSpotCapacityAsync(int pickupSpotId, IDbTransaction transaction,

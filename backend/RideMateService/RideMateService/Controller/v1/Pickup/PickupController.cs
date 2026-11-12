@@ -302,4 +302,35 @@ public class PickupController : ApiControllerBase
             return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
         }
     }
+
+    /// <summary>
+    /// 정차 기록(배정 장소 반경과 정차 위치의 단속 구역을 판정한다)
+    /// </summary>
+    [Produces("application/json")]
+    [HttpPatch]
+    [Route("v1/Pickup/M/sign/UpdatePickupPlanStop")]
+    [SwaggerOperation(Summary = "정차 기록")]
+    [ProducesResponseType(typeof(ResponseModel<PickupPlanDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdatePickupPlanStop([FromBody] UpdatePickupPlanStopDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _pickupService.UpdatePickupPlanStopService(dto, cancellationToken).ConfigureAwait(false);
+            return ToActionResult(model);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // 앱이 요청을 끊었다. 오류로 기록하지 않는다
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
 }
