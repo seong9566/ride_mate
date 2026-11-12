@@ -82,101 +82,13 @@ public partial class PickupService : IPickupService
                 || (dto.pickupLat is null) != (dto.pickupLng is null))
                 return new ResponseModel<DetailDepartureGuideDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
 
-            var now = dto.currentDt.Value;
-            var date = DateOnly.FromDateTime(now);
-
-            // 3) 오늘 남은 픽업 하나 — 하원 뒤 창(PickupWindowHours)이 지나지 않은 것 중 하원이 가장 이른 것
-            var todays = await _pickupRepository.GetTodayPickupsAsync(userId, date,
-                DepartureGuideCalculator.DayOfWeek(date), cancellationToken).ConfigureAwait(false);
-
-            var dayStart = date.ToDateTime(TimeOnly.MinValue);
-            var window = TimeSpan.FromHours(_options.PickupWindowHours);
-            var target = todays
-                .Where(t => dayStart + t.EndTime + window > now)
-                .OrderBy(t => t.EndTime)
-                .ThenBy(t => t.TimetableDayId)
-                .FirstOrDefault();
-
-            if (target is null)
-                return new ResponseModel<DetailDepartureGuideDto> { message = "요청이 정상 처리되었습니다.", data = null, code = 101 };
-
-            // 4) 요일 유형 — 그해 공휴일이 적재되지 않았으면 공휴일이 아닌 것으로 본다
-            var holiday = await _pickupRepository.GetHolidayAsync(date, cancellationToken).ConfigureAwait(false);
-            var dayType = DepartureGuideCalculator.DayType(date, holiday.IsHoliday);
-
-            var result = new DetailDepartureGuideDto
+            var computation = await ComputeDepartureAsync(userId, dto, cancellationToken).ConfigureAwait(false);
+            return new ResponseModel<DetailDepartureGuideDto>
             {
-                academyName = target.DisplayName,
-                endTime = target.EndTime.ToString(@"hh\:mm")
+                message = "요청이 정상 처리되었습니다.",
+                data = computation.Result,
+                code = computation.Code
             };
-
-            // 학원 좌표가 없으면 학원에서 걷는 시간·픽업 지점·단속 구역을 알 수 없다. 앱이 픽업 좌표를 보냈어도 같다
-            if (target.AcademyLat is not { } academyLat || target.AcademyLng is not { } academyLng)
-            {
-                result.reasons.Add(new DepartureGuideReasonDto { code = ReasonNoAcademyLocation });
-                return new ResponseModel<DetailDepartureGuideDto> { message = "요청이 정상 처리되었습니다.", data = result, code = 200 };
-            }
-
-            // 5) 픽업 장소와 도보 시간
-            DepartureGuidePickupDto? pickup;
-            if (dto.pickupLat is null || dto.pickupLng is null)
-            {
-                pickup = await SelectDefaultSpotAsync(target, date, dayType, result.reasons, cancellationToken).ConfigureAwait(false);
-                if (pickup is null)
-                {
-                    result.reasons.Add(new DepartureGuideReasonDto { code = ReasonNoSpotAvailable });
-                    return new ResponseModel<DetailDepartureGuideDto> { message = "요청이 정상 처리되었습니다.", data = result, code = 200 };
-                }
-
-                // 학원 앞이 단속 구역이면 근거 맨 앞에 둔다. 판정 시각은 하원 + 정리 시간
-                var academyZones = await MatchZonesAsync(target.AreaId, academyLat, academyLng, dayType,
-                    target.EndTime + TimeSpan.FromMinutes(_options.TidyUpMin), cancellationToken).ConfigureAwait(false);
-                if (academyZones is { Count: > 0 })
-                    result.reasons.Insert(0, new DepartureGuideReasonDto { code = ReasonAcademyFrontRestricted, zoneTypes = academyZones });
-            }
-            else
-            {
-                pickup = await CustomPickupAsync(academyLat, academyLng, dto.pickupLat.Value, dto.pickupLng.Value, cancellationToken).ConfigureAwait(false);
-                result.reasons.Add(new DepartureGuideReasonDto { code = ReasonCustomLocation });
-            }
-
-            result.pickup = pickup;
-
-            // 6) 아이 도착 시각
-            var childArrival = DepartureGuideCalculator.ChildArrival(date, target.EndTime, _options.TidyUpMin, pickup.walkMin);
-            result.childArrivalDt = childArrival;
-
-            // 7) 차량 소요 시간 — 앱이 보낸 값이 없으면 직선 거리로 추정한다
-            if (dto.driveMin is not null)
-            {
-                result.driveMin = dto.driveMin.Value;
-                result.driveSource = DriveSourceNavi;
-            }
-            else
-            {
-                var meters = GeoDistance.Meters(dto.currentLat.Value, dto.currentLng.Value, pickup.lat, pickup.lng);
-                result.driveMin = DepartureGuideCalculator.EstimateMinutes(meters, _options.DriveKmh, _options.RoadFactor);
-                result.driveSource = DriveSourceEstimate;
-            }
-
-            // 8) 추천 출발 시각과 남은 여유
-            var departure = DepartureGuideCalculator.Departure(childArrival, result.driveMin.Value, _options.BufferMin);
-            result.departureDt = departure;
-            result.slackMin = DepartureGuideCalculator.SlackMinutes(departure, now);
-
-            // 9) 단속 구역 판정 — 판정 시각은 아이 도착 시각. 판정할 수 없으면 UNKNOWN
-            var zones = await MatchZonesAsync(target.AreaId, pickup.lat, pickup.lng, dayType, childArrival.TimeOfDay,
-                cancellationToken).ConfigureAwait(false);
-            if (zones is null)
-                result.enforcement = new DepartureGuideEnforcementDto { status = EnforcementUnknown };
-            else if (zones.Count > 0)
-                result.enforcement = new DepartureGuideEnforcementDto { status = EnforcementRestricted, zoneTypes = zones };
-            else if (!holiday.YearLoaded)
-                result.enforcement = new DepartureGuideEnforcementDto { status = EnforcementUnknown };
-            else
-                result.enforcement = new DepartureGuideEnforcementDto { status = EnforcementClear };
-
-            return new ResponseModel<DetailDepartureGuideDto> { message = "요청이 정상 처리되었습니다.", data = result, code = 200 };
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 그대로 올려보낸다
         {
@@ -322,6 +234,107 @@ public partial class PickupService : IPickupService
 #endif
             return new ResponseModel<GetRestrictedZoneList> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
         }
+    }
+
+    private async Task<DepartureComputation> ComputeDepartureAsync(int userId, DepartureGuideQueryDto dto,
+        CancellationToken ct)
+    {
+        // 필수값(currentDt·currentLat·currentLng) 검증은 호출자가 끝냈다
+        var now = dto.currentDt!.Value;
+        var date = DateOnly.FromDateTime(now);
+
+        // 3) 오늘 남은 픽업 하나 — 하원 뒤 창(PickupWindowHours)이 지나지 않은 것 중 하원이 가장 이른 것
+        var todays = await _pickupRepository.GetTodayPickupsAsync(userId, date,
+            DepartureGuideCalculator.DayOfWeek(date), ct).ConfigureAwait(false);
+
+        var dayStart = date.ToDateTime(TimeOnly.MinValue);
+        var window = TimeSpan.FromHours(_options.PickupWindowHours);
+        var target = todays
+            .Where(t => dayStart + t.EndTime + window > now)
+            .OrderBy(t => t.EndTime)
+            .ThenBy(t => t.TimetableDayId)
+            .FirstOrDefault();
+
+        if (target is null)
+            return new DepartureComputation { Code = 101, Result = null, Target = null, DayType = string.Empty, Now = now };
+
+        // 4) 요일 유형 — 그해 공휴일이 적재되지 않았으면 공휴일이 아닌 것으로 본다
+        var holiday = await _pickupRepository.GetHolidayAsync(date, ct).ConfigureAwait(false);
+        var dayType = DepartureGuideCalculator.DayType(date, holiday.IsHoliday);
+
+        var result = new DetailDepartureGuideDto
+        {
+            academyName = target.DisplayName,
+            endTime = target.EndTime.ToString(@"hh\:mm")
+        };
+
+        // 학원 좌표가 없으면 학원에서 걷는 시간·픽업 지점·단속 구역을 알 수 없다. 앱이 픽업 좌표를 보냈어도 같다
+        if (target.AcademyLat is not { } academyLat || target.AcademyLng is not { } academyLng)
+        {
+            result.reasons.Add(new DepartureGuideReasonDto { code = ReasonNoAcademyLocation });
+            return new DepartureComputation { Code = 200, Result = result, Target = target, DayType = dayType, Now = now };
+        }
+
+        // 5) 픽업 장소와 도보 시간
+        DepartureGuidePickupDto? pickup;
+        if (dto.pickupLat is null || dto.pickupLng is null)
+        {
+            pickup = await SelectDefaultSpotAsync(target, date, dayType, result.reasons, ct).ConfigureAwait(false);
+            if (pickup is null)
+            {
+                result.reasons.Add(new DepartureGuideReasonDto { code = ReasonNoSpotAvailable });
+                return new DepartureComputation { Code = 200, Result = result, Target = target, DayType = dayType, Now = now };
+            }
+
+            // 학원 앞이 단속 구역이면 근거 맨 앞에 둔다. 판정 시각은 하원 + 정리 시간
+            var academyZones = await MatchZonesAsync(target.AreaId, academyLat, academyLng, dayType,
+                target.EndTime + TimeSpan.FromMinutes(_options.TidyUpMin), ct).ConfigureAwait(false);
+            if (academyZones is { Count: > 0 })
+                result.reasons.Insert(0, new DepartureGuideReasonDto { code = ReasonAcademyFrontRestricted, zoneTypes = academyZones });
+        }
+        else
+        {
+            pickup = await CustomPickupAsync(academyLat, academyLng, dto.pickupLat.Value, dto.pickupLng.Value, ct).ConfigureAwait(false);
+            result.reasons.Add(new DepartureGuideReasonDto { code = ReasonCustomLocation });
+        }
+
+        result.pickup = pickup;
+
+        // 6) 아이 도착 시각
+        var childArrival = DepartureGuideCalculator.ChildArrival(date, target.EndTime, _options.TidyUpMin, pickup.walkMin);
+        result.childArrivalDt = childArrival;
+
+        // 7) 차량 소요 시간 — 앱이 보낸 값이 없으면 직선 거리로 추정한다
+        if (dto.driveMin is not null)
+        {
+            result.driveMin = dto.driveMin.Value;
+            result.driveSource = DriveSourceNavi;
+        }
+        else
+        {
+            var meters = GeoDistance.Meters(dto.currentLat!.Value, dto.currentLng!.Value, pickup.lat, pickup.lng);
+            result.driveMin = DepartureGuideCalculator.EstimateMinutes(meters, _options.DriveKmh, _options.RoadFactor);
+            result.driveSource = DriveSourceEstimate;
+        }
+
+        // 8) 추천 출발 시각과 남은 여유
+        var departure = DepartureGuideCalculator.Departure(childArrival, result.driveMin.Value, _options.BufferMin);
+        result.departureDt = departure;
+        result.slackMin = DepartureGuideCalculator.SlackMinutes(departure, now);
+
+        // 9) 단속 구역 판정 — 판정 시각은 아이 도착 시각. 판정할 수 없으면 UNKNOWN
+        var zones = await MatchZonesAsync(target.AreaId, pickup.lat, pickup.lng, dayType, childArrival.TimeOfDay,
+            ct).ConfigureAwait(false);
+        if (zones is null)
+            result.enforcement = new DepartureGuideEnforcementDto { status = EnforcementUnknown };
+        else if (zones.Count > 0)
+            result.enforcement = new DepartureGuideEnforcementDto { status = EnforcementRestricted, zoneTypes = zones };
+        else if (!holiday.YearLoaded)
+            result.enforcement = new DepartureGuideEnforcementDto { status = EnforcementUnknown };
+        else
+            result.enforcement = new DepartureGuideEnforcementDto { status = EnforcementClear };
+
+        return new DepartureComputation { Code = 200, Result = result, Target = target, DayType = dayType, Now = now };
     }
 
     // 기본 지점: 우선순위 순으로 아이 도착 시각이 금지 시간 [시작, 종료)에 들지 않는 첫 지점.
