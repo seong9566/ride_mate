@@ -186,12 +186,13 @@
   1. 로그인한 계정에 오늘 진행 중 계획(`STATUS`가 `PLANNED`·`STARTED`·`WAITING`·`STOPPED`·`LOOPING`이고 `EXPIRE_DT`가 서버 현재 시각보다 뒤)이 있으면 그 계획의 픽업이다. 1시간 창·픽업 스위치·`SKIP` 예외와 상관없다. 여럿이면 `SLOT_DT`(없으면 하원 시각)가 가장 이른 것이다. 진행 중인지는 `currentDt`가 아니라 서버 현재 시각으로 본다.
   2. 없으면 `currentDt`의 날짜·요일로 고른다: 로그인한 계정의 살아 있는 아이 시간표 중 오늘 `PICKUP_YN = 1`이고 `LAST_PICKUP_DATE`가 오늘이 아닌 것에서 오늘 `SKIP` 예외를 빼고(`TIME_CHANGE`는 바뀐 하원 시각), 하원 시각 + 1시간이 `currentDt`보다 늦은 것 중 하원 시각이 가장 이른 하나다.
 - 계획이 있으면 계획이 정답이다. 앱이 보낸 `pickupLat`·`pickupLng`는 무시하고(장소 바꾸기는 `UpdatePickupPlanLocation`) 카카오를 부르지 않는다. `pickup`은 계획의 장소(기본 지점이면 지점·저장된 도보 경로, 임의 좌표면 계획에 저장된 좌표·장소 이름(`spotName`)·도보 경로)이고 `walkSource`는 `STORED`, 도보 시간은 계획의 값이다. 추천 출발은 `slotDt − driveMin − 여유`이고 `childArrivalDt`는 지금처럼 하원 + 정리 + 도보다. 남은 여유(`slackMin`)는 계획이 있어도 `currentDt` 기준이다. 계획에 배정 장소가 없으면 `pickup`과 계산 필드가 null이고 `reasons`는 `NO_SPOT_AVAILABLE` 하나다.
+- 계획이 있으면 학원 좌표가 없어도 `NO_ACADEMY_LOCATION`을 내지 않고 계획의 장소로 계산한다. 이때는 학원 앞 단속 근거(`ACADEMY_FRONT_RESTRICTED`) 판정만 빠진다.
 - 응답에 `pickupPlanSeq`(계획 ID)·`slotDt`(계획의 배정 시각)·`planStatus`(계획 상태)가 있다. 계획이 없으면 셋 다 null이고, 계획에 배정 장소가 없으면 `slotDt`만 null이다. 계획의 배정 시각이 아이 도착 시각보다 늦으면(정원·늦은 출발로 미룸) `reasons`에 `SLOT_SHIFTED`가 들어가고 `shiftMin`에 미룬 분이 들어간다. 계획이 임의 좌표면 `CUSTOM_LOCATION`이다.
 - 대기 장소 추천(`GET /api/v1/Pickup/M/sign/GetWaitingPlaceList`)은 같은 계산을 쓰므로 진행 중 계획이 있으면 계획의 장소와 배정 시각 기준의 `slackMin`·`reasons`(`SLOT_SHIFTED` 포함)를 쓴다. 한계: 주차장 운영 시간은 계획이 있어도 배정 시각이 아니라 하원 시각까지 운영하는지로 본다.
 
 | code | 상황 | HTTP |
 |---|---|---|
-| 200 | 계산했다. 쓸 수 있는 기본 지점이 없으면 `pickup`과 계산 필드가 null이고 `reasons`에 `NO_SPOT_AVAILABLE`이 들어간다. 학원 좌표가 없으면 `pickup`과 계산 필드가 null이고 `reasons`에 `NO_ACADEMY_LOCATION`이 들어간다(앱이 `pickupLat`·`pickupLng`를 보내도 같다) | 200 |
+| 200 | 계산했다. 쓸 수 있는 기본 지점이 없으면 `pickup`과 계산 필드가 null이고 `reasons`에 `NO_SPOT_AVAILABLE`이 들어간다. 계획이 없을 때 학원 좌표가 없으면 `pickup`과 계산 필드가 null이고 `reasons`에 `NO_ACADEMY_LOCATION`이 들어간다(앱이 `pickupLat`·`pickupLng`를 보내도 같다) | 200 |
 | 101 | 오늘 남은 픽업이 없다. `data`는 null이다 | 200 |
 | 400 | 필수 값이 없거나 범위를 벗어났거나 픽업 좌표가 한쪽만 왔거나 형식이 틀린 값(해석할 수 없는 `currentDt`나 숫자)이나 `Z`·오프셋이 붙은 `currentDt`가 왔다 | 400 (`ProblemDetails`) |
 | 401 | 인증 실패 | 401 |
@@ -230,7 +231,7 @@
 | `PATCH /api/v1/Pickup/M/sign/UpdatePickupPlanStart` | 경로 시작. 본문 `pickupPlanSeq`·`clientEventId`·`eventDt`·`driveMin`이 모두 필수다 |
 
 - 세 API의 응답 `data`는 같은 모양이다: `{ reason, pickupPlanSeq, status, pickupDate, endTime, academyName, pickup, slotDt, expireDt, reassigned }`. `pickup`은 `{ locationType, pickupSpotSeq, name, lat, lng, walkMin, guideText, photoUrl }`이고 `locationType`은 `SPOT`(기본 지점)·`CUSTOM`(임의 좌표)이다. 배정 장소가 없으면 `pickup`과 `slotDt`가 null이다. 값이 없는 필드도 null로 나간다.
-- `reassigned`는 이번 요청으로 장소나 시각이 바뀌었는지다. `AddPickupPlan`은 늘 false이고, 같은 `clientEventId`로 다시 부른 요청과 이미 시작한 계획의 경로 시작도 false다.
+- `reassigned`는 이번 요청에서 다시 배정했는지다. 값이 실제로 바뀌었는지는 보지 않는다. `UpdatePickupPlanLocation`은 같은 좌표를 다시 보내도 true이고, `UpdatePickupPlanStart`는 늦은 출발로 다시 배정했을 때만 true다. `AddPickupPlan`은 늘 false이고, 같은 `clientEventId`로 다시 부른 요청과 이미 시작한 계획의 경로 시작도 false다.
 - 대상 픽업은 "출발 안내 계산"과 같은 규칙으로 고르되 진행 중 계획 판정과 오늘 날짜·1시간 창 모두 서버 현재 시각 기준이다. `AddPickupPlan`은 진행 중 계획이 있으면 요청의 좌표를 무시하고 그 계획을 200으로 돌려준다.
 - 시간 창: 서버 현재 시각이 `하원 시각 − PickupPlan:CreateLeadHours`(3시간)보다 이르면 409 `TOO_EARLY`다. 언제 부를지는 앱이 정한다(추천 출발 30분 전, 앱을 열었을 때 이미 그 안이면 그때).
 - 학원 좌표나 학원가가 없으면 계획을 만들지 않고 409 `NO_ACADEMY_LOCATION`이다. 이때 출발 안내는 지금처럼 `NO_ACADEMY_LOCATION` 근거로 동작한다.
@@ -240,7 +241,7 @@
   - 늦은 출발: 차 도착 예상(`eventDt + driveMin`, 분 단위 올림)이 `slotDt`보다 늦으면 같은 장소에서 다시 배정하고 `reassigned`가 true다. 임의 좌표는 차 도착 예상 시각이 배정 시각이 된다. 기본 지점은 차 도착 예상부터 `PickupPlan:SlotShiftMaxMin`(2분)까지 1분씩 늦춰 정원이 남은 첫 시각을 쓰고, 자리가 없으면 정원을 넘어도 차 도착 예상 시각으로 배정한다. 다른 지점으로 옮기지 않는다. [ADR-0021] 배정 장소가 없는 계획은 다시 배정하지 않는다.
   - 이미 `STARTED`면 `clientEventId`와 상관없이 지금 계획을 200으로 돌려준다. 단, `eventDt` 범위 검사가 먼저라 10분이 지난 재시도는 400이다.
 - `clientEventId`는 차량이 요청마다 만드는 UUID다. 같은 요청을 다시 부를 때는 같은 값을 보낸다. 같은 번호의 같은 유형 이벤트(장소 바꾸기는 `REASSIGNED`, 경로 시작은 `STARTED`)가 이미 있으면 다시 반영하지 않고 지금 계획을 200으로 돌려준다. 이 계획의 다른 어떤 이벤트(링크 발송·다시 알림 포함)에 쓰인 번호면 `data`가 null인 400이다.
-- `expireDt`는 `slotDt`(없으면 하원 시각) + `PickupPlan:ExpireAfterHours`(1시간)이고 재배정하면 다시 계산한다. 서버 주기 작업이 `PickupPlan:ExpireIntervalSec`(60초)마다, 그리고 서버 시작 직후 한 번 `expireDt`가 지난 진행 중 계획을 `EXPIRED`로 끝내고 익명화한다. 끝난 계획은 이 API들에서 404이고, 그 시간표는 그날 다시 대상이 되지 않는다(`LAST_PICKUP_DATE`).
+- `expireDt`는 `slotDt`(없으면 하원 시각) + `PickupPlan:ExpireAfterHours`(1시간)이고 재배정하면 다시 계산한다. 서버 주기 작업이 `PickupPlan:ExpireIntervalSec`(60초)마다, 그리고 서버 시작 직후 한 번 `expireDt`가 지난 진행 중 계획을 `EXPIRED`로 끝내고 익명화한다. 끝난 계획은 `UpdatePickupPlanLocation`·`UpdatePickupPlanStart`에서 404이고, 그 시간표는 그날 다시 대상이 되지 않는다(`LAST_PICKUP_DATE`).
 
 | code | `AddPickupPlan` | `UpdatePickupPlanLocation` | `UpdatePickupPlanStart` |
 |---|---|---|---|
@@ -261,7 +262,7 @@
 | `ALREADY_STOPPED` | 계획이 정차(`STOPPED`)나 한 바퀴(`LOOPING`) 중이다 | `UpdatePickupPlanLocation`, `UpdatePickupPlanStart` |
 | `PLAN_CLOSED` | `EXPIRE_DT`가 지났는데 만료 처리가 아직 돌지 않았다 | `UpdatePickupPlanLocation`, `UpdatePickupPlanStart` |
 
-- 판정 순서: `UpdatePickupPlanLocation`·`UpdatePickupPlanStart`는 400 → 404(없음·남의 계획) → `ALREADY_STOPPED` → 404(끝난 계획) → `PLAN_CLOSED` 순이다. `UpdatePickupPlanLocation`은 그다음 `NO_ACADEMY_LOCATION`, `UpdatePickupPlanStart`는 그다음 "이미 시작함 → 200"이다. 잠근 뒤 같은 판정을 한 번 더 하고 `clientEventId`를 확인한다.
+- 판정 순서: `UpdatePickupPlanLocation`·`UpdatePickupPlanStart`는 입력 검증 400(필수 값·범위·좌표 한쪽만·`eventDt` 범위) → 404(없음·남의 계획) → `ALREADY_STOPPED` → 404(끝난 계획) → `PLAN_CLOSED` 순이다. 그다음 `UpdatePickupPlanLocation`은 좌표를 보냈을 때 `NO_ACADEMY_LOCATION`을 보고(잠그기 전에 한 번만 본다), `UpdatePickupPlanStart`는 "이미 시작함 → 200"이다. 잠근 뒤에는 404·`ALREADY_STOPPED`·404·`PLAN_CLOSED`를 다시 보고(`UpdatePickupPlanStart`는 "이미 시작함 → 200"도), 그다음 `clientEventId`를 확인한다: 같은 유형 이벤트면 200, 이 계획의 다른 이벤트에 쓰였으면 400(`data` null).
 - 필드·예시는 Notion "[차량] 오늘 픽업 계획 만들기"(https://app.notion.com/p/416aa638eaf88143a9e8d1dceb94e345), "[차량] 픽업 장소 바꾸기"(https://app.notion.com/p/416aa638eaf881b38b78ca310e6de212), "[차량] 경로 시작"(https://app.notion.com/p/416aa638eaf881819262e44ed3ec9ff1) 페이지가 정본이다.
 
 ## 픽업 링크 문자 발송

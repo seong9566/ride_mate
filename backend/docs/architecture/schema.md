@@ -706,7 +706,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 - 횟수 제한(다시 알림 1회, "지금 나가요" 1회)은 이 이력을 세어 Service에서 확인한다.
 - `DETAIL`에는 위 표에 적힌 값만 넣는다. 발송 업체 응답을 그대로 넣지 않는다. 수신 번호가 들어 있을 수 있다.
 - `PLANNED`·`REASSIGNED`의 `DETAIL`에 임의 좌표, 장소 이름, 주소를 넣지 않는다. `custom` 플래그만 남긴다. 계획이 끝나 익명화한 뒤에도 이벤트 이력은 남기 때문이다.
-- `EVENT_DT`: 차량이 낳은 이벤트(`STARTED`, 사유가 `LATE_START`인 `REASSIGNED`)는 차량이 보낸 `eventDt`(출발 시각)다. 사유가 `LOCATION_CHANGED`인 `REASSIGNED`와 서버가 만든 이벤트(`PLANNED`, `EXPIRED` 등)는 서버 현재 시각이다.
+- `EVENT_DT`: 차량이 일으킨 이벤트(`STARTED`, 사유가 `LATE_START`인 `REASSIGNED`)는 차량이 보낸 `eventDt`(출발 시각)다. 사유가 `LOCATION_CHANGED`인 `REASSIGNED`와 서버가 만든 이벤트(`PLANNED`, `EXPIRED` 등)는 서버 현재 시각이다.
 - 이벤트의 순서와 "여기부터 새 이벤트" 기준은 `PICKUP_EVENT_ID`다. `EVENT_DT`는 차량 시각이고 늦게 도착할 수 있어 순서 기준으로 쓰지 않는다. 화면은 `PICKUP_PLAN_ID = ? AND PICKUP_EVENT_ID > ?`로 새 이벤트를 읽는다. 이벤트를 넣을 때 계획 행을 잠그므로 번호 순서와 커밋 순서가 같다.
 - 인덱스는 위 UNIQUE 하나로 충분하다. `PICKUP_PLAN_ID`가 맨 앞이라 FK 인덱스를 겸한다. 새 이벤트 조회는 그 계획의 이벤트를 훑어 번호로 거른다. 계획 하나의 이벤트는 수십 건이라 따로 인덱스를 두지 않는다.
 
