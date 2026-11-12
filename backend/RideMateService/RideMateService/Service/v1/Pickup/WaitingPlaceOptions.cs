@@ -29,25 +29,4 @@ public class WaitingPlaceOptions
     /// 응답에 포함할 최대 대기 장소 수
     /// </summary>
     public int MaxPlaces { get; set; } = 3;
-
-    /// <summary>
-    /// 실시간 빈자리를 조회할 시도·시군구 목록. 비어 있으면 서울 강남구를 조회한다
-    /// </summary>
-    public List<ParkingRealtimeRegionOptions> RealtimeRegions { get; set; } = new();
-}
-
-/// <summary>
-/// 실시간 빈자리를 조회할 시도·시군구 코드
-/// </summary>
-public class ParkingRealtimeRegionOptions
-{
-    /// <summary>
-    /// 시도 코드
-    /// </summary>
-    public string SidoCd { get; set; } = string.Empty;
-
-    /// <summary>
-    /// 시군구 코드
-    /// </summary>
-    public string SigunguCd { get; set; } = string.Empty;
 }

@@ -207,7 +207,7 @@ public static class InfrastructureExtensions
             client.BaseAddress = new Uri("https://dapi.kakao.com/");
             client.Timeout = TimeSpan.FromSeconds(3);
         });
-        services.AddHttpClient<IParkingRealtimeClient, KoroadParkingRealtimeClient>((serviceProvider, client) =>
+        services.AddHttpClient<IParkingRealtimeClient, KotsaParkingRealtimeClient>((serviceProvider, client) =>
         {
             client.BaseAddress = new Uri("https://apis.data.go.kr/B553881/Parking_v1/");
             client.Timeout = TimeSpan.FromMilliseconds(

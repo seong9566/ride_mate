@@ -141,10 +141,15 @@ public partial class PickupService
         foreach (var candidate in candidates)
         {
             if (candidate.Row.RealtimeRef is not { } realtimeRef
-                || (candidate.Row.AvailableSpaces is not null && candidate.Row.AvailableUpdateDt >= cacheCutoff)
-                || !availableByRef.TryGetValue(realtimeRef, out var available)
-                || available is < 0 or > short.MaxValue)
+                || (candidate.Row.AvailableSpaces is not null && candidate.Row.AvailableUpdateDt >= cacheCutoff))
                 continue;
+
+            // 조회는 성공했는데 그 주차장이 목록에 없으면 지금은 실시간을 내지 않는 것이다. 오래된 저장값을 쓰지 않는다
+            if (!availableByRef.TryGetValue(realtimeRef, out var available) || available is < 0 or > short.MaxValue)
+            {
+                candidate.RealtimeMissing = true;
+                continue;
+            }
 
             candidate.RealtimeAvailable = available;
             try
@@ -164,7 +169,10 @@ public partial class PickupService
 
     private WaitingPlaceResult? ToWaitingPlace(WaitingPlaceCandidate candidate)
     {
-        var available = candidate.RealtimeAvailable ?? candidate.Row.AvailableSpaces;
+        // 실시간 연결이 없거나 정상 응답에 빠진 주차장은 저장값이 남아 있어도 자리 정보 없음으로 둔다
+        var available = candidate.Row.RealtimeRef is null || candidate.RealtimeMissing
+            ? null
+            : candidate.RealtimeAvailable ?? candidate.Row.AvailableSpaces;
         var space = WaitingPlaceCalculator.Space(available, _waitingPlaceOptions.FewThreshold);
         if (space is null)
             return null;
@@ -218,6 +226,7 @@ public partial class PickupService
         public int DriveToLot { get; init; }
         public int WaitMin { get; init; }
         public int? RealtimeAvailable { get; set; }
+        public bool RealtimeMissing { get; set; }
     }
 
     private sealed class WaitingPlaceResult

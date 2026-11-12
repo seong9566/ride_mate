@@ -2,28 +2,24 @@ using System.Globalization;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json.Linq;
 using RideMateService.Comm.Logger;
-using RideMateService.Service.v1.Pickup;
 
 namespace RideMateService.Comm.Parking;
 
 /// <summary>
-/// 도로교통공단 주차장 실시간 API로 빈자리 수를 조회하는 구현
+/// 한국교통안전공단 주차정보 실시간 API(PrkRealtimeInfo_v1)로 빈자리 수를 조회하는 구현
 /// </summary>
-public class KoroadParkingRealtimeClient : IParkingRealtimeClient
+public class KotsaParkingRealtimeClient : IParkingRealtimeClient
 {
     private readonly HttpClient _httpClient;
     private readonly PublicDataOptions _publicDataOptions;
-    private readonly WaitingPlaceOptions _waitingPlaceOptions;
     private readonly ILogService _logService;
 
-    public KoroadParkingRealtimeClient(HttpClient httpClient,
+    public KotsaParkingRealtimeClient(HttpClient httpClient,
         IOptions<PublicDataOptions> publicDataOptions,
-        IOptions<WaitingPlaceOptions> waitingPlaceOptions,
         ILogService logService)
     {
         this._httpClient = httpClient;
         this._publicDataOptions = publicDataOptions.Value;
-        this._waitingPlaceOptions = waitingPlaceOptions.Value;
         this._logService = logService;
     }
 
@@ -45,8 +41,8 @@ public class KoroadParkingRealtimeClient : IParkingRealtimeClient
             var encodedKey = Uri.EscapeDataString(Uri.UnescapeDataString(serviceKey.Trim()));
             var requested = realtimeRefs.ToHashSet(StringComparer.Ordinal);
             var result = new Dictionary<string, int>(StringComparer.Ordinal);
-            IReadOnlyList<ParkingRealtimeRegionOptions> regions = _waitingPlaceOptions.RealtimeRegions.Count > 0
-                ? _waitingPlaceOptions.RealtimeRegions
+            IReadOnlyList<ParkingRealtimeRegionOptions> regions = _publicDataOptions.RealtimeRegions.Count > 0
+                ? _publicDataOptions.RealtimeRegions
                 : [new ParkingRealtimeRegionOptions { SidoCd = "11", SigunguCd = "11680" }];
 
             foreach (var region in regions)
