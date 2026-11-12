@@ -24,7 +24,7 @@ sh n8n/setup-credentials.sh
 
 ## 처음 설치 (새로 클론했거나 `n8n-data` 볼륨을 잃었을 때)
 
-자격 증명을 넣은 뒤 `backend/`에서 워크플로 다섯 개를 가져오고 수집기 세 개를 활성화한다. JSON은 `active: false`로 저장돼 있어 가져오기만 하면 수집이 돌지 않는다.
+자격 증명을 넣은 뒤 `backend/`에서 워크플로 여섯 개를 가져오고 스케줄 워크플로 네 개를 활성화한다. JSON은 `active: false`로 저장돼 있어 가져오기만 하면 수집이 돌지 않는다.
 
 ```sh
 for f in n8n/workflows/*.json; do
@@ -33,11 +33,12 @@ done
 docker compose exec -T n8n n8n publish:workflow --id=topisCollect0001
 docker compose exec -T n8n n8n publish:workflow --id=gitsCollect00001
 docker compose exec -T n8n n8n publish:workflow --id=parkingCollect01
+docker compose exec -T n8n n8n publish:workflow --id=trafficProfile01
 docker compose restart n8n
 docker compose logs n8n --since 1m | grep "published workflows"
 ```
 
-마지막 명령에 `3 published workflows`가 보여야 한다(재시작 직후라 아직 안 보이면 몇 초 뒤 다시 확인한다). CLI로 `publish:workflow`를 해도 떠 있는 n8n은 스케줄을 다시 읽지 않으므로 반드시 재시작한다(2026-11-11 실측: 재시작 전까지 회차가 기록되지 않았다). 링크 목록 만들기(`topisLinkBuild01`, `gitsLinkBuild001`)는 수동 워크플로라 활성화하지 않는다. 화면에서 실행하거나 아래 "5분 수집"의 `n8n execute` 명령에서 id만 바꿔 실행한다.
+마지막 명령에 `4 published workflows`가 보여야 한다(재시작 직후라 아직 안 보이면 몇 초 뒤 다시 확인한다). CLI로 `publish:workflow`를 해도 떠 있는 n8n은 스케줄을 다시 읽지 않으므로 반드시 재시작한다(2026-11-11 실측: 재시작 전까지 회차가 기록되지 않았다). 링크 목록 만들기(`topisLinkBuild01`, `gitsLinkBuild001`)는 수동 워크플로라 활성화하지 않는다. 화면에서 실행하거나 아래 "5분 수집"의 `n8n execute` 명령에서 id만 바꿔 실행한다.
 
 ## 워크플로 목록
 
@@ -46,6 +47,7 @@ docker compose logs n8n --since 1m | grep "published workflows"
 - `topisCollect0001`: TOPIS 도로 소통 5분 수집
 - `gitsCollect00001`: GITS 도로 소통 5분 수집
 - `parkingCollect01`: 대치동·평촌 공영 주차장 하루 1회 수집
+- `trafficProfile01`: 우리 수집 이력으로 혼잡 집계표 하루 1회 만들기
 
 ## API 키
 
@@ -56,6 +58,16 @@ docker compose up -d n8n
 ```
 
 워크플로는 키를 각각 `$env.DATA_GO_KR_API_KEY`, `$env.TOPIS_API_KEY`, `$env.GITS_API_KEY`로 읽는다. 키는 워크플로 JSON, 명령줄 인자, 로그, 실행 이력이나 실패 결과에 넣지 않는다.
+
+## 혼잡 집계표 하루 1회 만들기
+
+`trafficProfile01`은 매일 04:40 KST에 오늘을 제외한 최근 56일의 `TRAFFIC_SPEED`를 `TRAFFIC_PROFILE`의 `COLLECTED` 행으로 집계한다. 삭제된 행, 속도 0, 공휴일은 제외하고, 대치동은 중심에서 800m 안의 링크만 사용한다. 링크별 요일·5분 칸의 하위 중앙값을 구한 뒤 링크 길이로 가중한 조화평균을 학원가 대표 속도로 저장하며, 같은 키를 다시 실행하면 기존 행을 갱신한다. 이번 실행에서 갱신되지 않은 기존 `COLLECTED` 행은 `SAMPLE_DAYS`를 0으로 바꾼다.
+
+수동 실행은 `backend/`에서 다음 명령을 사용한다.
+
+```sh
+docker compose exec -T -e N8N_RUNNERS_BROKER_PORT=5691 n8n n8n execute --id=trafficProfile01
+```
 
 ## 공영 주차장 하루 1회 수집
 
