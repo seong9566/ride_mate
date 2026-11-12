@@ -154,7 +154,7 @@ public class LinkTargetRow
 }
 
 /// <summary>
-/// 링크 관련 이벤트(LINK_SENT·REMIND_SENT·LINK_OPENED·CHILD_LEAVING) 한 건
+/// 링크 관련 이벤트(LINK_SENT·LINK_RESENT·REMIND_SENT·LINK_OPENED·CHILD_LEAVING) 한 건
 /// </summary>
 public class LinkEventRow
 {

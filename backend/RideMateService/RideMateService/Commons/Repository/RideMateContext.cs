@@ -772,7 +772,7 @@ public partial class RideMateContext : DbContext
                 .HasColumnName("EVENT_DT");
             entity.Property(e => e.EventType)
                 .HasMaxLength(20)
-                .HasComment("이벤트 유형 (PLANNED, STARTED, WAIT_STARTED, END_TIME_CHANGED, REASSIGNED, LINK_SENT, LINK_OPENED, CHILD_LEAVING, LEAVE_SCHEDULED, LEAVE_CANCELED, STOPPED, WRONG_STOP, REMIND_SENT, LOOP_STARTED, BOARDED, EXPIRED, CANCELED)")
+                .HasComment("이벤트 유형 (PLANNED, STARTED, WAIT_STARTED, END_TIME_CHANGED, REASSIGNED, LINK_SENT, LINK_RESENT, LINK_OPENED, CHILD_LEAVING, LEAVE_SCHEDULED, LEAVE_CANCELED, STOPPED, WRONG_STOP, REMIND_SENT, LOOP_STARTED, BOARDED, EXPIRED, CANCELED)")
                 .HasColumnName("EVENT_TYPE");
             entity.Property(e => e.PickupPlanId)
                 .HasComment("오늘 계획 ID")

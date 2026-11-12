@@ -141,7 +141,7 @@ public interface IPickupRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 오늘 계획의 링크 관련 이벤트(LINK_SENT·REMIND_SENT·LINK_OPENED·CHILD_LEAVING)를 PICKUP_EVENT_ID 순으로 조회한다
+    /// 오늘 계획의 링크 관련 이벤트(LINK_SENT·LINK_RESENT·REMIND_SENT·LINK_OPENED·CHILD_LEAVING)를 PICKUP_EVENT_ID 순으로 조회한다
     /// </summary>
     Task<List<LinkEventRow>> GetLinkEventsAsync(int pickupPlanId, IDbTransaction? transaction,
         CancellationToken cancellationToken = default);
