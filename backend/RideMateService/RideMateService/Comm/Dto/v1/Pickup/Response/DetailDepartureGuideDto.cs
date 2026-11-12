@@ -151,8 +151,8 @@ public class DepartureGuideReasonDto
 {
     /// <summary>
     /// 근거 코드 (ACADEMY_FRONT_RESTRICTED, HIGHER_SPOT_BLOCKED, NO_SPOT_AVAILABLE, CUSTOM_LOCATION, NO_ACADEMY_LOCATION,
-    /// SLOT_SHIFTED). NO_ACADEMY_LOCATION은 학원 좌표가 없어 픽업 지점·도보·단속 판정을 할 수 없다는 뜻이며 pickup은 null이다.
-    /// SLOT_SHIFTED는 계획의 배정 시각이 아이 도착 시각보다 늦다는 뜻이다
+    /// SLOT_SHIFTED, ROAD_CONGESTION). NO_ACADEMY_LOCATION은 학원 좌표가 없어 픽업 지점·도보·단속 판정을 할 수 없다는 뜻이며 pickup은 null이다.
+    /// SLOT_SHIFTED는 계획의 배정 시각이 아이 도착 시각보다 늦다는 뜻이고, ROAD_CONGESTION은 학원가 진입 혼잡으로 출발 시각을 당겼다는 뜻이다
     /// </summary>
     public string code { get; set; } = string.Empty;
 
@@ -190,4 +190,14 @@ public class DepartureGuideReasonDto
     /// SLOT_SHIFTED: 배정 시각 − 아이 도착 시각(분)
     /// </summary>
     public int? shiftMin { get; set; }
+
+    /// <summary>
+    /// ROAD_CONGESTION: 출발 시각을 당긴 시간(분)
+    /// </summary>
+    public int? congestionMin { get; set; }
+
+    /// <summary>
+    /// ROAD_CONGESTION: 혼잡 보정을 적용한 학원가 코드
+    /// </summary>
+    public string? areaCode { get; set; }
 }

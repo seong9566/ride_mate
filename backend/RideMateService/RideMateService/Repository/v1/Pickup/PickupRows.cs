@@ -41,6 +41,18 @@ public class ParkingLotRow
 }
 
 /// <summary>
+/// 학원가의 요일·5분 칸별 대표 속도 한 건
+/// </summary>
+public sealed class TrafficProfileRow
+{
+    public string AreaCode { get; set; } = string.Empty;
+    public string Source { get; set; } = string.Empty;
+    public short SlotMin { get; set; }
+    public decimal SpeedKmh { get; set; }
+    public short SampleDays { get; set; }
+}
+
+/// <summary>
 /// 학원의 픽업 지점 후보 한 건. WalkPathWkt는 SRID 4326 WKT라 점이 "위도 경도" 순이다
 /// </summary>
 public class PickupSpotRow

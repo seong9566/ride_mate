@@ -30,6 +30,11 @@ internal sealed class DepartureComputation
     public string DayType { get; init; } = string.Empty;
 
     /// <summary>
+    /// 계산 날짜의 공휴일 여부
+    /// </summary>
+    public bool IsHoliday { get; init; }
+
+    /// <summary>
     /// 요청이 지정한 현재 시각
     /// </summary>
     public DateTime Now { get; init; }

@@ -114,6 +114,48 @@ public partial class PickupRepository
     }
 
     /// <summary>
+    /// 학원가의 요일·5분 칸별 대표 속도를 조회한다. 학원가 코드가 없으면 빈 목록을 돌려준다
+    /// </summary>
+    public async Task<List<TrafficProfileRow>> GetTrafficProfileAsync(int areaId, byte dayOfWeek, short[] slotMins,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("areaId", areaId);
+            dp.Add("dayOfWeek", dayOfWeek);
+            dp.Add("slotMins", slotMins);
+
+            var sql = @"
+                SELECT p.AREA_CODE AS AreaCode,
+                       p.SOURCE AS Source,
+                       p.SLOT_MIN AS SlotMin,
+                       p.SPEED_KMH AS SpeedKmh,
+                       p.SAMPLE_DAYS AS SampleDays
+                FROM AREA AS a
+                INNER JOIN TRAFFIC_PROFILE AS p
+                        ON p.AREA_CODE = a.AREA_CODE
+                WHERE a.AREA_ID = @areaId
+                  AND a.DELETE_YN = 0
+                  AND p.DELETE_YN = 0
+                  AND p.DAY_OF_WEEK = @dayOfWeek
+                  AND p.SLOT_MIN IN @slotMins";
+
+            var rows = await _dapper.QueryAsync<TrafficProfileRow>(
+                new CommandDefinition(sql, dp, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            return rows.ToList();
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
     /// 주차장이 그 학원가(AREA_ID)의 살아 있는 대기 장소인지 본다. 없거나 삭제됐거나 다른 학원가면 false
     /// </summary>
     public async Task<bool> IsParkingLotInAreaAsync(int parkingLotId, int areaId,

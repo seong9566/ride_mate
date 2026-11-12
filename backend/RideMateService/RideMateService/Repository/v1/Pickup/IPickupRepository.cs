@@ -67,6 +67,12 @@ public interface IPickupRepository
     Task<List<ParkingLotRow>> GetParkingLotsAsync(int areaId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 학원가의 요일·5분 칸별 대표 속도를 조회한다. 학원가 코드가 없으면 빈 목록을 돌려준다
+    /// </summary>
+    Task<List<TrafficProfileRow>> GetTrafficProfileAsync(int areaId, byte dayOfWeek, short[] slotMins,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 주차장이 그 학원가(AREA_ID)의 살아 있는 대기 장소인지 본다. 없거나 삭제됐거나 다른 학원가면 false
     /// </summary>
     Task<bool> IsParkingLotInAreaAsync(int parkingLotId, int areaId, CancellationToken cancellationToken = default);
