@@ -36,8 +36,3 @@ public class ChildPickupVehicleEventDto
 /// <param name="PickupPlanId">픽업 계획 ID</param>
 /// <param name="TokenHash">링크 토큰 해시</param>
 public sealed record ChildPickupStreamTicket(int PickupPlanId, string TokenHash);
-
-/// <summary>아이 픽업 SSE 이벤트</summary>
-/// <param name="EventName">이벤트 이름. null이면 하트비트 주석 줄</param>
-/// <param name="Data">이벤트 데이터</param>
-public sealed record ChildPickupStreamEvent(string? EventName, object? Data);

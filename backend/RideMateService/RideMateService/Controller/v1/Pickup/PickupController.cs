@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Options;
+using Newtonsoft.Json;
 using RideMateService.Comm;
 using RideMateService.Comm.Dto.v1.Pickup.Request;
 using RideMateService.Comm.Dto.v1.Pickup.Response;
@@ -15,11 +17,14 @@ public class PickupController : ApiControllerBase
 {
     private readonly ILogService _logService;
     private readonly IPickupService _pickupService;
+    private readonly JsonSerializerSettings _jsonSettings;
 
-    public PickupController(ILogService logService, IPickupService pickupService)
+    public PickupController(ILogService logService, IPickupService pickupService,
+        IOptions<MvcNewtonsoftJsonOptions> jsonOptions)
     {
         this._logService = logService;
         this._pickupService = pickupService;
+        this._jsonSettings = jsonOptions.Value.SerializerSettings;
     }
 
     /// <summary>
@@ -208,6 +213,54 @@ public class PickupController : ApiControllerBase
 #if DEBUG
             _logService.ConsoleWarning(ex.ToString());
 #endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
+
+    /// <summary>
+    /// 픽업 링크 전달 상태 실시간 연결(SSE)
+    /// </summary>
+    /// <remarks>
+    /// 판정 실패는 SSE가 아니라 JSON이다: 400 pickupPlanSeq 없음, 401 인증 실패, 404 계획 없음·남의 계획·끝난 계획, 429 요청 초과(사용자마다 1분 20회), 500.
+    /// 성공하면 text/event-stream으로 연결 직후 `linkStatus`(DetailPickupLinkStatus의 data와 같은 모양) 하나를 보내고, 아이 열람·출발 알림·"곧 나와요" 전환·문자 발송 결과로 값이 바뀔 때만 다시 보낸다. 15초마다 `: ping` 주석 줄.
+    /// 계획이 끝나면(만료 시각 포함) `closed`를 보내고 닫는다. 접근 토큰 만료 시각, 30분, 같은 계획의 차량 연결 5개 초과(가장 오래된 것)에도 서버가 닫는다. 기존 DetailPickupLinkStatus 조회는 그대로 쓸 수 있다.
+    /// </remarks>
+    [HttpGet]
+    [Route("v1/Pickup/M/sign/DetailPickupLinkStream")]
+    [EnableRateLimiting(PickupLinkStreamRateLimit.PolicyName)]
+    [SwaggerOperation(Summary = "픽업 링크 전달 상태 실시간 연결(SSE)")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ResponseModel<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(void), StatusCodes.Status429TooManyRequests)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> DetailPickupLinkStream([FromQuery] PickupLinkStatusQueryDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _pickupService.OpenPickupLinkStreamService(dto, cancellationToken).ConfigureAwait(false);
+            if (model.code != 200)
+                return ToActionResult(model);
+
+            await SseWriter.WriteAsync(Response, _pickupService.ReadPickupLinkStreamAsync(model.data!, cancellationToken),
+                _jsonSettings, cancellationToken).ConfigureAwait(false);
+            return new EmptyResult();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new EmptyResult();
+        }
+        catch (Exception ex)
+        {
+            var message = $"vehicle link stream failed: plan={dto?.pickupPlanSeq?.ToString() ?? "unknown"}\n{ex}";
+            _logService.LogMessage(message);
+#if DEBUG
+            _logService.ConsoleWarning(message);
+#endif
+            if (Response.HasStarted)
+                return new EmptyResult();
+
+            Response.ContentType = null;
             return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
         }
     }

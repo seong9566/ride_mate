@@ -118,6 +118,15 @@ public static class InfrastructureExtensions
                         QueueLimit = 0
                     })
                     : RateLimitPartition.GetNoLimiter(string.Empty));
+            options.AddPolicy(PickupLinkStreamRateLimit.PolicyName, context =>
+                context.User.FindFirstValue("sub") is { } userId
+                    ? RateLimitPartition.GetFixedWindowLimiter(userId, _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = PickupLinkStreamRateLimit.PermitLimit,
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueLimit = 0
+                    })
+                    : RateLimitPartition.GetNoLimiter(string.Empty));
 
             // 아이 픽업 안내 API: 토큰별 제한 → 전체 공용 상한 순서로 묶는다. 토큰별 제한을 통과한 요청만 공용 상한을 쓴다.
             // 엔드포인트 정책은 GlobalLimiter 뒤에 획득되고 고정 창 허용량은 거절돼도 돌려주지 않으므로 둘 다 여기 둔다(PR #40 리뷰)

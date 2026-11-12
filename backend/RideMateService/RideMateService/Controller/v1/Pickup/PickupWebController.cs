@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
@@ -136,19 +135,8 @@ public class PickupWebController : ApiControllerBase
                 return ToActionResult(model);
 
             pickupPlanId = model.data!.PickupPlanId;
-            Response.StatusCode = StatusCodes.Status200OK;
-            Response.ContentType = "text/event-stream; charset=utf-8";
-            Response.Headers.CacheControl = "no-store";
-            Response.Headers["X-Accel-Buffering"] = "no";
-            HttpContext.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
-            await foreach (var e in _pickupService.ReadChildPickupStreamAsync(model.data!, cancellationToken))
-            {
-                var payload = e.EventName is null
-                    ? ": ping\n\n"
-                    : $"event: {e.EventName}\ndata: {JsonConvert.SerializeObject(e.Data, Formatting.None, _jsonSettings)}\n\n";
-                await Response.WriteAsync(payload, cancellationToken).ConfigureAwait(false);
-                await Response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
-            }
+            await SseWriter.WriteAsync(Response, _pickupService.ReadChildPickupStreamAsync(model.data!, cancellationToken),
+                _jsonSettings, cancellationToken).ConfigureAwait(false);
             return new EmptyResult();
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

@@ -123,6 +123,18 @@ public interface IPickupService
         CancellationToken cancellationToken = default);
 
     /// <summary>아이 픽업 실시간 이벤트를 읽는다. 요청 취소 외 오류는 기록하고 연결을 끝낸다</summary>
-    IAsyncEnumerable<ChildPickupStreamEvent> ReadChildPickupStreamAsync(ChildPickupStreamTicket ticket,
+    IAsyncEnumerable<SseEvent> ReadChildPickupStreamAsync(ChildPickupStreamTicket ticket,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 차량 픽업 링크 전달 상태 실시간 연결을 판정한다. 401·400·404는 DetailPickupLinkStatus와 같다
+    /// </summary>
+    Task<ResponseModel<PickupLinkStreamTicket>> OpenPickupLinkStreamService(PickupLinkStatusQueryDto dto,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 차량 픽업 링크 전달 상태 실시간 이벤트를 읽는다. Service가 ResponseModel을 돌려준다는 규칙의 예외다(service.md)
+    /// </summary>
+    IAsyncEnumerable<SseEvent> ReadPickupLinkStreamAsync(PickupLinkStreamTicket ticket,
         CancellationToken cancellationToken = default);
 }

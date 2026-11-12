@@ -46,8 +46,19 @@ public interface IPickupLiveHub
     /// <summary>위치를 지우고 계획 종료를 구독에 알린다</summary>
     void NotifyPlanEnded(int pickupPlanId);
 
-    /// <summary>계획을 구독한다. 상한을 넘으면 가장 오래된 구독을 완료한다</summary>
-    PickupLiveSubscription Subscribe(int pickupPlanId);
+    /// <summary>계획을 구독한다. 상한은 대상(아이·차량)마다 세고, 넘으면 그 대상의 가장 오래된 구독을 완료한다</summary>
+    PickupLiveSubscription Subscribe(int pickupPlanId, PickupLiveAudience audience);
+}
+
+/// <summary>
+/// 구독 대상. 연결 상한을 대상마다 따로 세서 아이 화면 연결이 차량 연결을 밀어내지 않게 한다
+/// </summary>
+public enum PickupLiveAudience
+{
+    /// <summary>아이 휴대폰 웹(픽업 안내 실시간 연결)</summary>
+    Child,
+    /// <summary>차량 앱(픽업 링크 전달 상태 실시간 연결)</summary>
+    Vehicle
 }
 
 /// <summary>
@@ -193,8 +204,8 @@ public sealed class PickupLiveHub : IPickupLiveHub, IDisposable
         Notify(pickupPlanId, PickupLiveSignal.PlanEnded);
     }
 
-    /// <summary>계획을 구독하고 상한을 넘으면 가장 오래된 구독을 완료한다</summary>
-    public PickupLiveSubscription Subscribe(int pickupPlanId)
+    /// <summary>계획을 구독하고 그 대상의 상한을 넘으면 그 대상의 가장 오래된 구독을 완료한다</summary>
+    public PickupLiveSubscription Subscribe(int pickupPlanId, PickupLiveAudience audience)
     {
         while (true)
         {
@@ -203,20 +214,21 @@ public sealed class PickupLiveHub : IPickupLiveHub, IDisposable
             {
                 if (!IsCurrent(pickupPlanId, state))
                     continue;
+                var subscriptions = state.For(audience);
                 var subscription = new PickupLiveSubscription(sub =>
                 {
                     lock (state)
                     {
-                        state.Subscriptions.Remove(sub);
+                        subscriptions.Remove(sub);
                         sub.Complete();
                         RemoveIfEmpty(pickupPlanId, state);
                     }
                 });
-                state.Subscriptions.Add(subscription);
-                if (state.Subscriptions.Count > _options.MaxStreamsPerPlan)
+                subscriptions.Add(subscription);
+                if (subscriptions.Count > _options.MaxStreamsPerPlan)
                 {
-                    state.Subscriptions[0].Complete();
-                    state.Subscriptions.RemoveAt(0);
+                    subscriptions[0].Complete();
+                    subscriptions.RemoveAt(0);
                 }
                 return subscription;
             }
@@ -248,19 +260,27 @@ public sealed class PickupLiveHub : IPickupLiveHub, IDisposable
     // 호출자는 반드시 해당 계획의 잠금을 보유한다
     private void RemoveIfEmpty(int pickupPlanId, PlanState state)
     {
-        if (state.Position is null && state.Subscriptions.Count == 0 && IsCurrent(pickupPlanId, state))
+        if (state.Position is null && state.ChildSubscriptions.Count == 0 && state.VehicleSubscriptions.Count == 0
+            && IsCurrent(pickupPlanId, state))
             _plans.TryRemove(pickupPlanId, out _);
     }
 
+    // 신호는 두 대상 모두에 보낸다. 무엇을 다시 읽을지는 각 스트림이 정한다
     private static void Publish(PlanState state, PickupLiveSignal signal)
     {
-        foreach (var subscription in state.Subscriptions)
+        foreach (var subscription in state.ChildSubscriptions)
+            subscription.Post(signal);
+        foreach (var subscription in state.VehicleSubscriptions)
             subscription.Post(signal);
     }
 
     private sealed class PlanState
     {
         public VehiclePosition? Position { get; set; }
-        public List<PickupLiveSubscription> Subscriptions { get; } = new();
+        public List<PickupLiveSubscription> ChildSubscriptions { get; } = new();
+        public List<PickupLiveSubscription> VehicleSubscriptions { get; } = new();
+
+        public List<PickupLiveSubscription> For(PickupLiveAudience audience) =>
+            audience == PickupLiveAudience.Vehicle ? VehicleSubscriptions : ChildSubscriptions;
     }
 }
