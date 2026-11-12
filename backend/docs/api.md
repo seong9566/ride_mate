@@ -389,10 +389,10 @@
 | `ALREADY_STOPPED` | `STATUS`가 `STOPPED`·`LOOPING`이다. 정차 뒤에는 `AddPickupRemind`를 쓴다 | `AddPickupLinkResend` |
 | `LINK_NOT_SENT` | 접수된 링크 발송(`LINK_SENT` 성공)이 없다. 링크 세션이 없는 경우도 같다 | `AddPickupLinkResend`, `AddPickupRemind` |
 | `ALREADY_SENT` | 그 유형의 발송이 이미 접수됐다 | 세 API 모두 |
-| `IN_PROGRESS` | 그 유형의 발송이 진행 중이다(결과가 없고 만든 지 `PickupLink:InFlightTimeoutSec`, 30초가 안 됐다) | 세 API 모두 |
+| `IN_PROGRESS` | 그 유형의 발송이 진행 중이다(결과가 없고 만든 지 `PickupLink:InFlightTimeoutSec`, 30초가 안 됐다). `AddPickupRemind`는 정차 전에 시작한 링크 다시 보내기(`LINK_RESENT`)가 아직 진행 중일 때도 이 사유다 — 다시 보내기 문자(이전 도착 예정 시각)가 "도착했어요" 뒤에 나가지 않게 한다 | 세 API 모두 |
 | `LIMIT_REACHED` | 그 유형의 시도가 `PickupLink:MaxAttempts`(3)에 이르렀다. 성공·실패·진행 중을 모두 센다(성공 1회 + 실패 재시도 2회) | 세 API 모두 |
 
-- 판정 순서는 404 → `PLAN_CLOSED` → `NO_SPOT` → `NO_CHILD_PHONE` → (`AddPickupRemind`만) `NOT_STOPPED` → (`AddPickupLinkResend`만) `ALREADY_STOPPED` → `LINK_NOT_SENT`(`AddPickupLinkResend`·`AddPickupRemind`) → 같은 `clientEventId` 재시도 확인 → `ALREADY_SENT` → `IN_PROGRESS` → `LIMIT_REACHED`다. 먼저 걸린 것을 돌려준다.
+- 판정 순서는 404 → `PLAN_CLOSED` → `NO_SPOT` → `NO_CHILD_PHONE` → (`AddPickupRemind`만) `NOT_STOPPED` → (`AddPickupLinkResend`만) `ALREADY_STOPPED` → `LINK_NOT_SENT`(`AddPickupLinkResend`·`AddPickupRemind`) → (`AddPickupRemind`만) 진행 중인 다시 보내기면 `IN_PROGRESS` → 같은 `clientEventId` 재시도 확인 → `ALREADY_SENT` → `IN_PROGRESS` → `LIMIT_REACHED`다. 먼저 걸린 것을 돌려준다.
 - 409의 `remainingAttempts`는 `IN_PROGRESS`만 남은 횟수이고 나머지는 0이다. `receiverLast4`는 `ALREADY_SENT`·`IN_PROGRESS`·`LIMIT_REACHED`에만 있고 나머지는 null이다.
 - 링크·링크 다시 보내기·다시 알림은 서로 다른 이벤트(`LINK_SENT`·`LINK_RESENT`·`REMIND_SENT`)라 시도 횟수와 `ALREADY_SENT`를 따로 센다.
 - 문자의 장소 이름은 기본 지점이면 지점 이름(`SPOT_NAME`), 임의 좌표면 계획에 저장된 장소 이름(`CUSTOM_NAME`)이다.

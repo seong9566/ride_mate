@@ -291,6 +291,18 @@ public partial class PickupService
                         await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
                         return LinkConflict(ReasonLinkNotSent);
                     }
+
+                    // 정차 전에 시작한 링크 다시 보내기(LINK_RESENT)가 아직 진행 중이면 받지 않는다. 다시 보내기 문자(이전 도착 예정 시각)가
+                    // "도착했어요" 뒤에 나가는 순서 역전을 막는다. 정차 뒤에는 다시 보내기가 새로 시작되지 않는다
+                    var resendSummary = PickupLinkSendState.Summarize(events, EventLinkResent, thisTime,
+                        _linkOptions.InFlightTimeoutSec, _linkOptions.MaxAttempts);
+                    if (resendSummary.Status == PickupLinkSendState.StatusSending)
+                    {
+                        var remindSummary = PickupLinkSendState.Summarize(events, EventRemindSent, thisTime,
+                            _linkOptions.InFlightTimeoutSec, _linkOptions.MaxAttempts);
+                        await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return LinkConflict(ReasonInProgress, remindSummary.RemainingAttempts, receiverLast4);
+                    }
                 }
 
                 var summary = PickupLinkSendState.Summarize(events, eventType, thisTime,
