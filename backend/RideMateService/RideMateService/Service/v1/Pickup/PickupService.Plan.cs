@@ -32,13 +32,21 @@ public partial class PickupService
     private const string ReasonAlreadyStopped = "ALREADY_STOPPED";
     private const string DefaultCustomName = "부모님이 정한 장소";
     private const int PlanAreaRetryMaxAttempts = 3;
+    private const int DeadlockMaxAttempts = 3;
     private static readonly string[] LocationChangeableStatuses = { "PLANNED", "STARTED", "WAITING" };
 
     /// <summary>
     /// 오늘 픽업 계획 만들기(이미 있으면 그 계획). 기본 지점을 우선순위·금지 시간·정원으로 배정한다
     /// </summary>
-    public async Task<ResponseModel<PickupPlanDto>> AddPickupPlanService(AddPickupPlanDto dto,
+    public Task<ResponseModel<PickupPlanDto>> AddPickupPlanService(AddPickupPlanDto dto,
         CancellationToken cancellationToken = default)
+    {
+        return RetryOnDeadlockAsync(() => AddPickupPlanCoreAsync(dto, cancellationToken), cancellationToken);
+    }
+
+    // 교착은 RetryOnDeadlockAsync가 다시 실행하므로 여기서는 500으로 바꾸지 않고 올려보낸다
+    private async Task<ResponseModel<PickupPlanDto>> AddPickupPlanCoreAsync(AddPickupPlanDto dto,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -59,10 +67,10 @@ public partial class PickupService
                     return result;
             }
 
-            _logService.LogMessage($"pickup plan create gave up: area changed {PlanAreaRetryMaxAttempts} times, user={userId}");
+            _logService.LogMessage($"pickup plan create gave up: area changed or missing {PlanAreaRetryMaxAttempts} times");
             return new ResponseModel<PickupPlanDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
         }
-        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 그대로 올려보낸다
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && !IsDeadlock(ex)) // 요청 취소·교착은 그대로 올려보낸다
         {
             _logService.LogMessage(ex.ToString());
 #if DEBUG
@@ -873,6 +881,47 @@ public partial class PickupService
     // 이벤트 DETAIL의 시각 형식(오프셋 없는 KST)
     private static string? FormatEventDt(DateTime? value)
         => value?.ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture);
+
+    // 교착(MySQL 1213)이면 변경 추적을 비우고 트랜잭션 전체를 다시 실행한다(최대 3번 실행)
+    private async Task<ResponseModel<T>> RetryOnDeadlockAsync<T>(Func<Task<ResponseModel<T>>> work,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await work().ConfigureAwait(false);
+            }
+            catch (Exception ex) when (IsDeadlock(ex))
+            {
+                _context.ChangeTracker.Clear();
+                if (attempt < DeadlockMaxAttempts)
+                {
+                    _logService.LogMessage($"pickup deadlock, retrying: attempt={attempt + 1}/{DeadlockMaxAttempts}");
+                    // 동시에 진 요청들이 같은 순간에 다시 잠금을 잡지 않도록 무작위로 기다린다
+                    await Task.Delay(Random.Shared.Next(10, 50), cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                _logService.LogMessage(ex.ToString());
+#if DEBUG
+                _logService.ConsoleWarning(ex.ToString());
+#endif
+                return new ResponseModel<T> { message = "서버에서 요청을 처리하지 못하였습니다.", data = default, code = 500 };
+            }
+        }
+    }
+
+    private static bool IsDeadlock(Exception? ex)
+    {
+        for (; ex is not null; ex = ex.InnerException)
+        {
+            if (ex is MySqlException { Number: 1213 })
+                return true;
+        }
+
+        return false;
+    }
 
     private static bool IsPlanDuplicateKey(Exception? ex)
     {

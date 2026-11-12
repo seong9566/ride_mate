@@ -1132,14 +1132,14 @@ public partial class PickupRepository
             await _dapper.ExecuteAsync(
                 new CommandDefinition(clearDetailSql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-            // 5) 탑승·만료로 끝나면 그날 다시 만들지 않게 LAST_PICKUP_DATE를 계획의 날짜로 바꾼다(취소는 바꾸지 않는다)
+            // 5) 탑승·만료로 끝나면 그날 다시 만들지 않게 LAST_PICKUP_DATE를 계획의 날짜로 바꾼다(취소는 바꾸지 않는다). 더 늦은 날짜는 되돌리지 않는다
             if (setLastPickupDate && plan.TimetableDayId is not null)
             {
                 // DateOnly를 그대로 넘기면 드라이버가 문화권 형식 문자열로 보낸다
                 dp.Add("pickupDate", plan.PickupDate.ToDateTime(TimeOnly.MinValue), DbType.Date);
                 var lastPickupSql = @"
                     UPDATE TIMETABLE_DAY
-                    SET LAST_PICKUP_DATE = @pickupDate,
+                    SET LAST_PICKUP_DATE = GREATEST(COALESCE(LAST_PICKUP_DATE, @pickupDate), @pickupDate),
                         UPDATE_DT = @now,
                         UPDATE_USER = @updateUser
                     WHERE TIMETABLE_DAY_ID = @timetableDayId";

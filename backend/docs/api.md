@@ -241,7 +241,7 @@
   - 늦은 출발: 차 도착 예상(`eventDt + driveMin`, 분 단위 올림)이 `slotDt`보다 늦으면 같은 장소에서 다시 배정하고 `reassigned`가 true다. 임의 좌표는 차 도착 예상 시각이 배정 시각이 된다. 기본 지점은 차 도착 예상부터 `PickupPlan:SlotShiftMaxMin`(2분)까지 1분씩 늦춰 정원이 남은 첫 시각을 쓰고, 자리가 없으면 정원을 넘어도 차 도착 예상 시각으로 배정한다. 다른 지점으로 옮기지 않는다. [ADR-0021] 배정 장소가 없는 계획은 다시 배정하지 않는다.
   - 이미 `STARTED`면 `clientEventId`와 상관없이 지금 계획을 200으로 돌려준다. 단, `eventDt` 범위 검사가 먼저라 10분이 지난 재시도는 400이다.
 - `clientEventId`는 차량이 요청마다 만드는 UUID다. 같은 요청을 다시 부를 때는 같은 값을 보낸다. 같은 번호의 같은 유형 이벤트(장소 바꾸기는 `REASSIGNED`, 경로 시작은 `STARTED`)가 이미 있으면 다시 반영하지 않고 지금 계획을 200으로 돌려준다. 이 계획의 다른 어떤 이벤트(링크 발송·다시 알림 포함)에 쓰인 번호면 `data`가 null인 400이다.
-- `expireDt`는 `slotDt`(없으면 하원 시각) + `PickupPlan:ExpireAfterHours`(1시간)이고 재배정하면 다시 계산한다. 서버 주기 작업이 `PickupPlan:ExpireIntervalSec`(60초)마다, 그리고 서버 시작 직후 한 번 `expireDt`가 지난 진행 중 계획을 `EXPIRED`로 끝내고 익명화한다. 끝난 계획은 `UpdatePickupPlanLocation`·`UpdatePickupPlanStart`에서 404이고, 그 시간표는 그날 다시 대상이 되지 않는다(`LAST_PICKUP_DATE`).
+- `expireDt`는 `slotDt`(없으면 하원 시각) + `PickupPlan:ExpireAfterHours`(1시간)이고 재배정하면 다시 계산한다. `PickupPlan:ExpireAfterHours`가 `DepartureGuide:PickupWindowHours`보다 작으면 서버가 기동하지 않는다(창이 남은 픽업의 계획이 먼저 만료되지 않게). 서버 주기 작업이 `PickupPlan:ExpireIntervalSec`(60초)마다, 그리고 서버 시작 직후 한 번 `expireDt`가 지난 진행 중 계획을 `EXPIRED`로 끝내고 익명화한다. 끝난 계획은 `UpdatePickupPlanLocation`·`UpdatePickupPlanStart`에서 404이고, 그 시간표는 그날 다시 대상이 되지 않는다(`LAST_PICKUP_DATE`).
 
 | code | `AddPickupPlan` | `UpdatePickupPlanLocation` | `UpdatePickupPlanStart` |
 |---|---|---|---|
