@@ -96,7 +96,7 @@ Controller ──▶ Service ──▶ Repository ──▶ DbContext / IDbConne
 
 | 수명 | 대상 |
 |---|---|
-| Singleton | `IConnectionMultiplexer`, 서명·암호 키를 들고 있는 서비스 |
+| Singleton | `IConnectionMultiplexer`, 서명·암호 키를 들고 있는 서비스, 실시간 픽업 허브 `IPickupLiveHub`(계획별 차 마지막 위치와 SSE 구독. 서버 한 대 기준) [ADR-0024] |
 | Transient | Repository, Service, `ILogService`, `IDbConnection` |
 | Scoped | `DbContext` (`AddDbContext` 기본값) |
 

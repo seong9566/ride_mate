@@ -233,6 +233,7 @@
 | `PATCH /api/v1/Pickup/M/sign/UpdatePickupPlanWait` | 대기 장소 도착. 본문 `pickupPlanSeq`·`clientEventId`·`eventDt`·`parkingLotSeq`가 모두 필수다 |
 | `PATCH /api/v1/Pickup/M/sign/UpdatePickupPlanStop` | 정차. 본문 `pickupPlanSeq`·`clientEventId`·`eventDt`·`lat`·`lng`가 모두 필수다. 서버가 배정 장소와의 거리와 정차 위치의 단속 구역을 판정한다 |
 | `PATCH /api/v1/Pickup/M/sign/UpdatePickupPlanBoard` | 탑승. 본문 `pickupPlanSeq`·`clientEventId`·`eventDt`가 모두 필수다. 계획을 `BOARDED`로 끝낸다 |
+| `PATCH /api/v1/Pickup/M/sign/UpdatePickupPlanPosition` | 차 위치·내비 남은 시간 보고. 본문 `pickupPlanSeq`·`lat`·`lng`는 필수, `etaSec`는 선택이다. DB에 쓰지 않는다(아래 "아이 픽업 안내"의 "차 위치 보고") |
 | `DELETE /api/v1/Pickup/M/sign/DeletePickupPlan` | 부모 취소. JSON 본문 `pickupPlanSeq`·`clientEventId`가 모두 필수다(`DeleteQrLogin`과 같이 DELETE에 본문을 싣는다). 계획을 `CANCELED`로 끝낸다 |
 
 - 여섯 API의 응답 `data`는 같은 모양이다: `{ reason, pickupPlanSeq, status, pickupDate, endTime, academyName, pickup, slotDt, expireDt, reassigned, stopCheck, cancelNotice, parkingLotSeq }`. `pickup`은 `{ locationType, pickupSpotSeq, name, lat, lng, walkMin, guideText, photoUrl }`이고 `locationType`은 `SPOT`(기본 지점)·`CUSTOM`(임의 좌표)이다. 배정 장소가 없으면 `pickup`과 `slotDt`가 null이다. 값이 없는 필드도 null로 나간다.
@@ -427,6 +428,7 @@
 |---|---|
 | `GET /api/v1/Pickup/W/DetailChildPickup` | 화면 전체 데이터. 끝난 링크도 200이고 `linkStatus`로 나눈다 |
 | `POST /api/v1/Pickup/W/AddPickupLinkOpen` | 링크 열람 기록. 본문 없음. 웹이 화면을 처음 그린 뒤 한 번 부른다 |
+| `GET /api/v1/Pickup/W/DetailChildPickupStream` | 실시간 연결(SSE). 화면 전체를 먼저 보내고, 차 위치와 상태 변화를 바로 보낸다(아래 "실시간 연결") |
 
 - 열람 기록을 조회와 나눈 것은 GET에 쓰기 부작용을 두지 않으려는 것이다. 웹의 15초 대체 조회나 미리 불러오기가 기록을 건드리지 않는다.
 - 열람은 계획마다 한 번만 기록한다(`LINK_OPENED`). 다시 부르면 이벤트를 늘리지 않고 첫 열람 시각을 돌려준다. 계획 행을 잠근 뒤 이력을 다시 읽으므로 동시에 두 번 와도 한 건이다.
@@ -446,8 +448,8 @@
 | `planStatus` | `PLANNED`·`STARTED`·`WAITING`·`STOPPED`·`LOOPING` |
 | `stopAtSpot` | `planStatus`가 `STOPPED`일 때만 값이 있다. 마지막 정차 이벤트가 `STOPPED`(배정 장소 반경 안)면 true, `WRONG_STOP`이면 false |
 | `slotDt` | 배정 도착 시각 |
-| `arrivalDt`·`arrivalSource` | 화면에 보여줄 도착 예정과 그 근거. 지금은 늘 `slotDt`와 `SLOT`이다(배정 시각이 없으면 둘 다 null). 차 위치 보고가 생기면 `NAVI`(차량 내비 남은 시간)가 더해진다 |
-| `vehicle` | 차 현재 위치 `{ lat, lng, reportedDt }`. 차 위치 보고가 생기면 값이 있다. 지금은 늘 null |
+| `arrivalDt`·`arrivalSource` | 화면에 보여줄 도착 예정과 그 근거. 신선한 차 위치에 내비 남은 시간이 있으면 `reportedDt + etaSec`와 `NAVI`, 아니면 `slotDt`와 `SLOT`이다(배정 시각이 없으면 둘 다 null). 실시간 도착 예정은 화면 표시에만 쓰고 배정 시각·정원·만료 시각을 바꾸지 않는다 |
+| `vehicle` | 차 현재 위치 `{ lat, lng, reportedDt }`. 서버가 마지막 위치를 받은 지 `PickupLive:VehicleStaleSec`(30초) 안일 때만 값이 있다. 위치 기능 스위치(`PickupLive:VehiclePositionEnabled`)가 꺼져 있으면 늘 null이다 |
 | `leave` | `{ leaveStatus, plannedLeaveDt, leavingDt }`. 아래 "아이 출발 알림"의 출발 상태다 |
 
 화면 문구는 웹이 이 값으로 만든다.
@@ -464,7 +466,52 @@
 | 429 | 요청 빈도 제한. 본문 없음, `Retry-After` 헤더 | 429 |
 
 - `AddPickupLinkOpen` 응답 `data`는 `{ reason, openedDt }`다. `openedDt`는 첫 열람 시각이다.
-- 빈도 제한은 IP가 아니라 링크 토큰마다 센다(정확히는 토큰 해시를 4096칸으로 나눈 칸마다). 조회는 1분 30회, 열람 기록은 1분 10회다. 두 API를 합쳐 전체 1분 600회의 공용 상한이 따로 있다. 토큰 형식이 틀린 요청은 DB를 부르기 전에 404로 끝나므로 세지 않는다(`security.md`).
+- 빈도 제한은 IP가 아니라 링크 토큰마다 센다(정확히는 토큰 해시를 4096칸으로 나눈 칸마다). 조회는 1분 30회, 열람 기록은 1분 10회, 실시간 연결 시도는 1분 10회다. 세 API를 합쳐 전체 1분 600회의 공용 상한이 따로 있다. 토큰 형식이 틀린 요청은 DB를 부르기 전에 404로 끝나므로 세지 않는다(`security.md`).
+
+### 차 위치 보고
+
+`PATCH /api/v1/Pickup/M/sign/UpdatePickupPlanPosition`(차량, Bearer). 본문은 `{ pickupPlanSeq, lat, lng, etaSec }`다. [ADR-0024]
+
+- 차량은 경로 시작부터 탑승 전까지 3초마다 보낸다. 위치는 지금 값만 의미가 있으므로 오프라인 대기열에 쌓아 다시 보내지 않는다.
+- `etaSec`(0~10800초)는 내비 목적지가 그 계획의 픽업 장소일 때만 보낸다. 대기 장소로 안내 중이거나 경로 안내가 없으면 비운다. 위도 -90~90, 경도 -180~180이다.
+- 서버는 위치를 메모리에 계획마다 마지막 하나만 두고 DB·로그에 남기지 않는다. 받은 시각(서버 시각)을 함께 둔다. 같은 계획에 `PickupLive:PositionMinIntervalSec`(1초) 안에 다시 온 보고는 200으로 받고 버린다.
+- 위치 기능 스위치 `PickupLive:VehiclePositionEnabled`가 꺼져 있으면 판정만 하고 200으로 받고 버린다. 차량 앱은 고치지 않아도 된다.
+- 요청 빈도는 사용자(JWT `sub`)마다 1분 60회다. 넘으면 429 + `Retry-After`다.
+
+| code | 상황 | HTTP |
+|---|---|---|
+| 200 | 받았다(버린 보고 포함). `data`는 null | 200 |
+| 400 | 필수 값 없음·범위 밖. `ProblemDetails` | 400 |
+| 401 | 인증 실패 | 401 |
+| 404 | 계획이 없거나, 로그인한 계정의 계획이 아니거나, 끝났다(`BOARDED`·`EXPIRED`·`CANCELED`). `data`는 null | 404 |
+| 409 | `data.reason`이 `PLAN_CLOSED`(`EXPIRE_DT`가 지남) 또는 `NOT_STARTED`(`PLANNED`) | 409 |
+| 429 | 요청 빈도 제한. 본문 없음 | 429 |
+
+### 실시간 연결
+
+`GET /api/v1/Pickup/W/DetailChildPickupStream`(아이 휴대폰 웹, SSE). 토큰은 `X-Pickup-Token` 헤더로만 받는다. 브라우저 `EventSource`는 헤더를 붙일 수 없으므로 웹은 `fetch` 스트리밍으로 읽는다. [ADR-0024]
+
+- 판정 실패는 SSE가 아니라 JSON 응답이다(404 없는 링크, 429, 500). 판정을 통과하면 `Content-Type: text/event-stream`, `Cache-Control: no-store`로 연결을 연다.
+- 연결 직후 `snapshot` 이벤트 하나를 보낸다. `data`는 `DetailChildPickup`의 `data`와 같은 모양에 `change`(null)를 더한 것이다.
+- 그 뒤 보내는 것
+
+| 이벤트 | 언제 | `data` |
+|---|---|---|
+| `snapshot` | 계획·출발 알림·정차·장소·탑승 등이 바뀌어 화면이 직전과 달라졌을 때 | 화면 전체 + `change` |
+| `vehicle` | 차 위치 보고를 받았을 때. 위치가 30초 넘게 오지 않게 되면 위치 칸이 null인 것을 한 번 보낸다 | `{ lat, lng, reportedDt, arrivalDt, arrivalSource, serverDt }` |
+| (주석 `: ping`) | 15초(`PickupLive:HeartbeatSec`)마다 | 없음. 중계기의 유휴 끊김을 막는다 |
+
+- `change`는 직전 스냅샷과 비교한 결과다. 여러 개에 해당하면 앞의 것 하나다. 단, `linkStatus`가 바뀌었으면(탑승·종료) 다른 칸과 상관없이 `STATUS_CHANGED`다. 끝난 링크는 장소 칸이 모두 비므로 장소 변경으로 보지 않는다. 비교에서 `serverDt`·`vehicle`·`arrivalDt`·`arrivalSource`는 뺀다(이 넷은 `vehicle` 이벤트로 보낸다).
+  - `PLACE_CHANGED`: `pickup`이나 `slotDt`가 바뀌었다. 웹은 "픽업 장소가 바뀌었어요" 토스트를 띄운다
+  - `STATUS_CHANGED`: `planStatus`·`stopAtSpot`·`linkStatus`가 바뀌었다
+  - `LEAVE_CHANGED`: `leave`가 바뀌었다
+  - `OTHER`: 그 밖
+- 서버가 연결을 닫는 경우
+  - 링크가 끝나면(`linkStatus`가 `ACTIVE`가 아니게 되면) 마지막 `snapshot`을 보내고 닫는다. `EXPIRE_DT`가 지나는 시각에도 만료 작업을 기다리지 않고 닫는다. 이미 끝난 링크로 연결하면 `snapshot` 하나를 보내고 바로 닫는다.
+  - 연결은 `PickupLive:StreamMaxLifetimeMin`(30분)이 지나면 닫는다.
+  - 한 계획의 연결은 `PickupLive:MaxStreamsPerPlan`(5)까지다. 넘으면 가장 오래된 연결을 닫는다.
+- 다시 연결하면 `snapshot`부터 다시 받는다. 놓친 이벤트를 다시 보내 주지는 않는다(`Last-Event-ID` 재생 없음).
+- 웹이 할 일(참고): 끊기면 1~3초 뒤 다시 연결한다. 3회 연속 실패하면 "연결이 불안정해요" 배너를 띄우고 15초 간격 `DetailChildPickup` 조회로 바꾼다.
 
 ## 아이 출발 알림
 
