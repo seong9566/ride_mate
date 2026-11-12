@@ -74,6 +74,7 @@ public partial class PickupService
                 }
 
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                SignalPlanChanged(session.PickupPlanId);
                 _context.ChangeTracker.Clear();
                 AddLeaveEvent(events, pickupEvent);
                 return LeaveSuccess(ChildLeaveState.Summarize(events, now, _linkOptions.LeaveSoonMin));
@@ -111,6 +112,7 @@ public partial class PickupService
             }
 
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            SignalPlanChanged(session.PickupPlanId);
             _context.ChangeTracker.Clear();
             AddLeaveEvent(events, scheduledEvent);
             return LeaveSuccess(ChildLeaveState.Summarize(events, now, _linkOptions.LeaveSoonMin));
@@ -183,6 +185,7 @@ public partial class PickupService
             }
 
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            SignalPlanChanged(session.PickupPlanId);
             _context.ChangeTracker.Clear();
             AddLeaveEvent(events, pickupEvent);
             return LeaveSuccess(ChildLeaveState.Summarize(events, now, _linkOptions.LeaveSoonMin));

@@ -261,6 +261,11 @@ public partial class PickupService : IPickupService
         }
     }
 
+    // 커밋한 뒤 그 계획의 실시간 연결에 "바뀜"을 알린다. 롤백·바꿀 것 없음 경로에서는 부르지 않는다
+    private void SignalPlanChanged(int pickupPlanId) => _liveHub.NotifyPlanChanged(pickupPlanId);
+    // 계획이 끝난(탑승·취소·만료) 커밋 뒤에 부른다. 허브의 차 위치를 지우고 연결에 알린다
+    private void SignalPlanEnded(int pickupPlanId) => _liveHub.NotifyPlanEnded(pickupPlanId);
+
     private async Task<DepartureComputation> ComputeDepartureAsync(int userId, DepartureGuideQueryDto dto,
         CancellationToken ct)
     {

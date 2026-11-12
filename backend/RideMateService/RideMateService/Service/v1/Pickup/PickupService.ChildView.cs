@@ -196,6 +196,7 @@ public partial class PickupService
             }
 
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            SignalPlanChanged(session.PickupPlanId);
             _context.ChangeTracker.Clear();
             return ChildPickupOpenSuccess(now);
         }

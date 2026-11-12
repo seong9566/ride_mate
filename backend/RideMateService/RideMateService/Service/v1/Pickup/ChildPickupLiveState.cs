@@ -9,6 +9,9 @@ public static class ChildPickupLiveState
     /// <summary>장소, 상태, 출발 알림, 기타 순서로 변경 종류를 돌려준다. 변경이 없으면 null</summary>
     public static string? Compare(ChildPickupDto previous, ChildPickupDto next)
     {
+        // 링크가 끝나면 장소 칸도 모두 비므로, 장소 변경보다 먼저 본다(끝날 때 "장소가 바뀌었어요" 토스트가 뜨지 않게)
+        if (previous.linkStatus != next.linkStatus)
+            return "STATUS_CHANGED";
         if (!Same(previous.pickup, next.pickup) || previous.slotDt != next.slotDt)
             return "PLACE_CHANGED";
         if (previous.planStatus != next.planStatus || previous.stopAtSpot != next.stopAtSpot

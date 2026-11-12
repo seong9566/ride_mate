@@ -228,6 +228,7 @@ public partial class PickupService
             }
 
             await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+            SignalPlanChanged(pickupPlanId);
 
             var result = await BuildPlanDtoAsync(pickupPlanId, false, null, cancellationToken).ConfigureAwait(false);
             result.stopCheck = stopCheck;
@@ -359,6 +360,7 @@ public partial class PickupService
             }
 
             await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+            SignalPlanEnded(pickupPlanId);
 
             // 끝난 계획은 개인정보 칸이 비어 있어 계획 ID와 상태만 돌려준다
             return PlanOk(new PickupPlanDto { pickupPlanSeq = pickupPlanId, status = PlanStatusBoarded, reassigned = false });
@@ -518,6 +520,7 @@ public partial class PickupService
                 }
 
                 await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+                SignalPlanEnded(pickupPlanId);
             }
 
             // 5) 잠금 밖에서 취소 문자를 보낸다. 요청이 끊겨도 보낸다. 결과는 응답으로만 알리고 실패해도 다시 보내지 않는다
@@ -716,6 +719,7 @@ public partial class PickupService
             }
 
             await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+            SignalPlanChanged(pickupPlanId);
 
             return PlanOk(await BuildPlanDtoAsync(pickupPlanId, false, null, cancellationToken).ConfigureAwait(false));
         }
