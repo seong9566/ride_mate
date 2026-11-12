@@ -3,16 +3,10 @@ using System.ComponentModel.DataAnnotations;
 namespace RideMateService.Comm.Dto.v1.Pickup.Request;
 
 /// <summary>
-/// 경로 시작 요청. 늦게 출발했으면 배정 시각을 차 도착 예상 시각으로 미룬다
+/// 경로 시작 요청. 오늘 계획이 없으면 만들면서 시작한다
 /// </summary>
 public class UpdatePickupPlanStartDto
 {
-    /// <summary>
-    /// 오늘 계획 ID
-    /// </summary>
-    [Required]
-    public int? pickupPlanSeq { get; set; }
-
     /// <summary>
     /// 차량 이벤트 UUID(PICKUP_EVENT.CLIENT_EVENT_ID). 같은 요청을 다시 부를 때는 같은 값을 보낸다
     /// </summary>
@@ -31,4 +25,16 @@ public class UpdatePickupPlanStartDto
     [Required]
     [Range(0, 300)]
     public int? driveMin { get; set; }
+
+    /// <summary>
+    /// 부모가 고른 픽업 위도. pickupLng와 함께 보낸다. 둘 다 없으면 기본 지점을 배정한다. 계획이 없을 때만 쓴다. 진행 중 계획이 있으면 무시한다
+    /// </summary>
+    [Range(-90.0, 90.0)]
+    public decimal? pickupLat { get; set; }
+
+    /// <summary>
+    /// 부모가 고른 픽업 경도. pickupLat와 함께 보낸다. 둘 다 없으면 기본 지점을 배정한다. 계획이 없을 때만 쓴다. 진행 중 계획이 있으면 무시한다
+    /// </summary>
+    [Range(-180.0, 180.0)]
+    public decimal? pickupLng { get; set; }
 }

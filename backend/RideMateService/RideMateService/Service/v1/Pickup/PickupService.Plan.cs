@@ -15,7 +15,6 @@ namespace RideMateService.Service.v1.Pickup;
 
 public partial class PickupService
 {
-    private const string PlanStatusPlanned = "PLANNED";
     private const string PlanStatusStarted = "STARTED";
     private const string PlanStatusExpired = "EXPIRED";
     private const string AuditSystem = "SYSTEM";
@@ -36,16 +35,16 @@ public partial class PickupService
     private static readonly string[] LocationChangeableStatuses = { "PLANNED", "STARTED", "WAITING" };
 
     /// <summary>
-    /// 오늘 픽업 계획 만들기(이미 있으면 그 계획). 기본 지점을 우선순위·금지 시간·정원으로 배정한다
+    /// 경로 시작. 오늘 계획이 없으면 만들면서 시작하고, 차 도착 예상이 배정 시각보다 늦으면 같은 장소에서 배정 시각을 미룬다(설계 6.3)
     /// </summary>
-    public Task<ResponseModel<PickupPlanDto>> AddPickupPlanService(AddPickupPlanDto dto,
+    public Task<ResponseModel<PickupPlanDto>> UpdatePickupPlanStartService(UpdatePickupPlanStartDto dto,
         CancellationToken cancellationToken = default)
     {
-        return RetryOnDeadlockAsync(() => AddPickupPlanCoreAsync(dto, cancellationToken), cancellationToken);
+        return RetryOnDeadlockAsync(() => StartPickupPlanCoreAsync(dto, cancellationToken), cancellationToken);
     }
 
     // 교착은 RetryOnDeadlockAsync가 다시 실행하므로 여기서는 500으로 바꾸지 않고 올려보낸다
-    private async Task<ResponseModel<PickupPlanDto>> AddPickupPlanCoreAsync(AddPickupPlanDto dto,
+    private async Task<ResponseModel<PickupPlanDto>> StartPickupPlanCoreAsync(UpdatePickupPlanStartDto dto,
         CancellationToken cancellationToken)
     {
         try
@@ -54,15 +53,33 @@ public partial class PickupService
             if (!int.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("sub"), out var userId))
                 return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 401 };
 
-            // 2) 입력 검증 — 픽업 좌표는 둘 다 있거나 둘 다 없어야 한다
-            if (dto is null || (dto.pickupLat is null) != (dto.pickupLng is null))
+            // 2) 입력 검증 — 필수값, 픽업 좌표는 둘 다 있거나 둘 다 없어야 하고 eventDt는 서버 현재 시각 기준 -10분 ~ +1분 안이어야 한다
+            if (dto?.clientEventId is null || dto.eventDt is null || dto.driveMin is null
+                || (dto.pickupLat is null) != (dto.pickupLng is null))
                 return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
 
-            // 3) 잠근 시간표의 학원가가 잠근 학원가와 다르면(그사이 시간표 편집) 대상 고르기부터 다시 한다
+            var now = DateTime.Now;
+            var eventDt = dto.eventDt.Value;
+            if (eventDt < now.AddMinutes(-StartEventPastLimitMin) || eventDt > now.AddMinutes(StartEventFutureLimitMin))
+                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
+
+            var clientEventId = dto.clientEventId.Value;
+            var driveMin = dto.driveMin.Value;
+
+            // 3) 대상 픽업 — 진행 중 계획이 있으면 그 계획을 시작한다
+            var target = await SelectPickupTargetAsync(userId, now, now, cancellationToken).ConfigureAwait(false);
+            if (target is null)
+                return new ResponseModel<PickupPlanDto> { message = "요청이 정상 처리되었습니다.", data = null, code = 101 };
+
+            if (target.Plan is { } livePlan)
+                return await StartExistingPlanAsync(userId, livePlan.PickupPlanId, clientEventId, eventDt, driveMin,
+                    cancellationToken).ConfigureAwait(false);
+
+            // 4) 잠근 시간표의 학원가가 잠근 학원가와 다르면(그사이 시간표 편집) 대상 고르기부터 다시 한다
             for (var attempt = 1; attempt <= PlanAreaRetryMaxAttempts; attempt++)
             {
-                var result = await TryAddPickupPlanAsync(userId, dto.pickupLat, dto.pickupLng, cancellationToken)
-                    .ConfigureAwait(false);
+                var result = await TryCreateStartedPlanAsync(userId, dto.pickupLat, dto.pickupLng, clientEventId,
+                    eventDt, driveMin, cancellationToken).ConfigureAwait(false);
                 if (result is not null)
                     return result;
             }
@@ -80,17 +97,17 @@ public partial class PickupService
         }
     }
 
-    // 계획 만들기 한 번(설계 6.1 처리 1~7). 잠근 학원가가 틀려 처음부터 다시 해야 하면 null.
+    // 시작된 계획 만들기 한 번(설계 6.1 처리 1~7). 잠근 학원가가 틀려 처음부터 다시 해야 하면 null.
     // pickupLat·pickupLng가 있으면 임의 좌표 계획을 만든다(둘 다 있거나 둘 다 없다)
-    private async Task<ResponseModel<PickupPlanDto>?> TryAddPickupPlanAsync(int userId, decimal? pickupLat,
-        decimal? pickupLng, CancellationToken cancellationToken)
+    private async Task<ResponseModel<PickupPlanDto>?> TryCreateStartedPlanAsync(int userId, decimal? pickupLat,
+        decimal? pickupLng, Guid clientEventId, DateTime eventDt, int driveMin, CancellationToken cancellationToken)
     {
         var now = DateTime.Now;
         var date = DateOnly.FromDateTime(now);
         var dayStart = date.ToDateTime(TimeOnly.MinValue);
         var leadTime = TimeSpan.FromHours(_planOptions.CreateLeadHours);
 
-        // 1) 대상 픽업 — 진행 중 계획이 있으면 그것을 돌려준다(잠금 없이 읽는다)
+        // 1) 대상 픽업 — 진행 중 계획이 있으면 그것을 시작한다(잠금 없이 읽는다)
         var target = await SelectPickupTargetAsync(userId, now, now, cancellationToken).ConfigureAwait(false);
 
         // 2) 진행 중 계획도 오늘 남은 픽업도 없다
@@ -98,7 +115,8 @@ public partial class PickupService
             return new ResponseModel<PickupPlanDto> { message = "요청이 정상 처리되었습니다.", data = null, code = 101 };
 
         if (target.Plan is { } livePlan)
-            return PlanOk(await BuildPlanDtoAsync(livePlan.PickupPlanId, false, null, cancellationToken).ConfigureAwait(false));
+            return await StartExistingPlanAsync(userId, livePlan.PickupPlanId, clientEventId, eventDt, driveMin,
+                cancellationToken).ConfigureAwait(false);
 
         var pickup = target.Pickup!;
 
@@ -120,154 +138,199 @@ public partial class PickupService
         var holiday = await _pickupRepository.GetHolidayAsync(date, cancellationToken).ConfigureAwait(false);
         var dayType = DepartureGuideCalculator.DayType(date, holiday.IsHoliday);
 
-        // 6) 트랜잭션 — 예외로 빠져나가면 await using이 트랜잭션을 롤백한다
-        var transaction = await _context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        await using var transactionScope = transaction.ConfigureAwait(false);
-        var dbTransaction = transaction.GetDbTransaction();
+        int? planIdToStart = null;
+        int? duplicateTimetableDayId = null;
+        int? createdPlanId = null;
+        {
+            // 6) 트랜잭션 — 예외로 빠져나가면 await using이 트랜잭션을 롤백한다
+            var transaction = await _context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            await using var transactionScope = transaction.ConfigureAwait(false);
+            var dbTransaction = transaction.GetDbTransaction();
 
-        // 6-1) 학원가 행 잠금이 첫 문장이다. 이보다 먼저 조회하면 스냅샷이 고정돼 직전에 커밋된 계획을 못 본다
-        if (!await _pickupRepository.LockAreaAsync(areaId, dbTransaction, cancellationToken).ConfigureAwait(false))
-        {
-            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            return null;
-        }
-
-        // 6-2) 시간표 요일 행을 잠그고 다시 확인한다(삭제·스위치·마친 픽업·그날 SKIP)
-        var day = await _pickupRepository.LockTimetableDayAsync(pickup.TimetableDayId, date, dbTransaction,
-            cancellationToken).ConfigureAwait(false);
-        // 기준 시각은 잠금을 얻은 뒤에 잡는다. 잠금을 기다린 사이 만료된 계획이 정원을 잡지 않게 한다
-        var thisTime = DateTime.Now;
-        if (day is null || day.UserId != userId || !day.Alive || !day.PickupYn || day.Skipped
-            || day.LastPickupDate == date)
-        {
-            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            return new ResponseModel<PickupPlanDto> { message = "요청이 정상 처리되었습니다.", data = null, code = 101 };
-        }
-
-        // 잠금을 기다리는 사이 시간표 편집이 학원을 다른 학원가로 옮겼으면 잠근 학원가가 틀리다
-        if (day.AreaId != areaId)
-        {
-            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            return null;
-        }
-
-        // 잠근 값으로 학원 좌표와 시간 창을 다시 본다(그사이 학원이나 그날 하원 시각이 바뀌었을 수 있다)
-        if (day.AcademyLat is null || day.AcademyLng is null)
-        {
-            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            return PlanConflict(ReasonNoAcademyLocation);
-        }
-
-        if (thisTime < dayStart + day.EndTime - leadTime)
-        {
-            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            return PlanConflict(ReasonTooEarly);
-        }
-
-        // 6-3) 그사이 다른 요청이 같은 요일의 계획을 만들었으면 그 계획을 돌려준다
-        var existingPlanId = await _pickupRepository.GetLivePlanIdByTimetableDayAsync(day.TimetableDayId, date,
-            dbTransaction, cancellationToken).ConfigureAwait(false);
-        if (existingPlanId is { } existingId)
-        {
-            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            return PlanOk(await BuildPlanDtoAsync(existingId, false, null, cancellationToken).ConfigureAwait(false));
-        }
-
-        // 6-4) 임의 좌표면 정원을 보지 않고 배정 시각 = 하원 + 정리 + 도보.
-        //      기본 지점이면 정원 배정. 쓸 지점이 없으면 지점·시각·도보 시간을 비운 채 만든다
-        int? spotId;
-        DateTime? slotDt;
-        byte? walkMin;
-        if (custom is not null)
-        {
-            spotId = null;
-            slotDt = DepartureGuideCalculator.ChildArrival(date, day.EndTime, _options.TidyUpMin, custom.WalkMin);
-            walkMin = custom.WalkMin;
-        }
-        else
-        {
-            var assignment = await AssignDefaultSpotAsync(day.AcademyId, date, day.EndTime, dayType, thisTime, null, null,
-                dbTransaction, cancellationToken).ConfigureAwait(false);
-            spotId = assignment?.PickupSpotId;
-            slotDt = assignment?.SlotDt;
-            walkMin = assignment?.WalkMin;
-        }
-
-        // 6-5) 계획과 PLANNED 이벤트를 넣는다. 감사 컬럼은 Service가 채운다
-        var plan = new PickupPlan
-        {
-            UserId = userId,
-            ChildId = day.ChildId,
-            TimetableDayId = day.TimetableDayId,
-            AcademyId = day.AcademyId,
-            AreaId = areaId,
-            PickupDate = dayStart,
-            EndTime = day.EndTime,
-            PickupSpotId = spotId,
-            SlotDt = slotDt,
-            WalkMin = (sbyte?)walkMin,
-            CustomLat = custom?.Lat,
-            CustomLng = custom?.Lng,
-            CustomName = custom?.Name,
-            ExpireDt = (slotDt ?? dayStart + day.EndTime).AddHours(_planOptions.ExpireAfterHours),
-            Status = PlanStatusPlanned,
-            CreateDt = thisTime,
-            CreateUser = AuditUser,
-            UpdateDt = thisTime,
-            UpdateUser = AuditUser,
-            DeleteYn = false
-        };
-
-        try
-        {
-            if (!await _pickupRepository.AddPickupPlanAsync(plan, cancellationToken).ConfigureAwait(false))
+            // 6-1) 학원가 행 잠금이 첫 문장이다. 이보다 먼저 조회하면 스냅샷이 고정돼 직전에 커밋된 계획을 못 본다
+            if (!await _pickupRepository.LockAreaAsync(areaId, dbTransaction, cancellationToken).ConfigureAwait(false))
             {
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return new ResponseModel<PickupPlanDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+                return null;
+            }
+
+            // 6-2) 시간표 요일 행을 잠그고 다시 확인한다(삭제·스위치·마친 픽업·그날 SKIP)
+            var day = await _pickupRepository.LockTimetableDayAsync(pickup.TimetableDayId, date, dbTransaction,
+                cancellationToken).ConfigureAwait(false);
+            // 기준 시각은 잠금을 얻은 뒤에 잡는다. 잠금을 기다린 사이 만료된 계획이 정원을 잡지 않게 한다
+            var thisTime = DateTime.Now;
+            if (day is null || day.UserId != userId || !day.Alive || !day.PickupYn || day.Skipped
+                || day.LastPickupDate == date)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<PickupPlanDto> { message = "요청이 정상 처리되었습니다.", data = null, code = 101 };
+            }
+
+            // 잠금을 기다리는 사이 시간표 편집이 학원을 다른 학원가로 옮겼으면 잠근 학원가가 틀리다
+            if (day.AreaId != areaId)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return null;
+            }
+
+            // 잠근 값으로 학원 좌표와 시간 창을 다시 본다(그사이 학원이나 그날 하원 시각이 바뀌었을 수 있다)
+            if (day.AcademyLat is null || day.AcademyLng is null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return PlanConflict(ReasonNoAcademyLocation);
+            }
+
+            if (thisTime < dayStart + day.EndTime - leadTime)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return PlanConflict(ReasonTooEarly);
+            }
+
+            // 6-3) 그사이 다른 요청이 같은 요일의 계획을 만들었으면 롤백 뒤 그 계획을 시작한다
+            var existingPlanId = await _pickupRepository.GetLivePlanIdByTimetableDayAsync(day.TimetableDayId, date,
+                dbTransaction, cancellationToken).ConfigureAwait(false);
+            if (existingPlanId is { } existingId)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                planIdToStart = existingId;
+            }
+            else
+            {
+                // 6-4) 차 도착 예상은 잠금을 얻은 뒤에 구한다. 임의 좌표면 아이 도착과 차 도착 예상 중 늦은 시각.
+                //      기본 지점이면 차 도착 예상을 하한으로 정원 배정. 쓸 지점이 없으면 지점·시각·도보 시간을 비운 채 만든다
+                var carArrival = CeilToMinute(eventDt.AddMinutes(driveMin));
+                int? spotId;
+                DateTime? slotDt;
+                byte? walkMin;
+                if (custom is not null)
+                {
+                    spotId = null;
+                    var childArrival = DepartureGuideCalculator.ChildArrival(date, day.EndTime, _options.TidyUpMin,
+                        custom.WalkMin);
+                    slotDt = carArrival > childArrival ? carArrival : childArrival;
+                    walkMin = custom.WalkMin;
+                }
+                else
+                {
+                    var assignment = await AssignDefaultSpotAsync(day.AcademyId, date, day.EndTime, dayType, thisTime,
+                        null, carArrival, dbTransaction, cancellationToken).ConfigureAwait(false);
+                    spotId = assignment?.PickupSpotId;
+                    slotDt = assignment?.SlotDt;
+                    walkMin = assignment?.WalkMin;
+                }
+
+                // 6-5) 시작된 계획과 PLANNED·STARTED 이벤트를 넣는다. 감사 컬럼은 Service가 채운다
+                var plan = new PickupPlan
+                {
+                    UserId = userId,
+                    ChildId = day.ChildId,
+                    TimetableDayId = day.TimetableDayId,
+                    AcademyId = day.AcademyId,
+                    AreaId = areaId,
+                    PickupDate = dayStart,
+                    EndTime = day.EndTime,
+                    PickupSpotId = spotId,
+                    SlotDt = slotDt,
+                    WalkMin = (sbyte?)walkMin,
+                    CustomLat = custom?.Lat,
+                    CustomLng = custom?.Lng,
+                    CustomName = custom?.Name,
+                    ExpireDt = (slotDt ?? dayStart + day.EndTime).AddHours(_planOptions.ExpireAfterHours),
+                    Status = PlanStatusStarted,
+                    StartDt = eventDt,
+                    CreateDt = thisTime,
+                    CreateUser = AuditUser,
+                    UpdateDt = thisTime,
+                    UpdateUser = AuditUser,
+                    DeleteYn = false
+                };
+
+                try
+                {
+                    if (!await _pickupRepository.AddPickupPlanAsync(plan, cancellationToken).ConfigureAwait(false))
+                    {
+                        await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return new ResponseModel<PickupPlanDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+                    }
+                }
+                catch (Exception ex) when (IsPlanDuplicateKey(ex)) // 7) UK (TIMETABLE_DAY_ID, PICKUP_DATE) — 롤백 뒤 이미 만들어진 계획을 시작한다
+                {
+                    _context.ChangeTracker.Clear();
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    duplicateTimetableDayId = day.TimetableDayId;
+                }
+
+                if (duplicateTimetableDayId is null)
+                {
+                    // 임의 좌표의 도보 경로 선은 엔티티에 없는 칸이라 같은 트랜잭션에서 Dapper로 쓴다
+                    if (custom?.WalkPathWkt is { } walkPathWkt)
+                        await _pickupRepository.SetCustomWalkPathAsync(plan.PickupPlanId, walkPathWkt, dbTransaction,
+                            cancellationToken).ConfigureAwait(false);
+
+                    var plannedEvent = new PickupEvent
+                    {
+                        PickupPlanId = plan.PickupPlanId,
+                        EventType = EventPlanned,
+                        EventDt = thisTime,
+                        ClientEventId = null,
+                        Detail = JsonSerializer.Serialize(new PlannedDetail(plan.PickupSpotId, custom is not null,
+                            FormatEventDt(plan.SlotDt))),
+                        CreateDt = thisTime,
+                        CreateUser = AuditUser,
+                        UpdateDt = thisTime,
+                        UpdateUser = AuditUser,
+                        DeleteYn = false
+                    };
+                    if (!await _pickupRepository.AddPickupEventAsync(plannedEvent, cancellationToken).ConfigureAwait(false))
+                    {
+                        await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return new ResponseModel<PickupPlanDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+                    }
+
+                    var startedEvent = new PickupEvent
+                    {
+                        PickupPlanId = plan.PickupPlanId,
+                        EventType = EventStarted,
+                        EventDt = eventDt,
+                        ClientEventId = clientEventId,
+                        Detail = null,
+                        CreateDt = thisTime,
+                        CreateUser = AuditUser,
+                        UpdateDt = thisTime,
+                        UpdateUser = AuditUser,
+                        DeleteYn = false
+                    };
+                    if (!await _pickupRepository.AddPickupEventAsync(startedEvent, cancellationToken).ConfigureAwait(false))
+                    {
+                        await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return new ResponseModel<PickupPlanDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+                    }
+
+                    await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+                    createdPlanId = plan.PickupPlanId;
+                }
             }
         }
-        catch (Exception ex) when (IsPlanDuplicateKey(ex)) // 7) UK (TIMETABLE_DAY_ID, PICKUP_DATE) — 이미 만들어진 계획을 돌려준다
+
+        if (planIdToStart is { } existingPlanIdToStart)
+            return await StartExistingPlanAsync(userId, existingPlanIdToStart, clientEventId, eventDt, driveMin,
+                cancellationToken).ConfigureAwait(false);
+
+        if (duplicateTimetableDayId is { } timetableDayId)
         {
-            _context.ChangeTracker.Clear();
-            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            var duplicatedId = await _pickupRepository.GetLivePlanIdByTimetableDayAsync(day.TimetableDayId, date, null,
+            var duplicatedId = await _pickupRepository.GetLivePlanIdByTimetableDayAsync(timetableDayId, date, null,
                 cancellationToken).ConfigureAwait(false);
             if (duplicatedId is null)
             {
-                _logService.LogMessage($"pickup plan duplicate key but no plan: timetableDay={day.TimetableDayId}");
+                _logService.LogMessage($"pickup plan duplicate key but no plan: timetableDay={timetableDayId}");
                 return new ResponseModel<PickupPlanDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
             }
 
-            return PlanOk(await BuildPlanDtoAsync(duplicatedId.Value, false, null, cancellationToken).ConfigureAwait(false));
+            return await StartExistingPlanAsync(userId, duplicatedId.Value, clientEventId, eventDt, driveMin,
+                cancellationToken).ConfigureAwait(false);
         }
 
-        // 임의 좌표의 도보 경로 선은 엔티티에 없는 칸이라 같은 트랜잭션에서 Dapper로 쓴다
-        if (custom?.WalkPathWkt is { } walkPathWkt)
-            await _pickupRepository.SetCustomWalkPathAsync(plan.PickupPlanId, walkPathWkt, dbTransaction, cancellationToken)
-                .ConfigureAwait(false);
-
-        var plannedEvent = new PickupEvent
-        {
-            PickupPlanId = plan.PickupPlanId,
-            EventType = EventPlanned,
-            EventDt = thisTime,
-            ClientEventId = null,
-            Detail = JsonSerializer.Serialize(new PlannedDetail(plan.PickupSpotId, custom is not null, FormatEventDt(plan.SlotDt))),
-            CreateDt = thisTime,
-            CreateUser = AuditUser,
-            UpdateDt = thisTime,
-            UpdateUser = AuditUser,
-            DeleteYn = false
-        };
-        if (!await _pickupRepository.AddPickupEventAsync(plannedEvent, cancellationToken).ConfigureAwait(false))
-        {
-            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            return new ResponseModel<PickupPlanDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
-        }
-
-        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
-
-        return PlanOk(await BuildPlanDtoAsync(plan.PickupPlanId, false, null, cancellationToken).ConfigureAwait(false));
+        return PlanOk(await BuildPlanDtoAsync(createdPlanId!.Value, false, null, cancellationToken).ConfigureAwait(false));
     }
 
     /// <summary>
@@ -440,29 +503,11 @@ public partial class PickupService
         }
     }
 
-    /// <summary>
-    /// 경로 시작. 계획을 STARTED로 바꾸고, 차 도착 예상이 배정 시각보다 늦으면 같은 장소에서 배정 시각을 미룬다(설계 6.3)
-    /// </summary>
-    public async Task<ResponseModel<PickupPlanDto>> UpdatePickupPlanStartService(UpdatePickupPlanStartDto dto,
-        CancellationToken cancellationToken = default)
+    // 진행 중 계획을 시작한다. 계획을 STARTED로 바꾸고, 차 도착 예상이 배정 시각보다 늦으면 같은 장소에서 배정 시각을 미룬다
+    private async Task<ResponseModel<PickupPlanDto>> StartExistingPlanAsync(int userId, int pickupPlanId,
+        Guid clientEventId, DateTime eventDt, int driveMin, CancellationToken cancellationToken)
     {
-        try
-        {
-            // 1) 인증 확인 — 로그인 사용자(USER_ID)는 HttpContext의 클레임 sub에서 꺼낸다
-            if (!int.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("sub"), out var userId))
-                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 401 };
-
-            // 2) 입력 검증 — 필수값, eventDt는 서버 현재 시각 기준 -10분 ~ +1분 안이어야 한다
-            if (dto?.pickupPlanSeq is null || dto.clientEventId is null || dto.eventDt is null || dto.driveMin is null)
-                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
-
-            var now = DateTime.Now;
-            var eventDt = dto.eventDt.Value;
-            if (eventDt < now.AddMinutes(-StartEventPastLimitMin) || eventDt > now.AddMinutes(StartEventFutureLimitMin))
-                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
-
-            var pickupPlanId = dto.pickupPlanSeq.Value;
-            var clientEventId = dto.clientEventId.Value;
+        var now = DateTime.Now;
 
             // 3) 잠금 없이 소유·상태·만료를 먼저 본다. 이미 시작했으면 잠그지 않고 지금 계획을 돌려준다(두 번 눌러도 한 번)
             var plan = await _pickupRepository.GetPlanByIdAsync(pickupPlanId, null, cancellationToken).ConfigureAwait(false);
@@ -539,7 +584,7 @@ public partial class PickupService
 
             // 4-4) 늦은 출발 — 차 도착 예상(eventDt + driveMin, 분 단위 올림)이 배정 시각보다 늦으면 같은 장소에서 미룬다.
             //      배정 장소가 없는 계획(SLOT_DT 없음)은 재배정하지 않는다
-            var carArrival = CeilToMinute(eventDt.AddMinutes(dto.driveMin.Value));
+            var carArrival = CeilToMinute(eventDt.AddMinutes(driveMin));
             var reassigned = locked.SlotDt is { } currentSlot && carArrival > currentSlot;
             if (reassigned)
             {
@@ -634,15 +679,6 @@ public partial class PickupService
             await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
 
             return PlanOk(await BuildPlanDtoAsync(pickupPlanId, reassigned, null, cancellationToken).ConfigureAwait(false));
-        }
-        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 그대로 올려보낸다
-        {
-            _logService.LogMessage(ex.ToString());
-#if DEBUG
-            _logService.ConsoleWarning(ex.ToString());
-#endif
-            return new ResponseModel<PickupPlanDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
-        }
     }
 
     /// <summary>
