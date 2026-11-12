@@ -210,4 +210,191 @@ public class PickupController : ApiControllerBase
             return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
         }
     }
+
+    /// <summary>
+    /// 픽업 장소 바꾸기(임의 좌표로 바꾸거나 기본 지점으로 되돌리기)
+    /// </summary>
+    [Produces("application/json")]
+    [HttpPatch]
+    [Route("v1/Pickup/M/sign/UpdatePickupPlanLocation")]
+    [SwaggerOperation(Summary = "픽업 장소 바꾸기")]
+    [ProducesResponseType(typeof(ResponseModel<PickupPlanDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdatePickupPlanLocation([FromBody] UpdatePickupPlanLocationDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _pickupService.UpdatePickupPlanLocationService(dto, cancellationToken).ConfigureAwait(false);
+            return ToActionResult(model);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // 앱이 요청을 끊었다. 오류로 기록하지 않는다
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
+
+    /// <summary>
+    /// 경로 시작(오늘 계획이 없으면 만들면서 시작하고, 늦게 출발했으면 같은 장소에서 배정 시각을 미룬다)
+    /// </summary>
+    [Produces("application/json")]
+    [HttpPatch]
+    [Route("v1/Pickup/M/sign/UpdatePickupPlanStart")]
+    [SwaggerOperation(Summary = "경로 시작")]
+    [ProducesResponseType(typeof(ResponseModel<PickupPlanDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdatePickupPlanStart([FromBody] UpdatePickupPlanStartDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _pickupService.UpdatePickupPlanStartService(dto, cancellationToken).ConfigureAwait(false);
+            return ToActionResult(model);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // 앱이 요청을 끊었다. 오류로 기록하지 않는다
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
+
+    /// <summary>
+    /// 정차 기록(배정 장소 반경과 정차 위치의 단속 구역을 판정한다)
+    /// </summary>
+    [Produces("application/json")]
+    [HttpPatch]
+    [Route("v1/Pickup/M/sign/UpdatePickupPlanStop")]
+    [SwaggerOperation(Summary = "정차 기록")]
+    [ProducesResponseType(typeof(ResponseModel<PickupPlanDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdatePickupPlanStop([FromBody] UpdatePickupPlanStopDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _pickupService.UpdatePickupPlanStopService(dto, cancellationToken).ConfigureAwait(false);
+            return ToActionResult(model);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // 앱이 요청을 끊었다. 오류로 기록하지 않는다
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
+
+    /// <summary>
+    /// 탑승 기록(오늘 계획을 BOARDED로 끝낸다)
+    /// </summary>
+    [Produces("application/json")]
+    [HttpPatch]
+    [Route("v1/Pickup/M/sign/UpdatePickupPlanBoard")]
+    [SwaggerOperation(Summary = "탑승 기록")]
+    [ProducesResponseType(typeof(ResponseModel<PickupPlanDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdatePickupPlanBoard([FromBody] UpdatePickupPlanBoardDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _pickupService.UpdatePickupPlanBoardService(dto, cancellationToken).ConfigureAwait(false);
+            return ToActionResult(model);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // 앱이 요청을 끊었다. 오류로 기록하지 않는다
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
+
+    /// <summary>
+    /// 대기 장소 도착(같은 학원가의 주차장을 기록하고 계획을 WAITING으로 바꾼다)
+    /// </summary>
+    [Produces("application/json")]
+    [HttpPatch]
+    [Route("v1/Pickup/M/sign/UpdatePickupPlanWait")]
+    [SwaggerOperation(Summary = "대기 장소 도착")]
+    [ProducesResponseType(typeof(ResponseModel<PickupPlanDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdatePickupPlanWait([FromBody] UpdatePickupPlanWaitDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _pickupService.UpdatePickupPlanWaitService(dto, cancellationToken).ConfigureAwait(false);
+            return ToActionResult(model);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // 앱이 요청을 끊었다. 오류로 기록하지 않는다
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
+
+    /// <summary>
+    /// 부모 취소(오늘 계획을 CANCELED로 끝내고, 아이가 링크를 받았을 수 있으면 취소 문자를 보낸다)
+    /// </summary>
+    [Produces("application/json")]
+    [HttpDelete]
+    [Route("v1/Pickup/M/sign/DeletePickupPlan")]
+    [Consumes("application/json")]
+    [SwaggerOperation(Summary = "부모 픽업 취소")]
+    [ProducesResponseType(typeof(ResponseModel<PickupPlanDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> DeletePickupPlan([FromBody] DeletePickupPlanDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _pickupService.DeletePickupPlanService(dto, cancellationToken).ConfigureAwait(false);
+            return ToActionResult(model);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // 앱이 요청을 끊었다. 오류로 기록하지 않는다
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
 }

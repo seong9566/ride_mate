@@ -1,0 +1,352 @@
+{
+  "id": "trafficProfile01",
+  "name": "혼잡 집계표 하루 1회 만들기",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "40 4 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "매일 04:40 실행",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -900,
+        160
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "수동 실행",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -900,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const runStart = $now.setZone('Asia/Seoul');\n\nreturn [{\n  json: {\n    runStart: runStart.toFormat('yyyy-LL-dd HH:mm:ss'),\n    windowDays: Math.trunc(56),\n    linkRadiusM: Math.trunc(800),\n  },\n}];"
+      },
+      "id": "settings",
+      "name": "설정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -660,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO TRAFFIC_PROFILE (AREA_CODE, DAY_OF_WEEK, SLOT_MIN, SOURCE, SPEED_KMH, SAMPLE_DAYS, CREATE_DT, CREATE_USER, UPDATE_DT, UPDATE_USER, DELETE_YN)\nWITH eligible AS (\n  SELECT\n    l.TRAFFIC_LINK_ID,\n    l.AREA_CODE,\n    l.DISTANCE_M,\n    DATE(s.COLLECTED_DT) AS SAMPLE_DATE,\n    WEEKDAY(s.COLLECTED_DT) + 1 AS DAY_OF_WEEK,\n    HOUR(s.COLLECTED_DT) * 60 + MINUTE(s.COLLECTED_DT) AS SLOT_MIN,\n    s.SPEED_KMH\n  FROM TRAFFIC_SPEED s\n  JOIN TRAFFIC_LINK l ON l.TRAFFIC_LINK_ID = s.TRAFFIC_LINK_ID\n  WHERE s.DELETE_YN = 0\n    AND s.SPEED_KMH > 0\n    AND s.COLLECTED_DT >= DATE_SUB(CURDATE(), INTERVAL $1 DAY)\n    AND s.COLLECTED_DT < CURDATE()\n    AND l.DELETE_YN = 0\n    AND l.DISTANCE_M > 0\n    AND (l.AREA_CODE <> 'DAECHI' OR l.CENTER_DIST_M <= $2)\n    AND NOT EXISTS (\n      SELECT 1\n      FROM HOLIDAY h\n      WHERE h.HOLIDAY_DATE = DATE(s.COLLECTED_DT)\n        AND h.DELETE_YN = 0\n    )\n),\nranked AS (\n  SELECT\n    e.*,\n    ROW_NUMBER() OVER (\n      PARTITION BY e.TRAFFIC_LINK_ID, e.DAY_OF_WEEK, e.SLOT_MIN\n      ORDER BY e.SPEED_KMH\n    ) AS rn,\n    COUNT(*) OVER (\n      PARTITION BY e.TRAFFIC_LINK_ID, e.DAY_OF_WEEK, e.SLOT_MIN\n    ) AS sample_count\n  FROM eligible e\n),\nlink_medians AS (\n  SELECT TRAFFIC_LINK_ID, AREA_CODE, DISTANCE_M, DAY_OF_WEEK, SLOT_MIN, SPEED_KMH AS MEDIAN_SPEED_KMH\n  FROM ranked\n  WHERE rn = CEIL(sample_count / 2)\n),\nsample_days AS (\n  SELECT AREA_CODE, DAY_OF_WEEK, SLOT_MIN, COUNT(DISTINCT SAMPLE_DATE) AS SAMPLE_DAYS\n  FROM eligible\n  GROUP BY AREA_CODE, DAY_OF_WEEK, SLOT_MIN\n),\nprofiles AS (\n  SELECT\n    m.AREA_CODE,\n    m.DAY_OF_WEEK,\n    m.SLOT_MIN,\n    ROUND(SUM(m.DISTANCE_M) / SUM(m.DISTANCE_M / m.MEDIAN_SPEED_KMH), 1) AS SPEED_KMH,\n    d.SAMPLE_DAYS\n  FROM link_medians m\n  JOIN sample_days d\n    ON d.AREA_CODE = m.AREA_CODE\n   AND d.DAY_OF_WEEK = m.DAY_OF_WEEK\n   AND d.SLOT_MIN = m.SLOT_MIN\n  GROUP BY m.AREA_CODE, m.DAY_OF_WEEK, m.SLOT_MIN, d.SAMPLE_DAYS\n)\nSELECT src.AREA_CODE, src.DAY_OF_WEEK, src.SLOT_MIN, 'COLLECTED', src.SPEED_KMH, src.SAMPLE_DAYS, NOW(), 'SYSTEM', NOW(), 'SYSTEM', 0\nFROM (\n  SELECT AREA_CODE, DAY_OF_WEEK, SLOT_MIN, SPEED_KMH, SAMPLE_DAYS\n  FROM profiles\n) AS src\nON DUPLICATE KEY UPDATE\n  SPEED_KMH = src.SPEED_KMH,\n  SAMPLE_DAYS = src.SAMPLE_DAYS,\n  UPDATE_DT = NOW(),\n  UPDATE_USER = 'SYSTEM',\n  DELETE_YN = 0",
+        "options": {
+          "queryReplacement": "={{ [Math.trunc(Number($('설정').first().json.windowDays)), Math.trunc(Number($('설정').first().json.linkRadiusM))] }}"
+        }
+      },
+      "id": "upsert-profiles",
+      "name": "혼잡 집계표 적재",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        -420,
+        260
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "rmMysqlCred00001",
+          "name": "ridemate-mysql"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $('설정').first().json;\nconst failed = $input.all().some((item) => item.json.error != null);\n\nreturn [{\n  json: {\n    ...context,\n    ok: !failed,\n    stage: 'UPSERT',\n    reason: failed ? 'DB_UPSERT_FAILED' : null,\n  },\n}];"
+      },
+      "id": "judge-upsert",
+      "name": "혼잡 집계표 적재 판정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -180,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "upsert-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-upsert",
+      "name": "혼잡 집계표 적재 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        60,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE TRAFFIC_PROFILE\nSET SAMPLE_DAYS = 0, UPDATE_DT = NOW(), UPDATE_USER = 'SYSTEM'\nWHERE SOURCE = 'COLLECTED'\n  AND UPDATE_DT < $1\n  AND SAMPLE_DAYS > 0",
+        "options": {
+          "queryReplacement": "={{ [String($('설정').first().json.runStart)] }}"
+        }
+      },
+      "id": "clear-stale",
+      "name": "오래된 혼잡 집계표 정리",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        300,
+        160
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "rmMysqlCred00001",
+          "name": "ridemate-mysql"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $('혼잡 집계표 적재 판정').first().json;\nconst failed = $input.all().some((item) => item.json.error != null);\n\nreturn [{\n  json: {\n    ...context,\n    ok: !failed,\n    stage: 'CLEANUP',\n    reason: failed ? 'DB_CLEANUP_FAILED' : null,\n  },\n}];"
+      },
+      "id": "judge-cleanup",
+      "name": "오래된 혼잡 집계표 정리 판정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        540,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cleanup-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-cleanup",
+      "name": "오래된 혼잡 집계표 정리 성공 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        780,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\nconst stage = String(context.stage || 'UNKNOWN');\nconst reason = String(context.reason || 'UNKNOWN');\n\nthrow new Error(stage + ': ' + reason);"
+      },
+      "id": "failure-result",
+      "name": "실패 결과",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        540,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\n\nreturn [{\n  json: {\n    ok: true,\n    runStart: context.runStart,\n    windowDays: context.windowDays,\n    linkRadiusM: context.linkRadiusM,\n  },\n}];"
+      },
+      "id": "success-result",
+      "name": "성공 결과",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1020,
+        60
+      ]
+    }
+  ],
+  "connections": {
+    "매일 04:40 실행": {
+      "main": [
+        [
+          {
+            "node": "설정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "수동 실행": {
+      "main": [
+        [
+          {
+            "node": "설정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "설정": {
+      "main": [
+        [
+          {
+            "node": "혼잡 집계표 적재",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "혼잡 집계표 적재": {
+      "main": [
+        [
+          {
+            "node": "혼잡 집계표 적재 판정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "혼잡 집계표 적재 판정": {
+      "main": [
+        [
+          {
+            "node": "혼잡 집계표 적재 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "혼잡 집계표 적재 성공 확인": {
+      "main": [
+        [
+          {
+            "node": "오래된 혼잡 집계표 정리",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "실패 결과",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "오래된 혼잡 집계표 정리": {
+      "main": [
+        [
+          {
+            "node": "오래된 혼잡 집계표 정리 판정",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "오래된 혼잡 집계표 정리 판정": {
+      "main": [
+        [
+          {
+            "node": "오래된 혼잡 집계표 정리 성공 확인",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "오래된 혼잡 집계표 정리 성공 확인": {
+      "main": [
+        [
+          {
+            "node": "성공 결과",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "실패 결과",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "timezone": "Asia/Seoul",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false,
+    "executionOrder": "v1"
+  }
+}

@@ -36,6 +36,27 @@ public static class PickupLinkToken
     }
 
     /// <summary>
+    /// 토큰이 패딩 없는 base64url 43자 형식인지 확인한다
+    /// </summary>
+    public static bool IsWellFormed(string? token)
+    {
+        if (token is null || token.Length != 43)
+            return false;
+
+        foreach (var character in token)
+        {
+            if (!((character >= 'A' && character <= 'Z')
+                || (character >= 'a' && character <= 'z')
+                || (character >= '0' && character <= '9')
+                || character == '-'
+                || character == '_'))
+                return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// 링크 주소. 설정의 링크 주소 앞부분 + "/" + 토큰
     /// </summary>
     public static string BuildUrl(string baseUrl, string token)

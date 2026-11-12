@@ -54,7 +54,11 @@ public partial class RideMateContext : DbContext
 
     public virtual DbSet<TrafficCollectRun> TrafficCollectRuns { get; set; }
 
+    public virtual DbSet<TrafficHourlySpeed> TrafficHourlySpeeds { get; set; }
+
     public virtual DbSet<TrafficLink> TrafficLinks { get; set; }
+
+    public virtual DbSet<TrafficProfile> TrafficProfiles { get; set; }
 
     public virtual DbSet<TrafficSpeed> TrafficSpeeds { get; set; }
 
@@ -210,6 +214,10 @@ public partial class RideMateContext : DbContext
             entity.Property(e => e.AreaId)
                 .HasComment("학원가(서비스 지역) ID")
                 .HasColumnName("AREA_ID");
+            entity.Property(e => e.AreaCode)
+                .HasMaxLength(20)
+                .HasComment("학원가 코드 (DAECHI, PYEONGCHON)")
+                .HasColumnName("AREA_CODE");
             entity.Property(e => e.AreaName)
                 .HasMaxLength(50)
                 .HasComment("학원가 이름")
@@ -762,7 +770,7 @@ public partial class RideMateContext : DbContext
                 .HasColumnName("EVENT_DT");
             entity.Property(e => e.EventType)
                 .HasMaxLength(20)
-                .HasComment("이벤트 유형 (PLANNED, STARTED, WAIT_STARTED, END_TIME_CHANGED, REASSIGNED, LINK_SENT, LINK_OPENED, CHILD_LEAVING, STOPPED, WRONG_STOP, REMIND_SENT, LOOP_STARTED, BOARDED, EXPIRED, CANCELED)")
+                .HasComment("이벤트 유형 (PLANNED, STARTED, WAIT_STARTED, END_TIME_CHANGED, REASSIGNED, LINK_SENT, LINK_OPENED, CHILD_LEAVING, LEAVE_SCHEDULED, LEAVE_CANCELED, STOPPED, WRONG_STOP, REMIND_SENT, LOOP_STARTED, BOARDED, EXPIRED, CANCELED)")
                 .HasColumnName("EVENT_TYPE");
             entity.Property(e => e.PickupPlanId)
                 .HasComment("오늘 계획 ID")
@@ -830,6 +838,18 @@ public partial class RideMateContext : DbContext
                 .HasMaxLength(50)
                 .HasComment("생성자")
                 .HasColumnName("CREATE_USER");
+            entity.Property(e => e.CustomLat)
+                .HasPrecision(10, 7)
+                .HasComment("부모가 고른 픽업 위도")
+                .HasColumnName("CUSTOM_LAT");
+            entity.Property(e => e.CustomLng)
+                .HasPrecision(10, 7)
+                .HasComment("부모가 고른 픽업 경도")
+                .HasColumnName("CUSTOM_LNG");
+            entity.Property(e => e.CustomName)
+                .HasMaxLength(100)
+                .HasComment("부모가 고른 픽업 장소 이름")
+                .HasColumnName("CUSTOM_NAME");
             entity.Property(e => e.DeleteYn)
                 .HasComment("삭제 여부")
                 .HasColumnName("DELETE_YN");
@@ -1480,6 +1500,57 @@ public partial class RideMateContext : DbContext
                 .HasColumnName("UPDATE_USER");
         });
 
+        modelBuilder.Entity<TrafficHourlySpeed>(entity =>
+        {
+            entity.HasKey(e => e.TrafficHourlySpeedId).HasName("PRIMARY");
+
+            entity.ToTable("TRAFFIC_HOURLY_SPEED", tb => tb.HasComment("TOPIS 월별 시간 속도"));
+
+            entity.HasIndex(e => new { e.TrafficLinkId, e.SpeedDate, e.HourNo }, "UK_TRAFFIC_HOURLY_SPEED_01").IsUnique();
+
+            entity.Property(e => e.TrafficHourlySpeedId)
+                .HasComment("월별 시간 속도 ID")
+                .HasColumnName("TRAFFIC_HOURLY_SPEED_ID");
+            entity.Property(e => e.CreateDt)
+                .HasComment("생성 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("CREATE_DT");
+            entity.Property(e => e.CreateUser)
+                .HasMaxLength(50)
+                .HasComment("생성자")
+                .HasColumnName("CREATE_USER");
+            entity.Property(e => e.DeleteYn)
+                .HasComment("삭제 여부")
+                .HasColumnName("DELETE_YN");
+            entity.Property(e => e.HourNo)
+                .HasComment("시간 번호 (파일 열 ~HH시의 HH, 1~24)")
+                .HasColumnName("HOUR_NO");
+            entity.Property(e => e.SpeedDate)
+                .HasComment("속도 일자 (파일의 일자)")
+                .HasColumnType("date")
+                .HasColumnName("SPEED_DATE");
+            entity.Property(e => e.SpeedKmh)
+                .HasPrecision(5, 1)
+                .HasComment("속도(km/h)")
+                .HasColumnName("SPEED_KMH");
+            entity.Property(e => e.TrafficLinkId)
+                .HasComment("수집 대상 링크 ID")
+                .HasColumnName("TRAFFIC_LINK_ID");
+            entity.Property(e => e.UpdateDt)
+                .HasComment("수정 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("UPDATE_DT");
+            entity.Property(e => e.UpdateUser)
+                .HasMaxLength(50)
+                .HasComment("수정자")
+                .HasColumnName("UPDATE_USER");
+
+            entity.HasOne(d => d.TrafficLink).WithMany(p => p.TrafficHourlySpeeds)
+                .HasForeignKey(d => d.TrafficLinkId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_TRAFFIC_HOURLY_SPEED_01");
+        });
+
         modelBuilder.Entity<TrafficLink>(entity =>
         {
             entity.HasKey(e => e.TrafficLinkId).HasName("PRIMARY");
@@ -1545,6 +1616,59 @@ public partial class RideMateContext : DbContext
                 .HasMaxLength(100)
                 .HasComment("시작 지점명")
                 .HasColumnName("ST_NODE_NAME");
+            entity.Property(e => e.UpdateDt)
+                .HasComment("수정 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("UPDATE_DT");
+            entity.Property(e => e.UpdateUser)
+                .HasMaxLength(50)
+                .HasComment("수정자")
+                .HasColumnName("UPDATE_USER");
+        });
+
+        modelBuilder.Entity<TrafficProfile>(entity =>
+        {
+            entity.HasKey(e => e.TrafficProfileId).HasName("PRIMARY");
+
+            entity.ToTable("TRAFFIC_PROFILE", tb => tb.HasComment("학원가 요일·시간대 혼잡 집계"));
+
+            entity.HasIndex(e => new { e.AreaCode, e.DayOfWeek, e.SlotMin, e.Source }, "UK_TRAFFIC_PROFILE_01").IsUnique();
+
+            entity.Property(e => e.TrafficProfileId)
+                .HasComment("혼잡 집계 ID")
+                .HasColumnName("TRAFFIC_PROFILE_ID");
+            entity.Property(e => e.AreaCode)
+                .HasMaxLength(20)
+                .HasComment("학원가 코드 (DAECHI, PYEONGCHON)")
+                .HasColumnName("AREA_CODE");
+            entity.Property(e => e.CreateDt)
+                .HasComment("생성 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("CREATE_DT");
+            entity.Property(e => e.CreateUser)
+                .HasMaxLength(50)
+                .HasComment("생성자")
+                .HasColumnName("CREATE_USER");
+            entity.Property(e => e.DayOfWeek)
+                .HasComment("요일 번호 (월 1~일 7)")
+                .HasColumnName("DAY_OF_WEEK");
+            entity.Property(e => e.DeleteYn)
+                .HasComment("삭제 여부")
+                .HasColumnName("DELETE_YN");
+            entity.Property(e => e.SampleDays)
+                .HasComment("집계 표본 일수. 근거가 없으면 0")
+                .HasColumnName("SAMPLE_DAYS");
+            entity.Property(e => e.SlotMin)
+                .HasComment("자정부터 지난 분 (0~1435, 5분 단위)")
+                .HasColumnName("SLOT_MIN");
+            entity.Property(e => e.Source)
+                .HasMaxLength(20)
+                .HasComment("집계 소스 (COLLECTED, MONTHLY)")
+                .HasColumnName("SOURCE");
+            entity.Property(e => e.SpeedKmh)
+                .HasPrecision(5, 1)
+                .HasComment("집계 속도(km/h)")
+                .HasColumnName("SPEED_KMH");
             entity.Property(e => e.UpdateDt)
                 .HasComment("수정 일시")
                 .HasColumnType("datetime")

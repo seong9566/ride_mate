@@ -19,7 +19,8 @@ internal sealed class DepartureComputation
     public DetailDepartureGuideDto? Result { get; init; }
 
     /// <summary>
-    /// 선택한 오늘 픽업. 오늘 남은 픽업이 없으면 null
+    /// 선택한 오늘 픽업. 진행 중 계획이 있으면 계획 값(학원 이름·좌표는 계획 학원의 현재 값, 학원가와 하원 시각은 계획에 복사해 둔 값)으로 채운다.
+    /// 오늘 남은 픽업이 없으면 null
     /// </summary>
     public TodayPickupRow? Target { get; init; }
 
@@ -27,6 +28,11 @@ internal sealed class DepartureComputation
     /// 요일 유형. 오늘 남은 픽업이 없으면 빈 문자열
     /// </summary>
     public string DayType { get; init; } = string.Empty;
+
+    /// <summary>
+    /// 계산 날짜의 공휴일 여부
+    /// </summary>
+    public bool IsHoliday { get; init; }
 
     /// <summary>
     /// 요청이 지정한 현재 시각
