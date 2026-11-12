@@ -328,6 +328,8 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `AREA_NAME` | VARCHAR(50) | N | 이름(예: 대치동) |
 | `BOUNDARY` | POLYGON SRID 4326 | N | 구역 경계. SPATIAL INDEX |
 
+대치동·평촌 행은 `sql/20261112_area_seed.sql`로 넣는다(사각형 경계, 2026-11-12 사용자 확인).
+
 ### PICKUP_SPOT — 픽업 지점
 
 현장 검증을 마친 지점만 넣는다. 제외 기준에 걸리는 곳은 넣지 않는다.
@@ -447,13 +449,22 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `BASE_MIN` | SMALLINT | N | 기본 시간(분) |
 | `BASE_FEE` | INT | N | 기본 요금(원) |
 | `ADD_UNIT_MIN`·`ADD_FEE` | SMALLINT, INT | Y | 추가 단위 시간(분)과 요금(원) |
-| `DAY_PASS_FEE` | INT | Y | 1일 주차권 요금(원) |
+| `DAY_PASS_FEE` | INT | Y | 1일 주차권 요금(원). 1일 최대 요금은 `DAY_MAX_FEE` |
+| `DAY_MAX_FEE` | INT | Y | 1일 최대 요금(원). 누적 요금의 상한 |
 | `TOTAL_SPACES` | SMALLINT | Y | 주차 면수 |
 | `REALTIME_REF` | VARCHAR(100) | Y | 실시간 주차대수 API의 주차장 코드. 없으면 화면은 "자리 정보 없음" |
 | `AVAILABLE_SPACES`·`AVAILABLE_UPDATE_DT` | SMALLINT, DATETIME | Y | 마지막으로 조회한 빈자리 수와 조회 시각 |
 | `SOURCE_REF` | VARCHAR(100) | Y | 표준데이터의 주차장 관리번호 |
+| `FEE_SOURCE` | VARCHAR(20) | Y | 요금·운영 시간을 고른 출처. `STANDARD`(전국주차장정보표준데이터), `SEOUL`(서울시 공영주차장 안내 정보 `GetParkInfo`) |
+| `FEE_BASE_DATE` | DATE | Y | 고른 출처의 기준일 |
+| `SEOUL_REF` | VARCHAR(20) | Y | 서울시 공영주차장 코드(`PKLT_CD`). 연결 안 되면 NULL |
 
+- 주차장은 n8n 워크플로 `parkingCollect01`이 하루 1회 공영만 적재한다(민영 제외 — 요금 출처 없음).
+- 표준데이터와 서울시가 같은 주차장에 다른 값을 주면 기준일(`referenceDate` vs `LAST_DATA_SYNC_TM`)이 최신인 쪽을 쓰고 `FEE_SOURCE`·`FEE_BASE_DATE`에 남긴다.
+- CHECK: `(FEE_SOURCE IS NULL) = (FEE_BASE_DATE IS NULL)`
 - 추천할 때 저장된 빈자리가 5분 안의 값이면 그대로 쓰고, 아니면 실시간 API를 조회해 덮어쓴다. API가 실패하면 저장된 값을 쓴다.
+- `REALTIME_REF`가 없거나, 실시간 API가 성공했는데 응답에 그 주차장이 없으면 저장된 빈자리를 쓰지 않고 "자리 정보 없음"으로 둔다.
+- 수집기가 `REALTIME_REF`를 바꾸면(연결이 끊기거나 다른 시설로 바뀌면) `AVAILABLE_SPACES`·`AVAILABLE_UPDATE_DT`를 함께 비운다.
 - 빈자리 갱신은 조회 시각이 저장된 `AVAILABLE_UPDATE_DT`보다 나중일 때만 한다. 늦게 도착한 응답이 최신 값을 덮지 않게 한다.
 - 빈자리 갱신은 `UPDATE_DT`·`UPDATE_USER`를 바꾸지 않는다. 감사 컬럼은 기준 데이터(요금, 운영 시간)를 고친 기록으로만 쓴다.
 - 살아 있는 행 UNIQUE: `(SOURCE_REF, ACTIVE_FLAG)`. 공공데이터를 다시 적재할 때 이 값으로 같은 주차장을 찾아 덮어쓴다.

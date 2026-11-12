@@ -583,12 +583,23 @@ public partial class RideMateContext : DbContext
                 .HasMaxLength(50)
                 .HasComment("생성자")
                 .HasColumnName("CREATE_USER");
+            entity.Property(e => e.DayMaxFee)
+                .HasComment("1일 최대 요금(원). 누적 요금의 상한")
+                .HasColumnName("DAY_MAX_FEE");
             entity.Property(e => e.DayPassFee)
-                .HasComment("1일 주차권 요금(원)")
+                .HasComment("1일 주차권 요금(원). 1일 최대 요금은 DAY_MAX_FEE")
                 .HasColumnName("DAY_PASS_FEE");
             entity.Property(e => e.DeleteYn)
                 .HasComment("삭제 여부")
                 .HasColumnName("DELETE_YN");
+            entity.Property(e => e.FeeBaseDate)
+                .HasComment("고른 출처의 기준일")
+                .HasColumnType("date")
+                .HasColumnName("FEE_BASE_DATE");
+            entity.Property(e => e.FeeSource)
+                .HasMaxLength(20)
+                .HasComment("요금·운영 시간을 고른 출처 (STANDARD, SEOUL)")
+                .HasColumnName("FEE_SOURCE");
             entity.Property(e => e.HolidayCloseTime)
                 .HasComment("일요일·공휴일 운영 종료 시각")
                 .HasColumnType("time")
@@ -621,6 +632,10 @@ public partial class RideMateContext : DbContext
                 .HasComment("토요일 운영 시작 시각")
                 .HasColumnType("time")
                 .HasColumnName("SAT_OPEN_TIME");
+            entity.Property(e => e.SeoulRef)
+                .HasMaxLength(20)
+                .HasComment("서울시 공영주차장 코드(PKLT_CD). 연결 안 되면 NULL")
+                .HasColumnName("SEOUL_REF");
             entity.Property(e => e.SourceRef)
                 .HasMaxLength(100)
                 .HasComment("표준데이터 주차장 관리번호")

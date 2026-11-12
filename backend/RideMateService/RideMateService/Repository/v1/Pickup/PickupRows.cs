@@ -15,6 +15,32 @@ public class TodayPickupRow
 }
 
 /// <summary>
+/// 대기 장소 추천 계산에 쓰는 주차장 한 건
+/// </summary>
+public class ParkingLotRow
+{
+    public int ParkingLotId { get; set; }
+    public string LotName { get; set; } = string.Empty;
+    public decimal Lat { get; set; }
+    public decimal Lng { get; set; }
+    public TimeSpan? WeekdayOpenTime { get; set; }
+    public TimeSpan? WeekdayCloseTime { get; set; }
+    public TimeSpan? SatOpenTime { get; set; }
+    public TimeSpan? SatCloseTime { get; set; }
+    public TimeSpan? HolidayOpenTime { get; set; }
+    public TimeSpan? HolidayCloseTime { get; set; }
+    public short BaseMin { get; set; }
+    public int BaseFee { get; set; }
+    public short? AddUnitMin { get; set; }
+    public int? AddFee { get; set; }
+    public int? DayPassFee { get; set; }
+    public int? DayMaxFee { get; set; }
+    public string? RealtimeRef { get; set; }
+    public short? AvailableSpaces { get; set; }
+    public DateTime? AvailableUpdateDt { get; set; }
+}
+
+/// <summary>
 /// 학원의 픽업 지점 후보 한 건. WalkPathWkt는 SRID 4326 WKT라 점이 "위도 경도" 순이다
 /// </summary>
 public class PickupSpotRow

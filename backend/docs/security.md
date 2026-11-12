@@ -10,6 +10,7 @@
 - 설정 묶음은 `IOptions<T>`로 받는다. 서비스에 `IConfiguration`을 직접 주입하지 않는다.
 - Issuer·Audience·프록시 IP처럼 환경마다 다른 값도 코드 상수로 박지 않고 설정에서 읽는다.
 - `Kakao:RestApiKey`(카카오 REST API 키)는 선택 비밀값이다. 환경변수 `Kakao__RestApiKey`로 주입하고, 비어 있어도 기동은 하며 도보 시간은 직선 거리 추정으로 떨어진다(기동 로그 `Kakao walk route: ON/OFF`).
+- `PublicData:ServiceKey`(공공데이터포털 키)는 선택 비밀값이다. 환경변수 `PublicData__ServiceKey`로 주입하고(compose는 `.env`의 `DATA_GO_KR_API_KEY`를 넘긴다), 비어 있어도 기동은 하며 대기 장소의 실시간 빈자리는 저장값이나 `UNKNOWN`으로 떨어진다(기동 로그 `Parking realtime: ON/OFF`). 키는 요청 URL에만 넣고 로그·예외 메시지에 남기지 않는다. [ADR-0020]
 
 ## 로그
 

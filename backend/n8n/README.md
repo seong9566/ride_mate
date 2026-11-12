@@ -24,7 +24,7 @@ sh n8n/setup-credentials.sh
 
 ## 처음 설치 (새로 클론했거나 `n8n-data` 볼륨을 잃었을 때)
 
-자격 증명을 넣은 뒤 `backend/`에서 워크플로 네 개를 가져오고 수집기 두 개를 활성화한다. JSON은 `active: false`로 저장돼 있어 가져오기만 하면 수집이 돌지 않는다.
+자격 증명을 넣은 뒤 `backend/`에서 워크플로 다섯 개를 가져오고 수집기 세 개를 활성화한다. JSON은 `active: false`로 저장돼 있어 가져오기만 하면 수집이 돌지 않는다.
 
 ```sh
 for f in n8n/workflows/*.json; do
@@ -32,21 +32,52 @@ for f in n8n/workflows/*.json; do
 done
 docker compose exec -T n8n n8n publish:workflow --id=topisCollect0001
 docker compose exec -T n8n n8n publish:workflow --id=gitsCollect00001
+docker compose exec -T n8n n8n publish:workflow --id=parkingCollect01
 docker compose restart n8n
 docker compose logs n8n --since 1m | grep "published workflows"
 ```
 
-마지막 명령에 `2 published workflows`가 보여야 한다(재시작 직후라 아직 안 보이면 몇 초 뒤 다시 확인한다). CLI로 `publish:workflow`를 해도 떠 있는 n8n은 스케줄을 다시 읽지 않으므로 반드시 재시작한다(2026-11-11 실측: 재시작 전까지 회차가 기록되지 않았다). 링크 목록 만들기(`topisLinkBuild01`, `gitsLinkBuild001`)는 수동 워크플로라 활성화하지 않는다. 화면에서 실행하거나 아래 "5분 수집"의 `n8n execute` 명령에서 id만 바꿔 실행한다.
+마지막 명령에 `3 published workflows`가 보여야 한다(재시작 직후라 아직 안 보이면 몇 초 뒤 다시 확인한다). CLI로 `publish:workflow`를 해도 떠 있는 n8n은 스케줄을 다시 읽지 않으므로 반드시 재시작한다(2026-11-11 실측: 재시작 전까지 회차가 기록되지 않았다). 링크 목록 만들기(`topisLinkBuild01`, `gitsLinkBuild001`)는 수동 워크플로라 활성화하지 않는다. 화면에서 실행하거나 아래 "5분 수집"의 `n8n execute` 명령에서 id만 바꿔 실행한다.
+
+## 워크플로 목록
+
+- `topisLinkBuild01`: 대치동 TOPIS 링크 목록 만들기(수동)
+- `gitsLinkBuild001`: 평촌 GITS 링크 목록 만들기(수동)
+- `topisCollect0001`: TOPIS 도로 소통 5분 수집
+- `gitsCollect00001`: GITS 도로 소통 5분 수집
+- `parkingCollect01`: 대치동·평촌 공영 주차장 하루 1회 수집
 
 ## API 키
 
-`.env`의 `TOPIS_API_KEY`와 `GITS_API_KEY`에 각 제공처에서 발급받은 키를 넣는다. 발급 화면에 표시된 키 문자열을 그대로 넣는다(이미 URL 인코딩된 형태로 바꾸지 않는다). 빈 문자열이면 해당 소스의 키가 없는 것으로 처리한다. 키를 바꾼 뒤에는 `backend/`에서 컨테이너를 다시 생성해 환경변수를 반영한다.
+`.env`의 `DATA_GO_KR_API_KEY`, `TOPIS_API_KEY`, `GITS_API_KEY`에 각 제공처에서 발급받은 키를 넣는다. 발급 화면에 표시된 키 문자열을 그대로 넣는다. 공공데이터포털 키는 원문과 URL 인코딩된 형태를 모두 같은 값으로 정규화해 요청한다. 빈 문자열이면 해당 소스의 키가 없는 것으로 처리한다. 키를 바꾼 뒤에는 `backend/`에서 컨테이너를 다시 생성해 환경변수를 반영한다.
 
 ```sh
 docker compose up -d n8n
 ```
 
-워크플로는 키를 각각 `$env.TOPIS_API_KEY`, `$env.GITS_API_KEY`로 읽는다. 키는 워크플로 JSON, 명령줄 인자, 로그, 실행 이력이나 `ERROR_MESSAGE`에 넣지 않는다.
+워크플로는 키를 각각 `$env.DATA_GO_KR_API_KEY`, `$env.TOPIS_API_KEY`, `$env.GITS_API_KEY`로 읽는다. 키는 워크플로 JSON, 명령줄 인자, 로그, 실행 이력이나 실패 결과에 넣지 않는다.
+
+## 공영 주차장 하루 1회 수집
+
+`parkingCollect01`은 매일 04:30 KST에 전국주차장정보표준데이터에서 대치동·평촌 경계 1km 안의 공영 주차장을 고른다. 대치동 주차장은 서울시 공영주차장 요금·운영 정보와 연결하고, 한국교통안전공단 강남구 실시간 목록에 있는 시설을 100m 이내 좌표로 연결한 뒤(도곡초교 실시간 레코드가 표준데이터 좌표에서 약 53m 떨어져 있다) `PARKING_LOT`에 저장한다. 외부 API 단계가 하나라도 실패하면 적재와 삭제 표시는 실행하지 않는다.
+
+수동 실행은 `backend/`에서 다음 명령을 사용한다.
+
+```sh
+docker compose exec -T -e N8N_RUNNERS_BROKER_PORT=5691 n8n n8n execute --id=parkingCollect01
+```
+
+## 실행 결과 확인 — 공영 주차장
+
+수동 실행 출력에는 HTTP 응답 본문까지 모두 찍혀 20MB를 넘으므로, 결과는 DB(`PARKING_LOT`의 학원가별 건수, `UPDATE_DT`)로 확인하는 편이 낫다. 마지막 `성공 결과` 노드는 `standardTotal`, `kept`, `seoulMatched`, `seoulUnmatched`, `realtimeLinked`, `mismatched`, `upserted`, `softDeleted`를 출력한다. 실패하면 `실패 결과` 노드가 키나 URL 없이 `stage`와 `reason`만 출력한다.
+
+- `standardTotal`: 표준데이터 전체 건수
+- `kept`: 공영·거리·필수 운영/요금 조건을 통과한 건수
+- `seoulMatched` / `seoulUnmatched`: 서울시 행의 표준데이터 연결 성공/실패 건수
+- `realtimeLinked`: 공단 실시간 시설 코드가 연결된 적재 행 수
+- `mismatched`: 연결된 두 출처의 기본·추가 요금 또는 평일 운영 시간이 다른 건수
+- `upserted`: 이번 실행에서 upsert한 행 수
+- `softDeleted`: 이번 수집 목록에서 빠져 삭제 표시한 살아 있던 행 수
 
 ## 링크 목록 만들기 — TOPIS
 
