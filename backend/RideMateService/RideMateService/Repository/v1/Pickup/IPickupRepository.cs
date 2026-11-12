@@ -30,6 +30,12 @@ public interface IPickupRepository
     /// </summary>
     Task<bool> UpdatePickupEventAsync(PickupEvent model, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// 오늘 계획 등록. 저장 뒤 model의 오늘 계획 ID가 채워진다.
+    /// 같은 요일·날짜의 계획이 이미 있으면 MySQL 중복 키 예외(1062, DbUpdateException 안쪽)를 로그 없이 올려보낸다
+    /// </summary>
+    Task<bool> AddPickupPlanAsync(PickupPlan model, CancellationToken cancellationToken = default);
+
     // ====== Dapper
 
     /// <summary>
@@ -112,4 +118,43 @@ public interface IPickupRepository
     /// </summary>
     Task<LinkStatusPlanRow?> GetLinkStatusPlanAsync(int pickupPlanId, int userId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 로그인한 부모의 진행 중 계획(그날 PICKUP_DATE, 끝나지 않은 STATUS, EXPIRE_DT > now) 중
+    /// 배정 시각(없으면 그날 하원 시각)이 가장 이른 하나를 잠금 없이 조회한다. 없으면 null
+    /// </summary>
+    Task<LivePlanRow?> GetLivePlanAsync(int userId, DateOnly date, DateTime now,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 오늘 계획 한 건을 상태와 상관없이 조회한다(응답 만들기용). 없으면 null
+    /// </summary>
+    Task<LivePlanRow?> GetPlanByIdAsync(int pickupPlanId, IDbTransaction? transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 시간표 요일·날짜로 오늘 계획 ID를 조회한다. UNIQUE(TIMETABLE_DAY_ID, PICKUP_DATE)와 같은 키라 상태 조건을 붙이지 않는다
+    /// (끝난 계획은 TIMETABLE_DAY_ID가 NULL이라 걸리지 않는다). 없으면 null
+    /// </summary>
+    Task<int?> GetLivePlanIdByTimetableDayAsync(int timetableDayId, DateOnly date, IDbTransaction? transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 학원가 행을 FOR UPDATE로 잠근다. 배정·재배정 트랜잭션의 첫 문장으로 부른다. 행이 없으면 false
+    /// </summary>
+    Task<bool> LockAreaAsync(int areaId, IDbTransaction transaction, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 시간표 요일 행을 FOR UPDATE로 잠그고 시간표·아이·학원·그날 예외를 함께 읽는다. 잠그는 행은 TIMETABLE_DAY 하나다.
+    /// DELETE_YN 조건을 붙이지 않고 Alive로 돌려준다. 행이 없으면 null
+    /// </summary>
+    Task<TimetableDayLockRow?> LockTimetableDayAsync(int timetableDayId, DateOnly date, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 지점에서 배정 시각 앞뒤 windowMin분 안에 있는 진행 중 계획(끝나지 않은 STATUS, EXPIRE_DT > now) 수를 센다.
+    /// excludePlanId가 있으면 그 계획은 빼고 센다
+    /// </summary>
+    Task<int> CountSlotPlansAsync(int pickupSpotId, DateTime slotDt, int windowMin, DateTime now, int? excludePlanId,
+        IDbTransaction transaction, CancellationToken cancellationToken = default);
 }

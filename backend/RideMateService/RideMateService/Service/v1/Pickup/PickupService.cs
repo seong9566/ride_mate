@@ -41,6 +41,7 @@ public partial class PickupService : IPickupService
     private readonly IPhoneCryptoService _phoneCryptoService;
     private readonly ISmsSender _smsSender;
     private readonly PickupLinkOptions _linkOptions;
+    private readonly PickupPlanOptions _planOptions;
 
     public PickupService(IPickupRepository pickupRepository,
         ILogService logService,
@@ -51,7 +52,8 @@ public partial class PickupService : IPickupService
         IHashService hashService,
         IPhoneCryptoService phoneCryptoService,
         ISmsSender smsSender,
-        IOptions<PickupLinkOptions> linkOptions)
+        IOptions<PickupLinkOptions> linkOptions,
+        IOptions<PickupPlanOptions> planOptions)
     {
         this._pickupRepository = pickupRepository;
         this._logService = logService;
@@ -63,6 +65,7 @@ public partial class PickupService : IPickupService
         this._phoneCryptoService = phoneCryptoService;
         this._smsSender = smsSender;
         this._linkOptions = linkOptions.Value;
+        this._planOptions = planOptions.Value;
     }
 
     /// <summary>

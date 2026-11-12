@@ -35,4 +35,10 @@ public interface IPickupService
     /// </summary>
     Task<ResponseModel<DetailPickupLinkStatusDto>> DetailPickupLinkStatusService(PickupLinkStatusQueryDto dto,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 오늘 픽업 계획 만들기(이미 있으면 그 계획). 기본 지점을 우선순위·금지 시간·정원으로 배정한다
+    /// </summary>
+    Task<ResponseModel<PickupPlanDto>> AddPickupPlanService(AddPickupPlanDto dto,
+        CancellationToken cancellationToken = default);
 }

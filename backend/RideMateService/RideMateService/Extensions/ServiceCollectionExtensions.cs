@@ -178,9 +178,10 @@ public static class InfrastructureExtensions
     }
 
     /// <summary>
-    /// 카카오 설정(Kakao)과 출발 안내 설정(DepartureGuide), 픽업 링크 설정(PickupLink)을 등록하고, 도보 경로 클라이언트를 타임아웃 3초의 typed HttpClient로 등록한다.
+    /// 카카오 설정(Kakao)과 출발 안내 설정(DepartureGuide), 픽업 링크 설정(PickupLink), 픽업 계획 설정(PickupPlan)을 등록하고, 도보 경로 클라이언트를 타임아웃 3초의 typed HttpClient로 등록한다.
     /// Kakao:RestApiKey가 비어 있어도 기동은 하며, 이때 클라이언트는 카카오를 부르지 않고 null을 돌려준다.
     /// PickupLink:BaseUrl이 http(s) 절대 URI가 아니거나 PickupLink:MaxAttempts·InFlightTimeoutSec가 1보다 작으면 기동할 때 InvalidOperationException을 던진다.
+    /// PickupPlan:CreateLeadHours·ExpireAfterHours·ExpireIntervalSec가 1보다 작거나 SlotWindowMin·SlotShiftMaxMin이 0보다 작아도 같다.
     /// </summary>
     public static IServiceCollection AddMapInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
@@ -197,6 +198,20 @@ public static class InfrastructureExtensions
         if (pickupLinkOptions.InFlightTimeoutSec < 1)
             throw new InvalidOperationException("PickupLink:InFlightTimeoutSec 설정은 1 이상이어야 합니다.");
         services.Configure<PickupLinkOptions>(pickupLink);
+
+        var pickupPlan = configuration.GetSection("PickupPlan");
+        var pickupPlanOptions = pickupPlan.Get<PickupPlanOptions>() ?? new PickupPlanOptions();
+        if (pickupPlanOptions.CreateLeadHours < 1)
+            throw new InvalidOperationException("PickupPlan:CreateLeadHours 설정은 1 이상이어야 합니다.");
+        if (pickupPlanOptions.SlotWindowMin < 0)
+            throw new InvalidOperationException("PickupPlan:SlotWindowMin 설정은 0 이상이어야 합니다.");
+        if (pickupPlanOptions.SlotShiftMaxMin < 0)
+            throw new InvalidOperationException("PickupPlan:SlotShiftMaxMin 설정은 0 이상이어야 합니다.");
+        if (pickupPlanOptions.ExpireAfterHours < 1)
+            throw new InvalidOperationException("PickupPlan:ExpireAfterHours 설정은 1 이상이어야 합니다.");
+        if (pickupPlanOptions.ExpireIntervalSec < 1)
+            throw new InvalidOperationException("PickupPlan:ExpireIntervalSec 설정은 1 이상이어야 합니다.");
+        services.Configure<PickupPlanOptions>(pickupPlan);
 
         services.AddHttpClient<IWalkRouteClient, KakaoWalkRouteClient>(client =>
         {

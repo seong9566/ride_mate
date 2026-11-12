@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using MySql.Data.MySqlClient;
 using RideMateService.Commons.DBModels;
 
 namespace RideMateService.Repository.v1.Pickup;
@@ -109,5 +110,39 @@ public partial class PickupRepository
 #endif
             throw; // Service가 500으로 바꾼다
         }
+    }
+
+    /// <summary>
+    /// 오늘 계획 등록. 저장 뒤 model의 오늘 계획 ID가 채워진다.
+    /// 같은 요일·날짜의 계획이 이미 있으면 MySQL 중복 키 예외(1062, DbUpdateException 안쪽)를 로그 없이 올려보낸다
+    /// </summary>
+    public async Task<bool> AddPickupPlanAsync(PickupPlan model, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _context.PickupPlans.AddAsync(model, cancellationToken).ConfigureAwait(false);
+
+            return await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false) > 0;
+        }
+        // 요청 취소는 로그 없이 올려보낸다. 중복 키(1062)는 동시 생성 경합이라 에러로 기록하지 않고 Service에 맡긴다
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && !IsDuplicateKey(ex))
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw; // Service가 500으로 바꾼다
+        }
+    }
+
+    private static bool IsDuplicateKey(Exception? ex)
+    {
+        for (; ex is not null; ex = ex.InnerException)
+        {
+            if (ex is MySqlException { Number: 1062 })
+                return true;
+        }
+
+        return false;
     }
 }

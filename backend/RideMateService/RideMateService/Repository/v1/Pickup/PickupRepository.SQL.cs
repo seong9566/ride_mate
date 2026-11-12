@@ -80,7 +80,8 @@ public partial class PickupRepository
                        s.LAT AS Lat,
                        s.LNG AS Lng,
                        aps.WALK_MIN AS WalkMin,
-                       ST_AsText(aps.WALK_PATH) AS WalkPathWkt
+                       ST_AsText(aps.WALK_PATH) AS WalkPathWkt,
+                       s.CAPACITY AS Capacity
                 FROM ACADEMY_PICKUP_SPOT AS aps
                 INNER JOIN PICKUP_SPOT AS s
                         ON s.PICKUP_SPOT_ID = aps.PICKUP_SPOT_ID
@@ -557,6 +558,263 @@ public partial class PickupRepository
 
             return await _dapper.QueryFirstOrDefaultAsync<LinkStatusPlanRow>(
                 new CommandDefinition(sql, dp, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    // 진행 중 계획 상태. 정원 세기와 진행 중 계획 판정이 같은 목록을 쓴다
+    private const string LivePlanStatuses = "'PLANNED', 'STARTED', 'WAITING', 'STOPPED', 'LOOPING'";
+
+    // LivePlanRow 조회의 SELECT·FROM 부분. 픽업 계열 테이블(PICKUP_PLAN)에는 DELETE_YN 조건을 붙이지 않는다(schema.md)
+    private const string LivePlanSelectSql = @"
+                SELECT p.PICKUP_PLAN_ID AS PickupPlanId,
+                       p.TIMETABLE_DAY_ID AS TimetableDayId,
+                       p.AREA_ID AS AreaId,
+                       p.PICKUP_DATE AS PickupDate,
+                       p.END_TIME AS EndTime,
+                       p.STATUS AS Status,
+                       p.PICKUP_SPOT_ID AS PickupSpotId,
+                       p.SLOT_DT AS SlotDt,
+                       p.WALK_MIN AS WalkMin,
+                       p.EXPIRE_DT AS ExpireDt,
+                       p.CUSTOM_LAT AS CustomLat,
+                       p.CUSTOM_LNG AS CustomLng,
+                       p.CUSTOM_NAME AS CustomName,
+                       ST_AsText(p.CUSTOM_WALK_PATH) AS CustomWalkPathWkt,
+                       s.SPOT_NAME AS SpotName,
+                       s.LAT AS SpotLat,
+                       s.LNG AS SpotLng,
+                       s.GUIDE_TEXT AS GuideText,
+                       s.PHOTO_URL AS PhotoUrl,
+                       t.DISPLAY_NAME AS AcademyName,
+                       p.ACADEMY_ID AS AcademyId
+                FROM PICKUP_PLAN AS p
+                LEFT JOIN PICKUP_SPOT AS s
+                       ON s.PICKUP_SPOT_ID = p.PICKUP_SPOT_ID
+                      AND s.DELETE_YN = FALSE
+                LEFT JOIN TIMETABLE_DAY AS td
+                       ON td.TIMETABLE_DAY_ID = p.TIMETABLE_DAY_ID
+                      AND td.DELETE_YN = FALSE
+                LEFT JOIN TIMETABLE AS t
+                       ON t.TIMETABLE_ID = td.TIMETABLE_ID
+                      AND t.DELETE_YN = FALSE";
+
+    /// <summary>
+    /// 로그인한 부모의 진행 중 계획(그날 PICKUP_DATE, 끝나지 않은 STATUS, EXPIRE_DT > now) 중
+    /// 배정 시각(없으면 그날 하원 시각)이 가장 이른 하나를 잠금 없이 조회한다. 없으면 null
+    /// </summary>
+    public async Task<LivePlanRow?> GetLivePlanAsync(int userId, DateOnly date, DateTime now,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("userId", userId);
+            dp.Add("date", date.ToDateTime(TimeOnly.MinValue), DbType.Date);
+            dp.Add("now", now);
+
+            var sql = LivePlanSelectSql + $@"
+                WHERE p.USER_ID = @userId
+                  AND p.PICKUP_DATE = @date
+                  AND p.STATUS IN ({LivePlanStatuses})
+                  AND p.EXPIRE_DT > @now
+                ORDER BY COALESCE(p.SLOT_DT, TIMESTAMP(p.PICKUP_DATE, p.END_TIME)), p.PICKUP_PLAN_ID
+                LIMIT 1";
+
+            return await _dapper.QueryFirstOrDefaultAsync<LivePlanRow>(
+                new CommandDefinition(sql, dp, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 오늘 계획 한 건을 상태와 상관없이 조회한다(응답 만들기용). 없으면 null
+    /// </summary>
+    public async Task<LivePlanRow?> GetPlanByIdAsync(int pickupPlanId, IDbTransaction? transaction,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("pickupPlanId", pickupPlanId);
+
+            var sql = LivePlanSelectSql + @"
+                WHERE p.PICKUP_PLAN_ID = @pickupPlanId";
+
+            return await _dapper.QueryFirstOrDefaultAsync<LivePlanRow>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 시간표 요일·날짜로 오늘 계획 ID를 조회한다. UNIQUE(TIMETABLE_DAY_ID, PICKUP_DATE)와 같은 키라 상태 조건을 붙이지 않는다
+    /// (끝난 계획은 TIMETABLE_DAY_ID가 NULL이라 걸리지 않는다). 없으면 null
+    /// </summary>
+    public async Task<int?> GetLivePlanIdByTimetableDayAsync(int timetableDayId, DateOnly date,
+        IDbTransaction? transaction, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("timetableDayId", timetableDayId);
+            dp.Add("date", date.ToDateTime(TimeOnly.MinValue), DbType.Date);
+
+            var sql = @"
+                SELECT p.PICKUP_PLAN_ID
+                FROM PICKUP_PLAN AS p
+                WHERE p.TIMETABLE_DAY_ID = @timetableDayId
+                  AND p.PICKUP_DATE = @date";
+
+            return await _dapper.QueryFirstOrDefaultAsync<int?>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 학원가 행을 FOR UPDATE로 잠근다. 배정·재배정 트랜잭션의 첫 문장으로 부른다. 행이 없으면 false
+    /// </summary>
+    public async Task<bool> LockAreaAsync(int areaId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("areaId", areaId);
+
+            // 잠금 조회에는 DELETE_YN 조건을 붙이지 않는다(schema.md)
+            var sql = @"
+                SELECT AREA_ID
+                FROM AREA
+                WHERE AREA_ID = @areaId
+                FOR UPDATE";
+
+            var locked = await _dapper.QueryFirstOrDefaultAsync<int?>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            return locked is not null;
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 시간표 요일 행을 FOR UPDATE로 잠그고 시간표·아이·학원·그날 예외를 함께 읽는다. 잠그는 행은 TIMETABLE_DAY 하나다.
+    /// DELETE_YN 조건을 붙이지 않고 Alive로 돌려준다. 행이 없으면 null
+    /// </summary>
+    public async Task<TimetableDayLockRow?> LockTimetableDayAsync(int timetableDayId, DateOnly date,
+        IDbTransaction transaction, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("timetableDayId", timetableDayId);
+            dp.Add("date", date.ToDateTime(TimeOnly.MinValue), DbType.Date);
+
+            // FOR UPDATE OF td — 함께 읽는 학원 행은 여러 부모가 같이 쓰므로 잠그지 않는다(배정은 AREA 잠금으로 이미 직렬화된다).
+            // 잠금 조회라 DELETE_YN 조건 대신 Alive로 돌려준다. 예외는 살아 있는 그날 행만 본다
+            var sql = @"
+                SELECT td.TIMETABLE_DAY_ID AS TimetableDayId,
+                       c.USER_ID AS UserId,
+                       c.CHILD_ID AS ChildId,
+                       a.ACADEMY_ID AS AcademyId,
+                       a.AREA_ID AS AreaId,
+                       a.LAT AS AcademyLat,
+                       a.LNG AS AcademyLng,
+                       td.PICKUP_YN AS PickupYn,
+                       td.LAST_PICKUP_DATE AS LastPickupDate,
+                       CASE WHEN e.EXCEPTION_TYPE = 'TIME_CHANGE' THEN e.CHANGED_END_TIME ELSE t.END_TIME END AS EndTime,
+                       (e.EXCEPTION_TYPE IS NOT NULL AND e.EXCEPTION_TYPE = 'SKIP') AS Skipped,
+                       (td.DELETE_YN = FALSE AND t.DELETE_YN = FALSE AND c.DELETE_YN = FALSE) AS Alive
+                FROM TIMETABLE_DAY AS td
+                INNER JOIN TIMETABLE AS t
+                        ON t.TIMETABLE_ID = td.TIMETABLE_ID
+                INNER JOIN CHILD AS c
+                        ON c.CHILD_ID = t.CHILD_ID
+                INNER JOIN ACADEMY AS a
+                        ON a.ACADEMY_ID = t.ACADEMY_ID
+                LEFT JOIN TIMETABLE_EXCEPTION AS e
+                       ON e.TIMETABLE_DAY_ID = td.TIMETABLE_DAY_ID
+                      AND e.TARGET_DATE = @date
+                      AND e.DELETE_YN = FALSE
+                WHERE td.TIMETABLE_DAY_ID = @timetableDayId
+                FOR UPDATE OF td";
+
+            return await _dapper.QueryFirstOrDefaultAsync<TimetableDayLockRow>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 지점에서 배정 시각 앞뒤 windowMin분 안에 있는 진행 중 계획(끝나지 않은 STATUS, EXPIRE_DT > now) 수를 센다.
+    /// excludePlanId가 있으면 그 계획은 빼고 센다
+    /// </summary>
+    public async Task<int> CountSlotPlansAsync(int pickupSpotId, DateTime slotDt, int windowMin, DateTime now,
+        int? excludePlanId, IDbTransaction transaction, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("pickupSpotId", pickupSpotId);
+            dp.Add("fromDt", slotDt.AddMinutes(-windowMin));
+            dp.Add("toDt", slotDt.AddMinutes(windowMin));
+            dp.Add("now", now);
+            dp.Add("excludePlanId", excludePlanId);
+
+            // IX_PICKUP_PLAN_01 (PICKUP_SPOT_ID, SLOT_DT) 범위 조회. 같은 학원가의 AREA 잠금을 쥔 트랜잭션 안에서 일반 조회로 센다
+            var sql = $@"
+                SELECT COUNT(*)
+                FROM PICKUP_PLAN AS p
+                WHERE p.PICKUP_SPOT_ID = @pickupSpotId
+                  AND p.SLOT_DT BETWEEN @fromDt AND @toDt
+                  AND p.STATUS IN ({LivePlanStatuses})
+                  AND p.EXPIRE_DT > @now
+                  AND (@excludePlanId IS NULL OR p.PICKUP_PLAN_ID <> @excludePlanId)";
+
+            return await _dapper.ExecuteScalarAsync<int>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
         {
