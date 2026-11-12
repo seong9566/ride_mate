@@ -178,6 +178,10 @@ public partial class RideMateContext : DbContext
             entity.Property(e => e.DeleteYn)
                 .HasComment("삭제 여부")
                 .HasColumnName("DELETE_YN");
+            entity.Property(e => e.Note)
+                .HasMaxLength(100)
+                .HasComment("학원 기준 지점 한 줄 안내")
+                .HasColumnName("NOTE");
             entity.Property(e => e.PickupSpotId)
                 .HasComment("픽업 지점 ID")
                 .HasColumnName("PICKUP_SPOT_ID");
@@ -1361,6 +1365,8 @@ public partial class RideMateContext : DbContext
 
             entity.HasIndex(e => e.AcademyId, "IX_TIMETABLE_02");
 
+            entity.HasIndex(e => e.PickupSpotId, "IX_TIMETABLE_03");
+
             entity.Property(e => e.TimetableId)
                 .HasComment("시간표 ID")
                 .HasColumnName("TIMETABLE_ID");
@@ -1389,6 +1395,9 @@ public partial class RideMateContext : DbContext
                 .HasComment("하원 시각")
                 .HasColumnType("time")
                 .HasColumnName("END_TIME");
+            entity.Property(e => e.PickupSpotId)
+                .HasComment("우리 픽업 장소(부모가 고른 기본 픽업 지점 ID)")
+                .HasColumnName("PICKUP_SPOT_ID");
             entity.Property(e => e.UpdateDt)
                 .HasComment("수정 일시")
                 .HasColumnType("datetime")
@@ -1407,6 +1416,10 @@ public partial class RideMateContext : DbContext
                 .HasForeignKey(d => d.ChildId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_TIMETABLE_01");
+
+            entity.HasOne(d => d.PickupSpot).WithMany(p => p.Timetables)
+                .HasForeignKey(d => d.PickupSpotId)
+                .HasConstraintName("FK_TIMETABLE_03");
         });
 
         modelBuilder.Entity<TimetableDay>(entity =>

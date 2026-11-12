@@ -25,6 +25,12 @@ public interface IPickupService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 픽업 장소 후보 목록
+    /// </summary>
+    Task<ResponseModel<PickupSpotListDto>> GetPickupSpotListService(PickupSpotListQueryDto dto,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 픽업 링크 문자 발송(최초 발송과 실패 후 다시 보내기)
     /// </summary>
     Task<ResponseModel<PickupLinkSendDto>> AddPickupLinkService(AddPickupLinkDto dto,

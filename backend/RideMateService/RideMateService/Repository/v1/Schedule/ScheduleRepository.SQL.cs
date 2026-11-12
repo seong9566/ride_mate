@@ -300,6 +300,10 @@ public partial class ScheduleRepository
                        a.LAT AS lat,
                        a.LNG AS lng,
                        TIME_FORMAT(t.END_TIME, '%H:%i') AS endTime,
+                       sp.PICKUP_SPOT_ID AS pickupSpotSeq,
+                       sp.SPOT_NAME AS spotName,
+                       sp.WALK_MIN AS walkMin,
+                       sp.PREFERRED AS preferred,
                        td.TIMETABLE_DAY_ID AS scheduleDaySeq,
                        td.DAY_OF_WEEK AS dayOfWeek,
                        td.PICKUP_YN AS pickupYn
@@ -307,6 +311,7 @@ public partial class ScheduleRepository
                 INNER JOIN ACADEMY AS a
                         ON a.ACADEMY_ID = t.ACADEMY_ID
                        AND a.DELETE_YN = FALSE
+                LEFT JOIN LATERAL (" + SchedulePickupSpotSql + @") AS sp ON TRUE
                 LEFT JOIN TIMETABLE_DAY AS td
                        ON td.TIMETABLE_ID = t.TIMETABLE_ID
                       AND td.DELETE_YN = FALSE
@@ -317,13 +322,14 @@ public partial class ScheduleRepository
 
             var items = new Dictionary<int, ScheduleItemDto>();
             var ordered = new List<ScheduleItemDto>();
-            await _dapper.QueryAsync<ScheduleItemDto, ScheduleDayDto?, ScheduleItemDto>(
+            await _dapper.QueryAsync<ScheduleItemDto, SchedulePickupSpotDto?, ScheduleDayDto?, ScheduleItemDto>(
                 new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken),
-                (item, day) =>
+                (item, pickupSpot, day) =>
                 {
                     if (!items.TryGetValue(item.scheduleSeq, out var current))
                     {
                         current = item;
+                        current.pickupSpot = pickupSpot;
                         items[item.scheduleSeq] = current;
                         ordered.Add(current);
                     }
@@ -332,8 +338,97 @@ public partial class ScheduleRepository
                         current.days.Add(day);
                     return current;
                 },
-                splitOn: "scheduleDaySeq").ConfigureAwait(false);
+                splitOn: "pickupSpotSeq,scheduleDaySeq").ConfigureAwait(false);
             return ordered;
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    // 시간표(t)의 우리 픽업 장소 한 건 조회(LATERAL 안쪽). 부모가 고른 지점이 지금도 그 학원의 살아 있는 후보면 그 지점(PREFERRED = 1),
+    // 아니면 PRIORITY가 가장 앞선 후보. 시각·금지 시간·정원은 보지 않는다 [ADR-0025]
+    private const string SchedulePickupSpotSql = @"
+                    SELECT s.PICKUP_SPOT_ID,
+                           s.SPOT_NAME,
+                           aps.WALK_MIN,
+                           (s.PICKUP_SPOT_ID <=> t.PICKUP_SPOT_ID) AS PREFERRED
+                    FROM ACADEMY_PICKUP_SPOT AS aps
+                    INNER JOIN PICKUP_SPOT AS s
+                            ON s.PICKUP_SPOT_ID = aps.PICKUP_SPOT_ID
+                           AND s.USE_YN = 1
+                           AND s.DELETE_YN = FALSE
+                    WHERE aps.ACADEMY_ID = t.ACADEMY_ID
+                      AND aps.DELETE_YN = FALSE
+                    ORDER BY (s.PICKUP_SPOT_ID <=> t.PICKUP_SPOT_ID) DESC, aps.PRIORITY, aps.ACADEMY_PICKUP_SPOT_ID
+                    LIMIT 1";
+
+    /// <summary>
+    /// 그 시간표의 우리 픽업 장소를 목록 항목의 pickupSpot과 같은 모양으로 돌려준다. 후보가 없으면 null이다.
+    /// 쓰기 트랜잭션 안에서 부르면 그 트랜잭션을 넘긴다.
+    /// </summary>
+    public async Task<SchedulePickupSpotDto?> GetSchedulePickupSpotAsync(int timetableId,
+        IDbTransaction? transaction = null, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("timetableId", timetableId);
+
+            var sql = @"
+                SELECT sp.PICKUP_SPOT_ID AS pickupSpotSeq,
+                       sp.SPOT_NAME AS spotName,
+                       sp.WALK_MIN AS walkMin,
+                       sp.PREFERRED AS preferred
+                FROM TIMETABLE AS t
+                INNER JOIN LATERAL (" + SchedulePickupSpotSql + @") AS sp ON TRUE
+                WHERE t.TIMETABLE_ID = @timetableId
+                  AND t.DELETE_YN = FALSE";
+
+            return await _dapper.QueryFirstOrDefaultAsync<SchedulePickupSpotDto>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 그 지점이 그 학원의 살아 있는 후보(후보 행 살아 있음 + 지점 살아 있음 + 지점 USE_YN = 1)인지 본다.
+    /// </summary>
+    public async Task<bool> IsAcademyPickupSpotAsync(int academyId, int pickupSpotId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("academyId", academyId);
+            dp.Add("pickupSpotId", pickupSpotId);
+
+            var sql = @"
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM ACADEMY_PICKUP_SPOT AS aps
+                    INNER JOIN PICKUP_SPOT AS s
+                            ON s.PICKUP_SPOT_ID = aps.PICKUP_SPOT_ID
+                           AND s.USE_YN = 1
+                           AND s.DELETE_YN = FALSE
+                    WHERE aps.ACADEMY_ID = @academyId
+                      AND aps.PICKUP_SPOT_ID = @pickupSpotId
+                      AND aps.DELETE_YN = FALSE)";
+
+            return await _dapper.ExecuteScalarAsync<bool>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
         {
@@ -460,7 +555,7 @@ public partial class ScheduleRepository
     }
 
     /// <summary>
-    /// 그 아이의 살아 있는 시간표 한 건의 학원 ID·하원 시각을 돌려준다. 없거나 남의 것이면 null이다.
+    /// 그 아이의 살아 있는 시간표 한 건의 학원 ID·하원 시각·우리 픽업 장소를 돌려준다. 없거나 남의 것이면 null이다.
     /// </summary>
     public async Task<LiveScheduleRow?> GetLiveScheduleAsync(int childId, int timetableId, IDbTransaction transaction,
         CancellationToken cancellationToken = default)
@@ -474,7 +569,8 @@ public partial class ScheduleRepository
             var sql = @"
                 SELECT t.TIMETABLE_ID AS TimetableId,
                        t.ACADEMY_ID AS AcademyId,
-                       t.END_TIME AS EndTime
+                       t.END_TIME AS EndTime,
+                       t.PICKUP_SPOT_ID AS PickupSpotId
                 FROM TIMETABLE AS t
                 WHERE t.TIMETABLE_ID = @timetableId
                   AND t.CHILD_ID = @childId

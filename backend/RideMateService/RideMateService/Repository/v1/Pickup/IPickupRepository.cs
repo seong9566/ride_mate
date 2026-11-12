@@ -78,9 +78,18 @@ public interface IPickupRepository
     Task<bool> IsParkingLotInAreaAsync(int parkingLotId, int areaId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 학원의 픽업 지점 후보 중 사용 중인 것을 우선순위 순으로 조회한다
+    /// 로그인한 부모의 살아 있는 아이의 살아 있는 시간표 한 건을 픽업 장소 후보 목록용으로 조회한다. 없거나 남의 것이면 null.
+    /// 그 날짜 요일의 살아 있는 요일 행이 있으면 TIME_CHANGE 예외를 반영한 하원 시각을 EndTime으로 돌려준다
     /// </summary>
-    Task<List<PickupSpotRow>> GetAcademyPickupSpotsAsync(int academyId, CancellationToken cancellationToken = default);
+    Task<PickupSpotTargetRow?> GetPickupSpotTargetAsync(int userId, int timetableId, DateOnly date, byte dayOfWeek,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 학원의 픽업 지점 후보 중 사용 중인 것을 조회한다. 우리 픽업 장소(preferredSpotId)가 후보면 맨 앞에, 나머지는 우선순위 순이다.
+    /// 순서가 상관없으면 preferredSpotId에 null을 넘긴다
+    /// </summary>
+    Task<List<PickupSpotRow>> GetAcademyPickupSpotsAsync(int academyId, int? preferredSpotId,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 픽업 지점들의 그 요일 유형 금지 시간을 조회한다
@@ -197,10 +206,10 @@ public interface IPickupRepository
 
     /// <summary>
     /// 지점에서 배정 시각 앞뒤 windowMin분 안에 있는 진행 중 계획(끝나지 않은 STATUS, EXPIRE_DT > now) 수를 센다.
-    /// excludePlanId가 있으면 그 계획은 빼고 센다
+    /// excludePlanId가 있으면 그 계획은 빼고 센다. 트랜잭션 없이 부르면 잠금 없는 일반 조회다
     /// </summary>
     Task<int> CountSlotPlansAsync(int pickupSpotId, DateTime slotDt, int windowMin, DateTime now, int? excludePlanId,
-        IDbTransaction transaction, CancellationToken cancellationToken = default);
+        IDbTransaction? transaction, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 오늘 계획 행을 PK 인덱스(FORCE INDEX (PRIMARY))로 FOR UPDATE 잠그고 읽는다. 재배정 트랜잭션에서 AREA 잠금 다음에 부른다.

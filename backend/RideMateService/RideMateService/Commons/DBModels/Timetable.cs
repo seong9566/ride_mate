@@ -34,6 +34,11 @@ public partial class Timetable
     public TimeSpan EndTime { get; set; }
 
     /// <summary>
+    /// 우리 픽업 장소(부모가 고른 기본 픽업 지점 ID)
+    /// </summary>
+    public int? PickupSpotId { get; set; }
+
+    /// <summary>
     /// 생성 일시
     /// </summary>
     public DateTime CreateDt { get; set; }
@@ -61,6 +66,8 @@ public partial class Timetable
     public virtual Academy Academy { get; set; } = null!;
 
     public virtual Child Child { get; set; } = null!;
+
+    public virtual PickupSpot? PickupSpot { get; set; }
 
     public virtual ICollection<TimetableDay> TimetableDays { get; set; } = new List<TimetableDay>();
 }

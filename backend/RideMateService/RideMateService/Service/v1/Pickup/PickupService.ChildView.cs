@@ -75,7 +75,7 @@ public partial class PickupService
             }
             else if (pickup?.locationType == LocationTypeSpot && plan.AcademyId is { } academyId)
             {
-                var spots = await _pickupRepository.GetAcademyPickupSpotsAsync(academyId,
+                var spots = await _pickupRepository.GetAcademyPickupSpotsAsync(academyId, null,
                     cancellationToken).ConfigureAwait(false);
                 walkPath = ParseLineString(spots.FirstOrDefault(spot => spot.PickupSpotId == plan.PickupSpotId)?.WalkPathWkt);
             }

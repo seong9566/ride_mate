@@ -89,6 +89,35 @@ public partial class ScheduleRepository
     }
 
     /// <summary>
+    /// 시간표의 우리 픽업 장소(PICKUP_SPOT_ID)와 수정 감사 컬럼만 바꾼다. null이면 지운다. 바뀐 행이 없으면 false를 돌려준다.
+    /// </summary>
+    public async Task<bool> UpdateSchedulePickupSpotAsync(int timetableId, int? pickupSpotId, DateTime updateDt,
+        string updateUser, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var affected = await _context.Timetables
+                .Where(x => x.TimetableId == timetableId
+                            && x.DeleteYn == false)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.PickupSpotId, pickupSpotId)
+                    .SetProperty(x => x.UpdateDt, updateDt)
+                    .SetProperty(x => x.UpdateUser, updateUser), cancellationToken)
+                .ConfigureAwait(false);
+
+            return affected > 0;
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw; // Service가 500으로 바꾼다
+        }
+    }
+
+    /// <summary>
     /// 시간표를 지운다. 날짜별 예외 → 요일 → 시간표 순으로 표마다 UPDATE 한 번씩 DELETE_YN을 켜고, 시간표의 DISPLAY_NAME은 빈 문자열로 바꾼다.
     /// 시간표 행이 바뀌지 않았으면 false를 돌려준다.
     /// </summary>
@@ -143,9 +172,10 @@ public partial class ScheduleRepository
 
     /// <summary>
     /// 시간표를 편집한다. 뺀 요일의 날짜별 예외 → 뺀 요일 → 되살릴 요일 → 새 요일 → 시간표 순으로 쓴다.
-    /// 되살린 요일은 픽업 스위치를 켜고 LAST_PICKUP_DATE는 그대로 둔다. 시간표 행이 바뀌지 않았으면 false를 돌려준다.
+    /// 되살린 요일은 픽업 스위치를 켜고 LAST_PICKUP_DATE는 그대로 둔다. 학원이 바뀌었으면(academyChanged) 같은 시간표 쓰기에서
+    /// 우리 픽업 장소를 비운다. 시간표 행이 바뀌지 않았으면 false를 돌려준다.
     /// </summary>
-    public async Task<bool> UpdateScheduleAsync(int timetableId, int academyId, string displayName, TimeSpan endTime,
+    public async Task<bool> UpdateScheduleAsync(int timetableId, int academyId, bool academyChanged, string displayName, TimeSpan endTime,
         IReadOnlyCollection<int> deleteDayIds, IReadOnlyCollection<int> reviveDayIds, IReadOnlyCollection<TimetableDay> newDays,
         DateTime updateDt, string updateUser, CancellationToken cancellationToken = default)
     {
@@ -198,12 +228,18 @@ public partial class ScheduleRepository
             var affected = await _context.Timetables
                 .Where(x => x.TimetableId == timetableId
                             && x.DeleteYn == false)
-                .ExecuteUpdateAsync(setters => setters
-                    .SetProperty(x => x.AcademyId, academyId)
-                    .SetProperty(x => x.DisplayName, displayName)
-                    .SetProperty(x => x.EndTime, endTime)
-                    .SetProperty(x => x.UpdateDt, updateDt)
-                    .SetProperty(x => x.UpdateUser, updateUser), cancellationToken)
+                .ExecuteUpdateAsync(setters =>
+                {
+                    setters
+                        .SetProperty(x => x.AcademyId, academyId)
+                        .SetProperty(x => x.DisplayName, displayName)
+                        .SetProperty(x => x.EndTime, endTime)
+                        .SetProperty(x => x.UpdateDt, updateDt)
+                        .SetProperty(x => x.UpdateUser, updateUser);
+                    // 학원이 바뀌면 이전 학원의 우리 픽업 장소는 후보가 아니므로 비운다 [ADR-0025]
+                    if (academyChanged)
+                        setters.SetProperty(x => x.PickupSpotId, (int?)null);
+                }, cancellationToken)
                 .ConfigureAwait(false);
 
             return affected > 0;
