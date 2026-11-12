@@ -34,4 +34,35 @@ public class DepartureGuideOptions
     /// 하원 시각 뒤 이 시간(시간)이 지나기 전까지를 오늘 남은 픽업으로 본다.
     /// </summary>
     public int PickupWindowHours { get; set; } = 1;
+
+    /// <summary>
+    /// 학원가 진입 혼잡 보정 설정
+    /// </summary>
+    public DepartureCongestionOptions Congestion { get; set; } = new();
+}
+
+/// <summary>
+/// 학원가 진입 혼잡 보정 설정. 설정 절 "DepartureGuide:Congestion".
+/// </summary>
+public class DepartureCongestionOptions
+{
+    /// <summary>
+    /// 혼잡 보정 사용 여부
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// 학원가별 진입 구간 거리(m)
+    /// </summary>
+    public Dictionary<string, int> EntryDistanceM { get; set; } = new();
+
+    /// <summary>
+    /// 최대 혼잡 보정 시간(분)
+    /// </summary>
+    public int MaxCongestionMin { get; set; } = 15;
+
+    /// <summary>
+    /// 수집 속도를 사용할 최소 표본 일수
+    /// </summary>
+    public int MinSampleDays { get; set; } = 3;
 }

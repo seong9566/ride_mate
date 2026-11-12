@@ -57,7 +57,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 - 계정·인증: `USER_INFO`, `LOGIN_SESSION`, `PHONE_VERIFICATION`, `QR_LOGIN`, `CONSENT`
 - 아이·시간표: `CHILD`, `ACADEMY`, `TIMETABLE`, `TIMETABLE_DAY`, `TIMETABLE_EXCEPTION`
 - 기준 데이터: `AREA`, `PICKUP_SPOT`, `PICKUP_SPOT_BLOCK`, `ACADEMY_PICKUP_SPOT`, `LOOP_ROUTE`, `RESTRICTED_ZONE`, `PARKING_LOT`, `HOLIDAY`
-- 도로 소통 수집: `TRAFFIC_LINK`, `TRAFFIC_COLLECT_RUN`, `TRAFFIC_SPEED`
+- 도로 소통 수집: `TRAFFIC_LINK`, `TRAFFIC_COLLECT_RUN`, `TRAFFIC_SPEED`, `TRAFFIC_HOURLY_SPEED`, `TRAFFIC_PROFILE`
 - 픽업 진행: `PICKUP_PLAN`, `PICKUP_SESSION`, `PICKUP_EVENT`
 
 ## 계정·인증
@@ -326,6 +326,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 |---|---|---|---|
 | `AREA_ID` | INT | N | PK |
 | `AREA_NAME` | VARCHAR(50) | N | 이름(예: 대치동) |
+| `AREA_CODE` | VARCHAR(20) | Y | 학원가 코드(`DAECHI`·`PYEONGCHON`) |
 | `BOUNDARY` | POLYGON SRID 4326 | N | 구역 경계. SPATIAL INDEX |
 
 대치동·평촌 행은 `sql/20261112_area_seed.sql`로 넣는다(사각형 경계, 2026-11-12 사용자 확인).
@@ -485,7 +486,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 
 대치동·평촌 학원가의 도로 소통 이력을 n8n 수집기가 적재한다. 감사 컬럼은 `CREATE_USER = SYSTEM`, `UPDATE_USER = SYSTEM`으로 넣는다.
 
-코드 값: `SOURCE`는 `TOPIS`·`GITS`, `AREA_CODE`는 `DAECHI`·`PYEONGCHON`, `STATUS`는 `OK`·`PARTIAL`·`NO_KEY`·`FAILED`다.
+코드 값: 수집 테이블의 `SOURCE`는 `TOPIS`·`GITS`, `TRAFFIC_PROFILE.SOURCE`는 `COLLECTED`·`MONTHLY`, `AREA_CODE`는 `DAECHI`·`PYEONGCHON`, `STATUS`는 `OK`·`PARTIAL`·`NO_KEY`·`FAILED`다.
 
 ### TRAFFIC_LINK — 수집 대상 링크
 
@@ -539,7 +540,38 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 - UNIQUE: `(TRAFFIC_LINK_ID, COLLECTED_DT)`. 같은 회차가 두 번 돌아도 중복으로 쌓이지 않는다. FK 인덱스를 겸한다.
 - 인덱스: `(COLLECT_RUN_ID)`, `(COLLECTED_DT)`
 - CHECK: `SPEED_KMH >= 0 AND TRAVEL_SEC >= 0`
-- T18의 요일·시간대 집계는 `DAYOFWEEK(COLLECTED_DT)`·`TIME(COLLECTED_DT)`로 한다.
+- 요일·시간대 집계는 n8n이 `TRAFFIC_PROFILE`로 만든다(요일 `WEEKDAY(COLLECTED_DT) + 1`, 5분 칸 `HOUR*60 + MINUTE`).
+
+### TRAFFIC_HOURLY_SPEED — TOPIS 월별 시간 속도
+
+| 컬럼 | 타입 | NULL | 설명 |
+|---|---|---|---|
+| `TRAFFIC_HOURLY_SPEED_ID` | INT | N | PK |
+| `TRAFFIC_LINK_ID` | INT | N | FK → TRAFFIC_LINK |
+| `SPEED_DATE` | DATE | N | 파일의 `일자` |
+| `HOUR_NO` | TINYINT | N | 파일 열 `~HH시`의 HH. 1~24 |
+| `SPEED_KMH` | DECIMAL(5,1) | N | 속도(km/h) |
+
+- UNIQUE: `(TRAFFIC_LINK_ID, SPEED_DATE, HOUR_NO)`
+- CHECK: `HOUR_NO BETWEEN 1 AND 24`, `SPEED_KMH > 0`
+- 행을 지우지 않으므로 `ACTIVE_FLAG` 없이 일반 UNIQUE를 쓴다.
+
+### TRAFFIC_PROFILE — 혼잡 집계표
+
+| 컬럼 | 타입 | NULL | 설명 |
+|---|---|---|---|
+| `TRAFFIC_PROFILE_ID` | INT | N | PK |
+| `AREA_CODE` | VARCHAR(20) | N | 학원가 코드 |
+| `DAY_OF_WEEK` | TINYINT | N | 요일 번호. 월 1~일 7 |
+| `SLOT_MIN` | SMALLINT | N | 자정부터 지난 분. 0~1435, 5분 단위 |
+| `SOURCE` | VARCHAR(20) | N | `COLLECTED`·`MONTHLY` |
+| `SPEED_KMH` | DECIMAL(5,1) | N | 집계 속도(km/h) |
+| `SAMPLE_DAYS` | SMALLINT | N | 집계 표본 일수 |
+
+- 한 칸은 `(AREA_CODE, DAY_OF_WEEK, SLOT_MIN, SOURCE)`로 정의한다. `SLOT_MIN`은 자정부터 지난 분이므로 하루를 5분 간격으로 나눈다.
+- UNIQUE: `(AREA_CODE, DAY_OF_WEEK, SLOT_MIN, SOURCE)`
+- CHECK: `DAY_OF_WEEK BETWEEN 1 AND 7`, `SLOT_MIN BETWEEN 0 AND 1435 AND MOD(SLOT_MIN, 5) = 0`, `SPEED_KMH > 0`, `SAMPLE_DAYS >= 0`
+- 행을 지우지 않으므로 `ACTIVE_FLAG` 없이 일반 UNIQUE를 쓴다. 이번 집계에서 근거가 사라진 칸은 행을 지우지 않고 `SAMPLE_DAYS = 0`으로 바꾼다.
 
 ## 픽업 진행
 
@@ -760,6 +792,6 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | 실시간 주차대수의 범위 | 시영 주차장만 제공한다. 강남구 운영 공영주차장이 포함되는지 |
 | 장소 검색 API (보류) | 지금은 앱 SDK 검색을 쓰므로 서버의 장소 검색은 보류다. 서버가 쓰게 되면 어느 지도 사업자를 쓰는지. `PLACE_ID`의 형식과 대소문자 구분이 달라진다. 도보 경로는 카카오맵 `v2/routing/walk`로 정했지만 장소 검색 사업자는 아직 정하지 않았다 |
 | 아이 도보 속도 | 보행자 경로 API가 실패했을 때 `WALK_MIN` 추정에 쓰는 설정값. `DepartureGuide:ChildWalkKmh` 4.0(가정)으로 뒀다 |
-| 교통 소통 정보의 저장 | 이력은 `TRAFFIC_*` 테이블에 쌓는다(n8n 수집기, 대치동 TOPIS·평촌 GITS). 서버가 실시간 값을 따로 호출·캐시할지, 최신 회차를 읽을지는 T18에서 정한다. 서버가 따로 부르면 같은 키의 일일 한도를 나눠 쓴다 |
+| 교통 소통 정보의 저장 | T42: 서버는 `TRAFFIC_PROFILE`만 읽는다 |
 | 잠금 순서의 실제 검증 | 이 문서의 잠금 순서는 실행해 보지 않았다. 구현할 때 같은 시간표로 계획 생성과 탑승 처리를 동시에 보내 교착과 정원 초과가 없는지 확인한다 |
 | DB 시간대 | 서버 코드와 DB의 현재 시각이 같은 시간대여야 한다. 배포처가 정해지면 맞춘다 |

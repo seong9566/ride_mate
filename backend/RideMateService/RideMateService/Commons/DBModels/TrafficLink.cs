@@ -93,5 +93,7 @@ public partial class TrafficLink
     /// </summary>
     public sbyte? ActiveFlag { get; set; }
 
+    public virtual ICollection<TrafficHourlySpeed> TrafficHourlySpeeds { get; set; } = new List<TrafficHourlySpeed>();
+
     public virtual ICollection<TrafficSpeed> TrafficSpeeds { get; set; } = new List<TrafficSpeed>();
 }

@@ -19,6 +19,11 @@ public partial class Area
     public string AreaName { get; set; } = null!;
 
     /// <summary>
+    /// 학원가 코드 (DAECHI, PYEONGCHON)
+    /// </summary>
+    public string? AreaCode { get; set; }
+
+    /// <summary>
     /// 생성 일시
     /// </summary>
     public DateTime CreateDt { get; set; }

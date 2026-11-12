@@ -32,6 +32,7 @@ public partial class PickupService : IPickupService
     private const string ReasonCustomLocation = "CUSTOM_LOCATION";
     private const string ReasonNoAcademyLocation = "NO_ACADEMY_LOCATION";
     private const string ReasonSlotShifted = "SLOT_SHIFTED";
+    private const string ReasonRoadCongestion = "ROAD_CONGESTION";
 
     private readonly IPickupRepository _pickupRepository;
     private readonly ILogService _logService;
@@ -97,6 +98,9 @@ public partial class PickupService : IPickupService
                 return new ResponseModel<DetailDepartureGuideDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
 
             var computation = await ComputeDepartureAsync(userId, dto, cancellationToken).ConfigureAwait(false);
+            if (computation.Code == 200)
+                await ApplyCongestionAsync(computation, cancellationToken).ConfigureAwait(false);
+
             return new ResponseModel<DetailDepartureGuideDto>
             {
                 message = "요청이 정상 처리되었습니다.",
@@ -291,7 +295,7 @@ public partial class PickupService : IPickupService
             if (pickup is null)
             {
                 result.reasons.Add(new DepartureGuideReasonDto { code = ReasonNoSpotAvailable });
-                return new DepartureComputation { Code = 200, Result = result, Target = target, DayType = dayType, Now = now };
+                return new DepartureComputation { Code = 200, Result = result, Target = target, DayType = dayType, IsHoliday = holiday.IsHoliday, Now = now };
             }
 
             if (pickup.pickupSpotSeq is null)
@@ -323,7 +327,7 @@ public partial class PickupService : IPickupService
             if (target.AcademyLat is not { } academyLat || target.AcademyLng is not { } academyLng)
             {
                 result.reasons.Add(new DepartureGuideReasonDto { code = ReasonNoAcademyLocation });
-                return new DepartureComputation { Code = 200, Result = result, Target = target, DayType = dayType, Now = now };
+                return new DepartureComputation { Code = 200, Result = result, Target = target, DayType = dayType, IsHoliday = holiday.IsHoliday, Now = now };
             }
 
             // 5) 픽업 장소와 도보 시간
@@ -333,7 +337,7 @@ public partial class PickupService : IPickupService
                 if (pickup is null)
                 {
                     result.reasons.Add(new DepartureGuideReasonDto { code = ReasonNoSpotAvailable });
-                    return new DepartureComputation { Code = 200, Result = result, Target = target, DayType = dayType, Now = now };
+                    return new DepartureComputation { Code = 200, Result = result, Target = target, DayType = dayType, IsHoliday = holiday.IsHoliday, Now = now };
                 }
 
                 // 학원 앞이 단속 구역이면 근거 맨 앞에 둔다. 판정 시각은 하원 + 정리 시간
@@ -393,7 +397,7 @@ public partial class PickupService : IPickupService
         else
             result.enforcement = new DepartureGuideEnforcementDto { status = EnforcementClear };
 
-        return new DepartureComputation { Code = 200, Result = result, Target = target, DayType = dayType, Now = now };
+        return new DepartureComputation { Code = 200, Result = result, Target = target, DayType = dayType, IsHoliday = holiday.IsHoliday, Now = now };
     }
 
     // 진행 중 계획을 대상 픽업 행으로 옮긴다. 학원 이름·좌표는 계획 학원의 현재 값, 학원가(AREA_ID)와 하원 시각은 계획에 복사해 둔 값이다
