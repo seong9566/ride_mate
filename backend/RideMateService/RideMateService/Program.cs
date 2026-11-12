@@ -16,6 +16,7 @@ using RideMateService.Comm.Parking;
 using RideMateService.Comm.Security;
 using RideMateService.Commons.Repository;
 using RideMateService.Extensions;
+using RideMateService.Service.v1.Pickup;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -80,6 +81,11 @@ builder.Services.AddSwaggerGen(c =>
 #region 도메인 DI
 
 builder.Services.AddDomainModules();
+#endregion
+
+#region 백그라운드 워커
+
+builder.Services.AddHostedService<PickupPlanExpiryWorker>();
 #endregion
 
 #region 공용 서비스

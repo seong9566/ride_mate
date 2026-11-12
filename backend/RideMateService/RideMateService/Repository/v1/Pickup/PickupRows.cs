@@ -51,6 +51,7 @@ public class PickupSpotRow
     public decimal Lng { get; set; }
     public byte WalkMin { get; set; }
     public string? WalkPathWkt { get; set; }
+    public byte Capacity { get; set; }
 }
 
 /// <summary>
@@ -108,7 +109,7 @@ public class ZoneRow
 }
 
 /// <summary>
-/// 잠근 오늘 계획 한 건. 끝난 계획은 UserId·ChildId가 NULL이다
+/// 잠근 오늘 계획 한 건. 끝난 계획은 UserId·ChildId·CustomName이 NULL이다. CustomName은 임의 좌표 계획의 장소 이름이다
 /// </summary>
 public class LinkPlanLockRow
 {
@@ -116,6 +117,7 @@ public class LinkPlanLockRow
     public int? UserId { get; set; }
     public int? ChildId { get; set; }
     public int? PickupSpotId { get; set; }
+    public string? CustomName { get; set; }
     public string Status { get; set; } = string.Empty;
     public DateTime ExpireDt { get; set; }
 }
@@ -130,7 +132,7 @@ public class LinkStatusPlanRow
 }
 
 /// <summary>
-/// 링크 문자 받는 사람과 문구 값. ChildPhoneEnc는 아이가 없거나 삭제됐으면 null, SpotName은 지점이 삭제됐으면 null이다
+/// 링크 문자 받는 사람과 문구 값. ChildPhoneEnc는 아이가 없거나 삭제됐으면 null, SpotName은 지점이 없거나(임의 좌표 계획) 삭제됐으면 null이다
 /// </summary>
 public class LinkTargetRow
 {
@@ -150,4 +152,86 @@ public class LinkEventRow
     public string? ClientEventId { get; set; }
     public string? Detail { get; set; }
     public DateTime CreateDt { get; set; }
+}
+
+/// <summary>
+/// 오늘 계획 한 건(응답 만들기·대상 고르기용). 지점은 LEFT JOIN이라 지점이 없거나 삭제됐으면 Spot* 값이 null이다.
+/// CustomWalkPathWkt는 SRID 4326 WKT라 점이 "위도 경도" 순이다. AcademyName은 시간표의 DISPLAY_NAME이다.
+/// AcademyLat·AcademyLng는 계획 학원의 현재 좌표다. 끝난 계획은 UserId·AcademyId가 NULL이다
+/// </summary>
+public class LivePlanRow
+{
+    public int PickupPlanId { get; set; }
+    public int? UserId { get; set; }
+    public int? TimetableDayId { get; set; }
+    public int AreaId { get; set; }
+    public DateOnly PickupDate { get; set; }
+    public TimeSpan? EndTime { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public int? PickupSpotId { get; set; }
+    public DateTime? SlotDt { get; set; }
+    public byte? WalkMin { get; set; }
+    public DateTime ExpireDt { get; set; }
+    public decimal? CustomLat { get; set; }
+    public decimal? CustomLng { get; set; }
+    public string? CustomName { get; set; }
+    public string? CustomWalkPathWkt { get; set; }
+    public string? SpotName { get; set; }
+    public decimal? SpotLat { get; set; }
+    public decimal? SpotLng { get; set; }
+    public string? GuideText { get; set; }
+    public string? PhotoUrl { get; set; }
+    public string? AcademyName { get; set; }
+    public int? AcademyId { get; set; }
+    public decimal? AcademyLat { get; set; }
+    public decimal? AcademyLng { get; set; }
+}
+
+/// <summary>
+/// 잠근 시간표 요일 한 건. EndTime은 그날 TIME_CHANGE를 반영한 하원 시각, Skipped는 그날 SKIP 예외가 있는지,
+/// Alive는 요일·시간표·아이가 모두 삭제되지 않았는지다. AreaId·AcademyLat·AcademyLng는 학원의 현재 값이다
+/// </summary>
+public class TimetableDayLockRow
+{
+    public int TimetableDayId { get; set; }
+    public int UserId { get; set; }
+    public int ChildId { get; set; }
+    public int AcademyId { get; set; }
+    public int? AreaId { get; set; }
+    public decimal? AcademyLat { get; set; }
+    public decimal? AcademyLng { get; set; }
+    public bool PickupYn { get; set; }
+    public DateOnly? LastPickupDate { get; set; }
+    public TimeSpan EndTime { get; set; }
+    public bool Skipped { get; set; }
+    public bool Alive { get; set; }
+}
+
+/// <summary>
+/// 재배정을 위해 잠근 오늘 계획 한 건. 끝난 계획은 UserId·AcademyId·EndTime이 NULL이다
+/// </summary>
+public class PlanLockRow
+{
+    public int PickupPlanId { get; set; }
+    public int? UserId { get; set; }
+    public int? AcademyId { get; set; }
+    public int AreaId { get; set; }
+    public DateOnly PickupDate { get; set; }
+    public TimeSpan? EndTime { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public int? PickupSpotId { get; set; }
+    public DateTime? SlotDt { get; set; }
+    public decimal? CustomLat { get; set; }
+    public DateTime ExpireDt { get; set; }
+    public int? TimetableDayId { get; set; }
+}
+
+/// <summary>
+/// 끝낼 오늘 계획의 요일 참조와 날짜. Live는 STATUS가 아직 끝나지 않았는지다
+/// </summary>
+public class ClosePlanRow
+{
+    public int? TimetableDayId { get; set; }
+    public DateOnly PickupDate { get; set; }
+    public bool Live { get; set; }
 }

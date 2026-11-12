@@ -3,7 +3,7 @@
 RideMate 백엔드의 테이블 설계다. 테이블 규칙(이름, 감사 컬럼, 삭제 방식)은 `database.md`가 정본이고, 이 문서는 그 규칙 위에서 어떤 테이블과 컬럼을 두는지를 적는다. 실제 DDL은 `backend/sql/`에 쌓는다.
 
 - 범위: 화면 RM-V00~V11, RM-M01~M04 전부(후순위 화면 포함). 기능 명세서 v0.3 기준이다.
-- 결정 이유는 [ADR-0008] 계정·개인정보·익명화, [ADR-0009] 정원 배정, [ADR-0010] 중복 방지 UNIQUE, [ADR-0011] 공간 타입에 있다.
+- 결정 이유는 [ADR-0008] 계정·개인정보·익명화, [ADR-0009] 정원 배정, [ADR-0010] 중복 방지 UNIQUE, [ADR-0011] 공간 타입, [ADR-0021] 늦은 출발의 정원 초과에 있다.
 - MySQL 8.4 이상을 전제로 한다. 로컬 Docker 이미지와 같은 버전이다.
 
 ## 공통
@@ -547,7 +547,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 
 ### PICKUP_PLAN — 오늘 계획
 
-차량이 오늘 계획을 처음 조회할 때(추천 출발 30분 전부터) 만든다. 그때 픽업 지점과 도착 시각을 배정하고 정원을 잡는다.
+차량이 계획 만들기 API(`AddPickupPlan`)를 부를 때 만든다. 앱은 추천 출발 30분 전에 부르고, 서버는 하원 시각 − `PickupPlan:CreateLeadHours`(3시간)보다 이른 요청만 거절한다(`api.md` "오늘 픽업 계획"). 그때 픽업 지점과 도착 시각을 배정하고 정원을 잡는다.
 
 | 컬럼 | 타입 | NULL | 설명 |
 |---|---|---|---|
@@ -559,9 +559,12 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `AREA_ID` | INT | N | FK → AREA. 학원의 학원가를 복사해 둔다. 끝나도 남긴다 |
 | `PICKUP_DATE` | DATE | N | 픽업 날짜 |
 | `END_TIME` | TIME | Y | 그날 적용된 하원 시각. 끝나면 NULL |
-| `PICKUP_SPOT_ID` | INT | Y | FK → PICKUP_SPOT. 배정 지점. 쓸 수 있는 지점이 없으면 NULL |
-| `SLOT_DT` | DATETIME | Y | 배정된 도착 시각(분 단위) |
-| `WALK_MIN` | TINYINT | Y | 배정 지점까지 아이 도보 시간(분). 끝나면 NULL |
+| `PICKUP_SPOT_ID` | INT | Y | FK → PICKUP_SPOT. 배정 지점. 쓸 수 있는 지점이 없거나 임의 좌표면 NULL |
+| `SLOT_DT` | DATETIME | Y | 배정된 도착 시각(분 단위). 지점이나 임의 좌표가 있으면 값이 있다 |
+| `WALK_MIN` | TINYINT | Y | 배정 지점(임의 좌표면 그 좌표)까지 아이 도보 시간(분). 끝나면 NULL |
+| `CUSTOM_LAT`·`CUSTOM_LNG` | DECIMAL(10,7) | Y | 부모가 고른 픽업 좌표. 기본 지점이면 NULL. 끝나면 NULL |
+| `CUSTOM_NAME` | VARCHAR(100) | Y | 임의 좌표의 장소 이름(카카오 주소 변환 결과). 끝나면 NULL |
+| `CUSTOM_WALK_PATH` | LINESTRING SRID 4326 | Y | 학원에서 임의 좌표까지 도보 경로 선. 카카오 도보 경로가 실패했으면 NULL. 끝나면 NULL. 스캐폴드가 건너뛰므로 엔티티에 없고 읽기·쓰기는 Dapper로 한다 |
 | `EXPIRE_DT` | DATETIME | N | 만료 시각. `SLOT_DT`(없으면 그날 하원 시각)에 설정값(기본 1시간)을 더한다. 재배정하거나 하원 시각이 바뀌면 다시 계산한다 |
 | `STATUS` | VARCHAR(20) | N | 아래 코드 |
 | `PARKING_LOT_ID` | INT | Y | FK → PARKING_LOT. 대기 장소를 골랐을 때 |
@@ -585,26 +588,33 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 - 아이 화면의 "곧 도착"(도착 1분 전)은 상태로 저장하지 않는다. 배정 시각과 현재 시각으로 계산한다.
 - UNIQUE: `(TIMETABLE_DAY_ID, PICKUP_DATE)`. 진행 중에 같은 계획을 두 번 만들 수 없다. 끝난 계획은 `TIMETABLE_DAY_ID`가 NULL이라 걸리지 않으므로 `ACTIVE_FLAG`가 필요 없다. 중복 키 오류가 나면 이미 만들어진 계획을 돌려준다.
 - 탑승이나 만료로 끝난 뒤 다시 만드는 것은 `TIMETABLE_DAY.LAST_PICKUP_DATE`로 막는다.
-- CHECK: `(PICKUP_SPOT_ID IS NULL) = (SLOT_DT IS NULL)`, `(PICKUP_SPOT_ID IS NULL) OR (WALK_MIN IS NOT NULL) OR (DELETE_YN = 1)`
+- 임의 좌표(`CUSTOM_*`)는 공유 지점이 아니라 정원 개념이 없다. 임의 좌표 계획은 `PICKUP_SPOT_ID`가 NULL이고, `CUSTOM_LAT`·`CUSTOM_LNG`·`CUSTOM_NAME`은 셋 다 있거나 셋 다 없다.
+- CHECK:
+  - `CK_PICKUP_PLAN_01`: `DELETE_YN = 1 OR (SLOT_DT IS NULL) = (PICKUP_SPOT_ID IS NULL AND CUSTOM_LAT IS NULL)` — 장소(지점 또는 임의 좌표)가 있으면 `SLOT_DT`가 있다. 익명화된 행은 장소 칸이 비어도 `SLOT_DT`가 남으므로 예외다
+  - `CK_PICKUP_PLAN_02`: `(PICKUP_SPOT_ID IS NULL AND CUSTOM_LAT IS NULL) OR WALK_MIN IS NOT NULL OR DELETE_YN = 1` — 장소가 있으면 `WALK_MIN`이 있다. 익명화된 행은 예외다
+  - `CK_PICKUP_PLAN_03`: `(CUSTOM_LAT IS NULL) = (CUSTOM_LNG IS NULL) AND (CUSTOM_LAT IS NULL) = (CUSTOM_NAME IS NULL)` — 임의 좌표 칸 셋은 함께 있거나 함께 없다
+  - `CK_PICKUP_PLAN_04`: `PICKUP_SPOT_ID IS NULL OR CUSTOM_LAT IS NULL` — 지점과 임의 좌표는 동시에 있을 수 없다
 - 인덱스: `(PICKUP_SPOT_ID, SLOT_DT)`, `(USER_ID, PICKUP_DATE)`
 - 상태, 시각 컬럼, `PICKUP_EVENT`는 같은 일을 함께 적는다. 셋은 항상 같은 트랜잭션에서 쓴다.
 
 **배정 시각.** 아이가 픽업 지점에 도착할 것으로 보는 시각이다. `하원 시각 + 정리 시간 + WALK_MIN`으로 계산한다. 정리 시간은 설정값이다(가정 1분).
 
-**배정.** 같은 지점에서 배정 시각 앞뒤로 설정값(기본 2분) 안에 있는 진행 중 계획의 수가 `PICKUP_SPOT.CAPACITY`를 넘지 않게 한다. 배정과 재배정은 아래 순서를 한 트랜잭션에서 지킨다. [ADR-0009]
+**배정.** 같은 지점에서 배정 시각 앞뒤로 설정값(기본 2분) 안에 있는 진행 중 계획의 수가 `PICKUP_SPOT.CAPACITY`를 넘지 않게 한다. 진행 중 계획은 `STATUS`가 끝나지 않았고 `EXPIRE_DT`가 서버 현재 시각보다 뒤인 계획이다. 만료 처리가 아직 돌지 않아 `STATUS`가 남아 있어도 `EXPIRE_DT`가 지났으면 세지 않는다. 배정과 재배정은 아래 순서를 한 트랜잭션에서 지킨다. [ADR-0009]
 
 1. 트랜잭션의 첫 문장으로 그 학원가의 `AREA` 행을 잠근다: `SELECT AREA_ID FROM AREA WHERE AREA_ID = ? FOR UPDATE`. 이 문장보다 먼저 다른 조회를 하지 않는다. 먼저 조회하면 그 시점의 스냅샷이 고정되어, 잠금을 얻고도 직전에 커밋된 계획을 보지 못한다.
 2. 새 계획을 만들 때는 `TIMETABLE_DAY` 행을 `FOR UPDATE`로 읽어 삭제되지 않았는지, `PICKUP_YN`이 켜져 있는지, `LAST_PICKUP_DATE`가 그날이 아닌지 확인한다. 잠그지 않고 읽으면 탑승 처리나 삭제와 겹칠 때 계획이 잘못 만들어진다. 이때 시간표의 학원·학원가·하원 시각도 다시 읽는다. 1의 잠금을 기다리는 사이 시간표 편집이 학원을 다른 학원가로 바꿨으면 잠근 학원가가 틀리므로, 트랜잭션을 끝내고 처음부터 다시 한다.
 3. `ACADEMY_PICKUP_SPOT.PRIORITY` 순으로 후보 지점을 본다. `USE_YN`이 꺼졌거나 그 시각이 `PICKUP_SPOT_BLOCK`에 걸리는 지점은 건너뛴다.
-4. 후보 지점에서 `SLOT_DT`가 배정 시각의 앞뒤 간격 안에 있는 진행 중 계획을 세어 정원과 비교한다. 꽉 찼으면 배정 시각을 1분씩 늦춰 다시 보고(설정값까지, 가정 2분), 그래도 없으면 다음 지점으로 넘긴다.
+4. 후보 지점에서 `SLOT_DT`가 배정 시각의 앞뒤 간격 안에 있는 진행 중 계획(`EXPIRE_DT` > 지금)을 세어 정원과 비교한다. 꽉 찼으면 배정 시각을 1분씩 늦춰 다시 보고(설정값까지, 가정 2분), 그래도 없으면 다음 지점으로 넘긴다.
 5. 모든 후보가 안 되면 `PICKUP_SPOT_ID`와 `SLOT_DT`를 비운 채 계획을 만든다. 화면은 "가까운 픽업 장소를 찾지 못했어요"를 보여준다.
 6. 계획을 넣거나 고치고 커밋한다.
 
 - 일반 조회로 세고 넣으면 동시에 들어온 두 요청이 서로의 삽입을 보지 못해 정원을 넘는다. 그래서 `AREA` 행 잠금으로 한 학원가의 배정을 순서대로 처리한다.
 - 잠금을 쥔 동안 문자 발송이나 경로 조회 같은 외부 호출을 하지 않는다.
 - 잠금 조회는 Dapper로 쓴다.
-- 출발하지 않은 `PLANNED` 계획도 정원을 잡고 있다. `EXPIRE_DT`가 지나면 만료 처리로 풀린다.
+- 출발하지 않은 `PLANNED` 계획도 정원을 잡고 있다. `EXPIRE_DT`가 지나면 세지 않고, 만료 처리가 돌면 상태도 끝난다.
+- 임의 좌표 계획은 3~5를 하지 않는다. 정원을 보지 않고 `PICKUP_SPOT_ID`는 NULL, `SLOT_DT`는 `하원 시각 + 정리 시간 + 도보 시간`(분 단위)이다. 만드는 트랜잭션은 위 순서(`AREA` 잠금 먼저)를 그대로 지킨다.
 - 추천 출발 시각이 지나 늦게 출발하면 배정 시각을 뒤로 옮겨 재배정한다. 하원 시각을 오늘만 바꿔도 재배정한다.
+- 늦은 출발의 재배정은 정원을 넘을 수 있다. [ADR-0021] 같은 지점에서 차 도착 예상 시각부터 `PickupPlan:SlotShiftMaxMin`까지 1분씩 늦춰 정원이 남는 첫 시각을 쓰고, 자리가 없으면 같은 지점에 차 도착 예상 시각으로 배정한다. 다른 지점으로 옮기지 않는다. 아이가 이미 나섰을 수 있고 차는 이미 출발했으므로 지점을 바꾸는 쪽이 더 위험하다. 임의 좌표 계획은 `SLOT_DT`를 차 도착 예상 시각으로 바꿀 뿐 정원이 없다.
 
 **상태 바꾸기와 이벤트 넣기.** 계획의 상태를 바꾸거나 `PICKUP_EVENT`를 넣는 트랜잭션은 첫 문장에서 계획 행을 잠그고 현재 상태를 다시 읽는다: `SELECT … WHERE PICKUP_PLAN_ID = ? FOR UPDATE`. 이 조회에는 `DELETE_YN` 조건을 붙이지 않는다. 이미 끝난 계획이면 아무것도 하지 않는다. 예외는 둘이다. 계획을 만드는 트랜잭션(`PLANNED` 이벤트)은 잠글 계획 행이 아직 없어 배정 절차의 `AREA` 잠금 안에서 한다. 아이·계정·시간표 삭제는 `AREA` 행을 먼저 잠근 뒤 계획 행들을 잠근다.
 
@@ -620,15 +630,16 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 
 **익명화.** 계획이 `BOARDED`·`EXPIRED`·`CANCELED`가 되면 같은 트랜잭션에서 아래를 한다. [ADR-0008]
 
-1. `USER_ID`·`CHILD_ID`·`TIMETABLE_DAY_ID`·`ACADEMY_ID`·`END_TIME`·`WALK_MIN`을 NULL로 바꾼다.
+1. `USER_ID`·`CHILD_ID`·`TIMETABLE_DAY_ID`·`ACADEMY_ID`·`END_TIME`·`WALK_MIN`과 `CUSTOM_LAT`·`CUSTOM_LNG`·`CUSTOM_NAME`·`CUSTOM_WALK_PATH`를 NULL로 바꾼다.
 2. 그 계획의 `END_TIME_CHANGED` 이벤트는 `DETAIL`을 NULL로 바꾼다. 하원 시각이 들어 있기 때문이다.
 3. `DELETE_YN`을 켠다. `PICKUP_SESSION`·`PICKUP_EVENT`도 함께 켠다.
 
-계획 행의 1과 3은 한 UPDATE로 한다. 나눠서 하면 `WALK_MIN`을 비우는 순간 CHECK에 걸린다.
+계획 행의 1과 3은 한 UPDATE로 한다. 나눠서 하면 `WALK_MIN`을 비우는 순간 CHECK에 걸린다. `CUSTOM_LAT`·`CUSTOM_LNG`·`CUSTOM_NAME`도 한 UPDATE에서 함께 비운다(`CK_PICKUP_PLAN_03`). 임의 좌표 계획은 `PICKUP_SPOT_ID`가 NULL이고 `SLOT_DT`가 남으므로, `DELETE_YN`을 켜지 않고 좌표만 비우면 `CK_PICKUP_PLAN_01`에 걸린다.
 
-끝난 뒤 남는 값은 `AREA_ID`, `PICKUP_DATE`, `PICKUP_SPOT_ID`, `SLOT_DT`, `EXPIRE_DT`, `STATUS`, `PARKING_LOT_ID`, 시각 컬럼 다섯, 그리고 이벤트 이력이다.
+끝난 뒤 남는 값은 `AREA_ID`, `PICKUP_DATE`, `PICKUP_SPOT_ID`, `SLOT_DT`, `EXPIRE_DT`, `STATUS`, `PARKING_LOT_ID`, 시각 컬럼 다섯, 그리고 이벤트 이력이다. 임의 좌표 칸(`CUSTOM_*` 넷)은 남기지 않는다. 끝난 계획에 남는 장소 정보는 지점 ID뿐이다.
 
 - 학원 참조와 하원 시각을 남기면 작은 학원은 날짜와 하원 시각만으로 아이가 좁혀진다. 그래서 비운다.
+- 부모가 고른 임의 좌표는 학원 근처라 남기면 아이를 좁힐 수 있다. 그래서 좌표·이름·도보 경로 선을 비운다.
 - 남는 픽업 지점과 배정 시각으로 그 지점을 쓰는 학원들까지는 좁힐 수 있다. 지점 하나를 여러 학원이 함께 쓰므로 아이 한 명으로 이어지지는 않는다고 보고 남긴다. [ADR-0008]
 
 **픽업 계열 세 테이블의 `DELETE_YN`.** `PICKUP_PLAN`·`PICKUP_SESSION`·`PICKUP_EVENT`에서 `DELETE_YN`은 "끝나서 익명화됨"을 뜻한다. 이 세 테이블의 조회에는 `DELETE_YN = FALSE` 조건을 붙이지 않고, 진행 중인지는 계획의 `STATUS`로 가린다(세션은 `CLOSE_DT`와 계획의 `EXPIRE_DT`). 끝난 계획의 마지막 이벤트(탑승, 만료, 취소)를 화면이 읽어야 하고, 끝난 링크를 다시 열었을 때 안내해야 하고, 통계가 끝난 행을 읽어야 하기 때문이다. 끝난 계획은 차량에 다시 열어 주지 않는다. 부모 참조가 비워져 누구의 계획인지 확인할 수 없기 때문이다. 차량은 계획을 끝낸 요청의 응답으로 결과를 받고, 서버가 만료시킨 경우는 진행 중 계획이 없다는 것과 `TIMETABLE_DAY.LAST_PICKUP_DATE`로 안다. 아이에게는 링크 토큰으로만 열리고 끝났다는 상태만 돌려준다.
@@ -671,11 +682,11 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 
 | `EVENT_TYPE` | 뜻 | `DETAIL` |
 |---|---|---|
-| `PLANNED` | 계획 생성, 배정 | 배정 지점, 배정 시각 |
+| `PLANNED` | 계획 생성, 배정 | `{"pickupSpotId": 12 또는 null, "custom": true/false, "slotDt": "2026-11-12T22:04:00" 또는 null}` |
 | `STARTED` | 경로 시작 | — |
 | `WAIT_STARTED` | 대기 장소 도착 | — |
 | `END_TIME_CHANGED` | 오늘 하원 시각 변경 | 전·후 시각 |
-| `REASSIGNED` | 지점·시각 재배정 | 전·후 지점, 전·후 시각, 사유 |
+| `REASSIGNED` | 지점·시각 재배정 | `{"reason": "LATE_START"·"LOCATION_CHANGED", "fromSpotId", "toSpotId", "fromCustom", "toCustom", "fromSlotDt", "toSlotDt"}` |
 | `LINK_SENT` | 링크 발송 | 채널, 성공 여부, 발송 업체 결과 코드 |
 | `LINK_OPENED` | 아이가 링크 열람 | — |
 | `CHILD_LEAVING` | 아이가 "지금 나가요" | — |
@@ -694,6 +705,8 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 - UNIQUE: `(PICKUP_PLAN_ID, CLIENT_EVENT_ID)`. 차량은 연결이 끊기면 이벤트를 쌓아 두었다가 다시 보낸다. 같은 이벤트가 두 번 와도 한 번만 들어간다. NULL은 겹쳐도 걸리지 않는다.
 - 횟수 제한(다시 알림 1회, "지금 나가요" 1회)은 이 이력을 세어 Service에서 확인한다.
 - `DETAIL`에는 위 표에 적힌 값만 넣는다. 발송 업체 응답을 그대로 넣지 않는다. 수신 번호가 들어 있을 수 있다.
+- `PLANNED`·`REASSIGNED`의 `DETAIL`에 임의 좌표, 장소 이름, 주소를 넣지 않는다. `custom` 플래그만 남긴다. 계획이 끝나 익명화한 뒤에도 이벤트 이력은 남기 때문이다.
+- `EVENT_DT`: 차량이 일으킨 이벤트(`STARTED`, 사유가 `LATE_START`인 `REASSIGNED`)는 차량이 보낸 `eventDt`(출발 시각)다. 사유가 `LOCATION_CHANGED`인 `REASSIGNED`와 서버가 만든 이벤트(`PLANNED`, `EXPIRED` 등)는 서버 현재 시각이다.
 - 이벤트의 순서와 "여기부터 새 이벤트" 기준은 `PICKUP_EVENT_ID`다. `EVENT_DT`는 차량 시각이고 늦게 도착할 수 있어 순서 기준으로 쓰지 않는다. 화면은 `PICKUP_PLAN_ID = ? AND PICKUP_EVENT_ID > ?`로 새 이벤트를 읽는다. 이벤트를 넣을 때 계획 행을 잠그므로 번호 순서와 커밋 순서가 같다.
 - 인덱스는 위 UNIQUE 하나로 충분하다. `PICKUP_PLAN_ID`가 맨 앞이라 FK 인덱스를 겸한다. 새 이벤트 조회는 그 계획의 이벤트를 훑어 번호로 거른다. 계획 하나의 이벤트는 수십 건이라 따로 인덱스를 두지 않는다.
 
@@ -703,7 +716,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 
 | 항목 | 결과 |
 |---|---|
-| 공간 타입 스캐폴드 | `POLYGON`·`LINESTRING` 컬럼은 건너뛴다. `AREA.BOUNDARY`, `LOOP_ROUTE.ROUTE_PATH`, `ACADEMY_PICKUP_SPOT.WALK_PATH`가 엔티티에 없다. `GEOMETRY`(`RESTRICTED_ZONE.GEOM`)는 점만 담는 타입으로 잡힌다 |
+| 공간 타입 스캐폴드 | `POLYGON`·`LINESTRING` 컬럼은 건너뛴다. `AREA.BOUNDARY`, `LOOP_ROUTE.ROUTE_PATH`, `ACADEMY_PICKUP_SPOT.WALK_PATH`, `PICKUP_PLAN.CUSTOM_WALK_PATH`가 엔티티에 없다. `GEOMETRY`(`RESTRICTED_ZONE.GEOM`)는 점만 담는 타입으로 잡힌다 |
 | 공간 컬럼이 있는 테이블의 쓰기 | `AREA`·`LOOP_ROUTE`는 NOT NULL 공간 컬럼이 엔티티에 없어 EF Core로 넣을 수 없다. `RESTRICTED_ZONE`도 선·면을 EF Core로 넣을 수 없다. 이 세 테이블의 등록·수정과 `WALK_PATH` 쓰기는 Dapper로 한다. 읽기는 원래 Dapper다 |
 | 생성 컬럼 `ACTIVE_FLAG` | 스캐폴드는 일반 컬럼으로 잡는다. `RideMateContext.Extensions.cs`에서 저장 대상에서 빼면 EF Core 등록·수정이 되고 값도 읽혀 온다 |
 | 살아 있는 행 UNIQUE | 살아 있는 행끼리는 중복이 거부되고, 삭제 표시한 행은 같은 값으로 여러 개 있을 수 있다 |
@@ -712,7 +725,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | 공간 계산 | SRID 4326에서 선과 점, 면과 점 사이의 `ST_Distance`가 m 단위로 나온다. `ST_Contains`로 점이 구역 안인지 판정된다 |
 | CHECK | 위반하는 값은 거부된다 |
 
-잠금 순서(동시에 들어온 계획 생성과 탑승 처리)는 아직 실행해 보지 않았다. 시간표 삭제(T22)는 로컬에서 다른 세션이 `AREA`를 쥔 경우, 계획을 끝내는 트랜잭션(계획 PK → `TIMETABLE_DAY` → 계획 UPDATE)과 겹친 경우, 계획 생성(`AREA` → `TIMETABLE_DAY` → 계획 INSERT)이 먼저 잠근 경우를 손으로 흉내 내 교착 없이 기다렸다가 최신 상태로 판정하는 것을 확인했다(2026-11-11). 시간표 편집도 다른 세션이 지금·새 학원가의 `AREA`를 쥔 경우와 계획을 끝내는 트랜잭션이 뺄 요일의 계획을 쥔 경우에 기다렸다가 최신 상태로 판정하는 것을 확인했다(2026-11-11). 트랜잭션 밖 조회 뒤 같은 계정의 편집이 학원을 다른 학원가로 옮긴 경우에도 삭제·편집이 새 학원가의 `AREA`를 잠그려고 기다리는 것을 확인했다(2026-11-11). 계획 생성·끝내기 코드가 생기면 실제 코드로 다시 확인한다.
+잠금 순서(동시에 들어온 계획 생성과 탑승 처리)는 아직 실행해 보지 않았다. 시간표 삭제(T22)는 로컬에서 다른 세션이 `AREA`를 쥔 경우, 계획을 끝내는 트랜잭션(계획 PK → `TIMETABLE_DAY` → 계획 UPDATE)과 겹친 경우, 계획 생성(`AREA` → `TIMETABLE_DAY` → 계획 INSERT)이 먼저 잠근 경우를 손으로 흉내 내 교착 없이 기다렸다가 최신 상태로 판정하는 것을 확인했다(2026-11-11). 시간표 편집도 다른 세션이 지금·새 학원가의 `AREA`를 쥔 경우와 계획을 끝내는 트랜잭션이 뺄 요일의 계획을 쥔 경우에 기다렸다가 최신 상태로 판정하는 것을 확인했다(2026-11-11). 트랜잭션 밖 조회 뒤 같은 계정의 편집이 학원을 다른 학원가로 옮긴 경우에도 삭제·편집이 새 학원가의 `AREA`를 잠그려고 기다리는 것을 확인했다(2026-11-11). 계획 생성·끝내기 코드가 생기면 실제 코드로 다시 확인한다. 실제 코드로는 다른 세션이 `AREA`를 쥔 동안 시간표 삭제(T22)와 계획 생성(`AddPickupPlan`)을 함께 보내, 둘 다 `AREA`에서 기다렸다가 생성이 먼저면 삭제가 409(진행 중 계획), 삭제가 먼저면 생성이 101로 교착 없이 최신 상태로 판정하는 것을 확인했다(2026-11-12). 이 실행 확인은 계획 생성과 시간표 삭제의 조합뿐이다. 만료 주기 작업(계획 PK → `TIMETABLE_DAY` → UPDATE)과 시간표 삭제·계획 생성이 겹치는 경우는 코드를 읽어 잠금 순서가 위 규칙과 같은 것만 확인했고 실행해 보지 않았다.
 
 ## 아직 정하지 않은 것
 
@@ -725,10 +738,10 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | 개인정보 고지의 운전자 이름 | 가입 때 받는 운전자 이름을 개인정보 고지(RM-C-P1)의 수집 항목에 넣어야 한다 |
 | 약관 문서 버전 | `CONSENT.TERMS_VERSION`의 형식이 정해지지 않았다. 지금은 서버 상수로 기록한다 |
 | 픽업 후 목적지를 여러 개 둘지 | 지금은 계정당 하나다. 학원이나 요일마다 다르면 테이블로 나눈다 |
-| 만료까지의 시간 | 배정 도착 시각 + 1시간으로 뒀다. 명세서는 만료 시점을 결정 필요로 적었다 |
+| 만료까지의 시간 | 배정 도착 시각 + 1시간(`PickupPlan:ExpireAfterHours`)으로 뒀다. 명세서는 만료 시점을 결정 필요로 적었다 |
 | 만료된 링크의 화면 | 명세서 P-05는 "404와 같은 화면", 입력 검증과 상태 정의는 "이 링크는 끝났어요"다. 스키마는 뒤쪽을 지원한다 |
 | 끝난 계획의 보관 | 명세서는 "세션은 종료 후 삭제"로 고지한다. 익명화한 행을 남기는 것을 고지 문구에 넣어야 한다 |
-| 정리 시간, 앞뒤 간격, 늦추는 한도 | 가정값 1분, 2분, 2분 |
+| 정리 시간, 앞뒤 간격, 늦추는 한도 | 가정값 1분(`DepartureGuide:TidyUpMin`), 2분(`PickupPlan:SlotWindowMin`), 2분(`PickupPlan:SlotShiftMaxMin`) |
 | 인증번호 재발송 간격 | 가정값 1분 |
 | 제외 반경 | `NO_PARKING`·`YELLOW_*`·`CCTV`·`RESIDENT_PARKING`의 `BUFFER_M`. 단속 카메라가 비추는 구간은 데이터에 없다 |
 | 어린이보호구역 데이터의 모양 | 경계가 없고 시설 위치만 있으면 반경 300m로 넣는다 |
