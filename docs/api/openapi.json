@@ -590,6 +590,40 @@
         ]
       }
     },
+    "/api/v1/ChildInfo/M/sign/UpdateChild": {
+      "patch": {
+        "tags": [
+          "ChildInfo"
+        ],
+        "summary": "아이 정보 수정",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_ChildInfo_Request_UpdateChildDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_ChildInfo_Response_AddChildResultDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/api/v1/Pickup/M/sign/DetailDepartureGuide": {
       "get": {
         "tags": [
@@ -2207,6 +2241,33 @@
             "minLength": 1,
             "pattern": "^(SMS|ALIMTALK)$",
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_ChildInfo_Request_UpdateChildDto": {
+        "required": [
+          "childSeq"
+        ],
+        "type": "object",
+        "properties": {
+          "childSeq": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "childName": {
+            "type": "string",
+            "nullable": true
+          },
+          "phone": {
+            "pattern": "^01[016789][0-9]{7,8}$",
+            "type": "string",
+            "nullable": true
+          },
+          "sendChannel": {
+            "pattern": "^(SMS|ALIMTALK)$",
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
