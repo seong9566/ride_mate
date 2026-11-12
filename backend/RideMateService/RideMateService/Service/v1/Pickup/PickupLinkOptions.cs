@@ -19,4 +19,14 @@ public class PickupLinkOptions
     /// 결과가 없는 진행 중 발송을 실패로 보기까지의 시간(초)
     /// </summary>
     public int InFlightTimeoutSec { get; set; } = 30;
+
+    /// <summary>
+    /// 출발 예정 시각 전 SOON 상태로 바뀌는 시간(분)
+    /// </summary>
+    public int LeaveSoonMin { get; set; } = 1;
+
+    /// <summary>
+    /// 설정할 수 있는 최대 출발 예정 시간(현재부터 분)
+    /// </summary>
+    public int LeaveMaxAheadMin { get; set; } = 60;
 }

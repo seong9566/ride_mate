@@ -43,6 +43,18 @@ public interface IPickupService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 아이가 지금 출발하거나 출발 예정 시각을 설정·변경한다
+    /// </summary>
+    Task<ResponseModel<ChildLeaveDto>> AddChildLeaveService(string? token, AddChildLeaveDto dto,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 아이의 출발 예정 시각을 취소한다
+    /// </summary>
+    Task<ResponseModel<ChildLeaveDto>> DeleteChildLeaveService(string? token,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 오늘 픽업 계획 만들기(이미 있으면 그 계획). 기본 지점을 우선순위·금지 시간·정원으로 배정한다
     /// </summary>
     Task<ResponseModel<PickupPlanDto>> AddPickupPlanService(AddPickupPlanDto dto,
