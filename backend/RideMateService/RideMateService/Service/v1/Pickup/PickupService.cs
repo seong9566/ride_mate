@@ -396,7 +396,7 @@ public partial class PickupService : IPickupService
         return new DepartureComputation { Code = 200, Result = result, Target = target, DayType = dayType, Now = now };
     }
 
-    // 진행 중 계획을 대상 픽업 행으로 옮긴다. 학원 이름·좌표·학원가는 계획 학원의 현재 값, 하원 시각은 계획의 값이다
+    // 진행 중 계획을 대상 픽업 행으로 옮긴다. 학원 이름·좌표는 계획 학원의 현재 값, 학원가(AREA_ID)와 하원 시각은 계획에 복사해 둔 값이다
     private static TodayPickupRow PlanTarget(LivePlanRow plan)
         => new()
         {

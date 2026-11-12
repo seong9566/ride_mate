@@ -19,7 +19,7 @@ internal sealed class DepartureComputation
     public DetailDepartureGuideDto? Result { get; init; }
 
     /// <summary>
-    /// 선택한 오늘 픽업. 진행 중 계획이 있으면 계획 값(학원 이름·좌표·학원가는 계획 학원의 현재 값, 하원 시각은 계획의 값)으로 채운다.
+    /// 선택한 오늘 픽업. 진행 중 계획이 있으면 계획 값(학원 이름·좌표는 계획 학원의 현재 값, 학원가와 하원 시각은 계획에 복사해 둔 값)으로 채운다.
     /// 오늘 남은 픽업이 없으면 null
     /// </summary>
     public TodayPickupRow? Target { get; init; }
