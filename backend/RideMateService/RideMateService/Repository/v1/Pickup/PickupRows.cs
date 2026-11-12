@@ -302,3 +302,24 @@ public class ChildPickupDriverRow
     /// </summary>
     public string? CarNoLast4 { get; set; }
 }
+
+/// <summary>
+/// 위치 보고 대상 계획
+/// </summary>
+public class PositionPlanRow
+{
+    /// <summary>
+    /// 소유 사용자 ID. 익명화되었으면 null
+    /// </summary>
+    public int? UserId { get; set; }
+
+    /// <summary>
+    /// 계획 상태
+    /// </summary>
+    public string Status { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 계획 만료 시각
+    /// </summary>
+    public DateTime ExpireDt { get; set; }
+}
