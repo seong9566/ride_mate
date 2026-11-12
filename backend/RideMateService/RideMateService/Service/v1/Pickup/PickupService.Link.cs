@@ -87,10 +87,13 @@ public partial class PickupService
             // 4) 이벤트 이력으로 상태를 계산한다. 열람·지금 나가요는 유형별 첫 이벤트(PICKUP_EVENT_ID 순)의 EVENT_DT다
             var events = await _pickupRepository.GetLinkEventsAsync(dto.pickupPlanSeq.Value, null, cancellationToken)
                 .ConfigureAwait(false);
+            var leaveEvents = await _pickupRepository.GetLeaveEventsAsync(dto.pickupPlanSeq.Value, null, cancellationToken)
+                .ConfigureAwait(false);
             var link = PickupLinkSendState.Summarize(events, EventLinkSent, now,
                 _linkOptions.InFlightTimeoutSec, _linkOptions.MaxAttempts);
             var remind = PickupLinkSendState.Summarize(events, EventRemindSent, now,
                 _linkOptions.InFlightTimeoutSec, _linkOptions.MaxAttempts);
+            var leave = ChildLeaveState.Summarize(leaveEvents, now, _linkOptions.LeaveSoonMin);
             var opened = events.FirstOrDefault(e => e.EventType == EventLinkOpened);
             var leaving = events.FirstOrDefault(e => e.EventType == EventChildLeaving);
 
@@ -106,6 +109,8 @@ public partial class PickupService
                     openedDt = opened?.EventDt,
                     leaving = leaving is not null,
                     leavingDt = leaving?.EventDt,
+                    leaveStatus = leave.Status,
+                    plannedLeaveDt = leave.PlannedLeaveDt,
                     remindStatus = remind.Status
                 },
                 code = 200

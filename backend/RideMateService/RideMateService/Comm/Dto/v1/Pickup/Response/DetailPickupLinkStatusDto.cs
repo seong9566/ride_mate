@@ -41,6 +41,16 @@ public class DetailPickupLinkStatusDto
     public DateTime? leavingDt { get; set; }
 
     /// <summary>
+    /// 아이 출발 상태 (NONE, SCHEDULED, SOON, LEAVING)
+    /// </summary>
+    public string leaveStatus { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 아이 출발 예정 시각. SCHEDULED·SOON일 때만 값이 있다
+    /// </summary>
+    public DateTime? plannedLeaveDt { get; set; }
+
+    /// <summary>
     /// 다시 알림 발송 상태 (NONE, SENDING, SENT, FAILED)
     /// </summary>
     public string remindStatus { get; set; } = string.Empty;

@@ -151,3 +151,12 @@ public class LinkEventRow
     public string? Detail { get; set; }
     public DateTime CreateDt { get; set; }
 }
+
+/// <summary>
+/// 아이 출발 요청용 픽업 세션 한 건
+/// </summary>
+public class LeaveSessionRow
+{
+    public int PickupPlanId { get; set; }
+    public DateTime? CloseDt { get; set; }
+}

@@ -123,4 +123,15 @@ public interface IPickupRepository
     /// </summary>
     Task<LinkStatusPlanRow?> GetLinkStatusPlanAsync(int pickupPlanId, int userId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 토큰 해시로 픽업 세션의 계획 ID와 종료 시각을 잠금 없이 조회한다. 세션이 없으면 null
+    /// </summary>
+    Task<LeaveSessionRow?> GetLeaveSessionAsync(string tokenHash, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 아이 출발 관련 이벤트(CHILD_LEAVING·LEAVE_SCHEDULED·LEAVE_CANCELED)를 PICKUP_EVENT_ID 순으로 조회한다
+    /// </summary>
+    Task<List<LinkEventRow>> GetLeaveEventsAsync(int pickupPlanId, IDbTransaction? transaction,
+        CancellationToken cancellationToken = default);
 }

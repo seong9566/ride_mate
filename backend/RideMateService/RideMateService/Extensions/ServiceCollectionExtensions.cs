@@ -182,7 +182,7 @@ public static class InfrastructureExtensions
     /// <summary>
     /// 카카오 설정(Kakao), 공공데이터 설정(PublicData), 출발 안내 설정(DepartureGuide), 대기 장소 설정(WaitingPlace), 픽업 링크 설정(PickupLink)을 등록한다.
     /// Kakao:RestApiKey와 PublicData:ServiceKey가 비어 있어도 기동은 하며, 이때 해당 클라이언트는 외부 API를 부르지 않고 null을 돌려준다.
-    /// PickupLink:BaseUrl이 http(s) 절대 URI가 아니거나 PickupLink:MaxAttempts·InFlightTimeoutSec가 1보다 작으면 기동할 때 InvalidOperationException을 던진다.
+    /// PickupLink:BaseUrl이 http(s) 절대 URI가 아니거나 PickupLink:MaxAttempts·InFlightTimeoutSec·LeaveSoonMin·LeaveMaxAheadMin이 1보다 작으면 기동할 때 InvalidOperationException을 던진다.
     /// </summary>
     public static IServiceCollection AddMapInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
@@ -200,6 +200,10 @@ public static class InfrastructureExtensions
             throw new InvalidOperationException("PickupLink:MaxAttempts 설정은 1 이상이어야 합니다.");
         if (pickupLinkOptions.InFlightTimeoutSec < 1)
             throw new InvalidOperationException("PickupLink:InFlightTimeoutSec 설정은 1 이상이어야 합니다.");
+        if (pickupLinkOptions.LeaveSoonMin < 1)
+            throw new InvalidOperationException("PickupLink:LeaveSoonMin 설정은 1 이상이어야 합니다.");
+        if (pickupLinkOptions.LeaveMaxAheadMin < 1)
+            throw new InvalidOperationException("PickupLink:LeaveMaxAheadMin 설정은 1 이상이어야 합니다.");
         services.Configure<PickupLinkOptions>(pickupLink);
 
         services.AddHttpClient<IWalkRouteClient, KakaoWalkRouteClient>(client =>
