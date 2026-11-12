@@ -64,6 +64,21 @@ public partial class PickupPlan
     public sbyte? WalkMin { get; set; }
 
     /// <summary>
+    /// 부모가 고른 픽업 위도
+    /// </summary>
+    public decimal? CustomLat { get; set; }
+
+    /// <summary>
+    /// 부모가 고른 픽업 경도
+    /// </summary>
+    public decimal? CustomLng { get; set; }
+
+    /// <summary>
+    /// 부모가 고른 픽업 장소 이름
+    /// </summary>
+    public string? CustomName { get; set; }
+
+    /// <summary>
     /// 계획 만료 일시
     /// </summary>
     public DateTime ExpireDt { get; set; }

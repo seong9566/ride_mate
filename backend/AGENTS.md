@@ -41,7 +41,7 @@
 
 - 솔루션은 `RideMateService/RideMateService.sln`, 앱 프로젝트는 `RideMateService/RideMateService/`다.
 - 의존 방향은 Controller → Service → Repository 하나뿐이다. 역참조·레이어 건너뛰기를 하지 않는다. [ADR-0001]
-- Service는 항상 `ResponseModel<T>`를 반환한다. 예외를 던지지 않고 `code = 500`으로 바꾼다(요청 취소만 그대로 올려보낸다). [ADR-0004]
+- Service는 항상 `ResponseModel<T>`를 반환한다. 예외를 던지지 않고 `code = 500`으로 바꾼다(요청 취소만 그대로 올려보낸다). 백그라운드 워커가 부르는 메서드만 예외이며 `docs/architecture/service.md`에 적었다. [ADR-0004]
 - Repository는 DTO를 받지 않는다. Dapper 조회 결과를 응답 DTO로 바로 매핑하는 것만 허용한다.
 - GET API의 조회에는 EF Core를 쓰지 않고 Dapper로 SQL을 직접 쓴다(쿼리 튜닝과 속도). EF Core는 등록·수정·삭제에만 쓴다. [ADR-0003]
 - 스키마는 DB-first다. EF Migration을 쓰지 않고, 스캐폴드 산출물(`Commons/DBModels`, `RideMateContext.cs`)을 직접 고치지 않는다. [ADR-0002]
