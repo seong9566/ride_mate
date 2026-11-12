@@ -54,6 +54,21 @@ public class DetailDepartureGuideDto
     /// 배정 근거. 해당 없으면 빈 배열
     /// </summary>
     public List<DepartureGuideReasonDto> reasons { get; set; } = new();
+
+    /// <summary>
+    /// 진행 중인 오늘 픽업 계획 ID. 계획이 없으면 null
+    /// </summary>
+    public int? pickupPlanSeq { get; set; }
+
+    /// <summary>
+    /// 계획의 배정 시각. 계획이 없거나 계획에 장소가 없으면 null
+    /// </summary>
+    public DateTime? slotDt { get; set; }
+
+    /// <summary>
+    /// 계획 상태 (PLANNED, STARTED, WAITING, STOPPED, LOOPING). 계획이 없으면 null
+    /// </summary>
+    public string? planStatus { get; set; }
 }
 
 /// <summary>
@@ -67,7 +82,7 @@ public class DepartureGuidePickupDto
     public int? pickupSpotSeq { get; set; }
 
     /// <summary>
-    /// 기본 지점 이름. 임의 좌표면 null
+    /// 기본 지점 이름. 계획의 임의 좌표면 계획에 저장된 장소 이름, 계획 없이 보낸 임의 좌표면 null
     /// </summary>
     public string? spotName { get; set; }
 
@@ -135,8 +150,9 @@ public class DepartureGuideEnforcementDto
 public class DepartureGuideReasonDto
 {
     /// <summary>
-    /// 근거 코드 (ACADEMY_FRONT_RESTRICTED, HIGHER_SPOT_BLOCKED, NO_SPOT_AVAILABLE, CUSTOM_LOCATION, NO_ACADEMY_LOCATION).
-    /// NO_ACADEMY_LOCATION은 학원 좌표가 없어 픽업 지점·도보·단속 판정을 할 수 없다는 뜻이며 pickup은 null이다
+    /// 근거 코드 (ACADEMY_FRONT_RESTRICTED, HIGHER_SPOT_BLOCKED, NO_SPOT_AVAILABLE, CUSTOM_LOCATION, NO_ACADEMY_LOCATION,
+    /// SLOT_SHIFTED). NO_ACADEMY_LOCATION은 학원 좌표가 없어 픽업 지점·도보·단속 판정을 할 수 없다는 뜻이며 pickup은 null이다.
+    /// SLOT_SHIFTED는 계획의 배정 시각이 아이 도착 시각보다 늦다는 뜻이다
     /// </summary>
     public string code { get; set; } = string.Empty;
 
@@ -169,4 +185,9 @@ public class DepartureGuideReasonDto
     /// HIGHER_SPOT_BLOCKED: 금지 종료 시각(HH:mm)
     /// </summary>
     public string? blockEndTime { get; set; }
+
+    /// <summary>
+    /// SLOT_SHIFTED: 배정 시각 − 아이 도착 시각(분)
+    /// </summary>
+    public int? shiftMin { get; set; }
 }

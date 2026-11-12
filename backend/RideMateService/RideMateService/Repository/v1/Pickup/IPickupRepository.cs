@@ -112,9 +112,10 @@ public interface IPickupRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 링크 문자의 운전자 이름, 아이 번호(암호문), 지점 이름을 조회한다. 살아 있는 계정이 없으면 null
+    /// 링크 문자의 운전자 이름, 아이 번호(암호문), 지점 이름을 조회한다. 살아 있는 계정이 없으면 null.
+    /// 지점이 null(임의 좌표 계획)이면 SpotName은 null이다
     /// </summary>
-    Task<LinkTargetRow?> GetLinkTargetAsync(int userId, int childId, int pickupSpotId, IDbTransaction transaction,
+    Task<LinkTargetRow?> GetLinkTargetAsync(int userId, int childId, int? pickupSpotId, IDbTransaction transaction,
         CancellationToken cancellationToken = default);
 
     /// <summary>

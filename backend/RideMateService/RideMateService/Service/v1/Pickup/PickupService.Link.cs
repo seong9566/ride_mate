@@ -160,7 +160,8 @@ public partial class PickupService
                     return LinkConflict(ReasonPlanClosed);
                 }
 
-                if (plan.PickupSpotId is not { } pickupSpotId)
+                // 기본 지점도 임의 좌표도 없으면 만날 장소가 없다(설계 9절)
+                if (plan.PickupSpotId is null && plan.CustomName is null)
                 {
                     await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
                     return LinkConflict(ReasonNoSpot);
@@ -172,7 +173,7 @@ public partial class PickupService
                     return LinkConflict(ReasonNoChildPhone);
                 }
 
-                var target = await _pickupRepository.GetLinkTargetAsync(userId, childId, pickupSpotId,
+                var target = await _pickupRepository.GetLinkTargetAsync(userId, childId, plan.PickupSpotId,
                     transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
                 if (target is null)
                 {
@@ -180,7 +181,9 @@ public partial class PickupService
                     return new ResponseModel<PickupLinkSendDto> { message = "잘못된 요청입니다.", data = null, code = 404 };
                 }
 
-                if (target.SpotName is null)
+                // 문자의 장소 이름은 기본 지점이면 지점 이름, 임의 좌표면 계획에 저장된 이름이다. 배정된 지점이 삭제됐으면 없다
+                var spotName = target.SpotName ?? plan.CustomName;
+                if (spotName is null)
                 {
                     await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
                     return LinkConflict(ReasonNoSpot);
@@ -249,6 +252,14 @@ public partial class PickupService
                     return LinkSendResult(success == true, summary.RemainingAttempts, receiverLast4);
                 }
 
+                // 링크 계열이 아닌 이벤트(STARTED·REASSIGNED 등)가 그 번호를 쓰고 있어도 다른 유형과 같이 잘못된 요청이다
+                if (await _pickupRepository.GetPlanEventTypeAsync(pickupPlanId, clientEventId, transaction.GetDbTransaction(),
+                        cancellationToken).ConfigureAwait(false) is not null)
+                {
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return new ResponseModel<PickupLinkSendDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
+                }
+
                 // 3) 이 유형의 시도 이력으로 판정한다
                 if (summary.Status == PickupLinkSendState.StatusSent)
                 {
@@ -309,8 +320,8 @@ public partial class PickupService
 
                 var url = PickupLinkToken.BuildUrl(_linkOptions.BaseUrl, token);
                 message = eventType == EventLinkSent
-                    ? PickupLinkMessage.Link(target.UserName, etaDt!.Value, target.SpotName, url)
-                    : PickupLinkMessage.Remind(target.UserName, target.SpotName, url);
+                    ? PickupLinkMessage.Link(target.UserName, etaDt!.Value, spotName, url)
+                    : PickupLinkMessage.Remind(target.UserName, spotName, url);
 
                 // 5) 진행 중 이벤트를 넣고 커밋한다. 같은 계획에 동시에 온 다른 요청은 이 행을 보고 IN_PROGRESS가 된다
                 var pickupEvent = new PickupEvent

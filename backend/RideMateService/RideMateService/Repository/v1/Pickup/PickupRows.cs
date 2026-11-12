@@ -83,7 +83,7 @@ public class ZoneRow
 }
 
 /// <summary>
-/// 잠근 오늘 계획 한 건. 끝난 계획은 UserId·ChildId가 NULL이다
+/// 잠근 오늘 계획 한 건. 끝난 계획은 UserId·ChildId·CustomName이 NULL이다. CustomName은 임의 좌표 계획의 장소 이름이다
 /// </summary>
 public class LinkPlanLockRow
 {
@@ -91,6 +91,7 @@ public class LinkPlanLockRow
     public int? UserId { get; set; }
     public int? ChildId { get; set; }
     public int? PickupSpotId { get; set; }
+    public string? CustomName { get; set; }
     public string Status { get; set; } = string.Empty;
     public DateTime ExpireDt { get; set; }
 }
@@ -105,7 +106,7 @@ public class LinkStatusPlanRow
 }
 
 /// <summary>
-/// 링크 문자 받는 사람과 문구 값. ChildPhoneEnc는 아이가 없거나 삭제됐으면 null, SpotName은 지점이 삭제됐으면 null이다
+/// 링크 문자 받는 사람과 문구 값. ChildPhoneEnc는 아이가 없거나 삭제됐으면 null, SpotName은 지점이 없거나(임의 좌표 계획) 삭제됐으면 null이다
 /// </summary>
 public class LinkTargetRow
 {
