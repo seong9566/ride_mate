@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore.Storage;
 using RideMateService.Comm;
 using RideMateService.Comm.Dto.v1.Pickup.Response;
 
@@ -103,6 +104,102 @@ public partial class PickupService
 #endif
             return ChildPickupServerError();
         }
+    }
+
+    /// <summary>
+    /// 아이 픽업 링크 열람을 한 번만 기록하고 첫 열람 시각을 돌려준다
+    /// </summary>
+    public async Task<ResponseModel<ChildPickupOpenDto>> AddPickupLinkOpenService(string? token,
+        CancellationToken cancellationToken = default)
+    {
+        int? pickupPlanId = null;
+        try
+        {
+            if (!PickupLinkToken.IsWellFormed(token))
+                return ChildPickupOpenNotFound();
+
+            var session = await _pickupRepository.GetLeaveSessionAsync(
+                PickupLinkToken.HashToken(_hashService, token!), cancellationToken).ConfigureAwait(false);
+            if (session is null)
+                return ChildPickupOpenNotFound();
+
+            pickupPlanId = session.PickupPlanId;
+            var transaction = await _context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            await using var transactionScope = transaction.ConfigureAwait(false);
+
+            var plan = await _pickupRepository.LockPickupPlanAsync(session.PickupPlanId,
+                transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+            var now = NowToSecond();
+            if (plan is null || ClosedPlanStatuses.Contains(plan.Status) || plan.ExpireDt <= now
+                || session.CloseDt is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return ChildPickupOpenConflict();
+            }
+
+            var events = await _pickupRepository.GetLinkEventsAsync(session.PickupPlanId,
+                transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
+            var opened = events.FirstOrDefault(e => e.EventType == EventLinkOpened);
+            if (opened is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return ChildPickupOpenSuccess(opened.EventDt);
+            }
+
+            var openEvent = NewChildLeaveEvent(session.PickupPlanId, EventLinkOpened, now, null);
+            if (!await _pickupRepository.AddPickupEventAsync(openEvent, cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return ChildPickupOpenServerError();
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            _context.ChangeTracker.Clear();
+            return ChildPickupOpenSuccess(now);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 그대로 올려보낸다
+        {
+            _logService.LogMessage($"child link open failed: plan={pickupPlanId?.ToString() ?? "unknown"}\n{ex}");
+#if DEBUG
+            _logService.ConsoleWarning($"child link open failed: plan={pickupPlanId?.ToString() ?? "unknown"}\n{ex}");
+#endif
+            return ChildPickupOpenServerError();
+        }
+    }
+
+    private static ResponseModel<ChildPickupOpenDto> ChildPickupOpenSuccess(DateTime openedDt)
+    {
+        return new ResponseModel<ChildPickupOpenDto>
+        {
+            message = "요청이 정상 처리되었습니다.",
+            data = new ChildPickupOpenDto { openedDt = openedDt },
+            code = 200
+        };
+    }
+
+    private static ResponseModel<ChildPickupOpenDto> ChildPickupOpenNotFound()
+    {
+        return new ResponseModel<ChildPickupOpenDto> { message = "잘못된 요청입니다.", data = null, code = 404 };
+    }
+
+    private static ResponseModel<ChildPickupOpenDto> ChildPickupOpenConflict()
+    {
+        return new ResponseModel<ChildPickupOpenDto>
+        {
+            message = "잘못된 요청입니다.",
+            data = new ChildPickupOpenDto { reason = ReasonLinkClosed, openedDt = null },
+            code = 409
+        };
+    }
+
+    private static ResponseModel<ChildPickupOpenDto> ChildPickupOpenServerError()
+    {
+        return new ResponseModel<ChildPickupOpenDto>
+        {
+            message = "서버에서 요청을 처리하지 못하였습니다.",
+            data = null,
+            code = 500
+        };
     }
 
     private static ResponseModel<ChildPickupDto> ChildPickupSuccess(ChildPickupDto dto)

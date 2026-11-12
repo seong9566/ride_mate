@@ -106,4 +106,10 @@ public interface IPickupService
     /// </summary>
     Task<ResponseModel<ChildPickupDto>> DetailChildPickupService(string? token,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 아이 픽업 링크 열람을 한 번만 기록하고 첫 열람 시각을 돌려준다
+    /// </summary>
+    Task<ResponseModel<ChildPickupOpenDto>> AddPickupLinkOpenService(string? token,
+        CancellationToken cancellationToken = default);
 }

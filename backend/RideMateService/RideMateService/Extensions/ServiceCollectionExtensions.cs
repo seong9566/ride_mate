@@ -78,7 +78,7 @@ public static class InfrastructureExtensions
 {
     /// <summary>
     /// 요청 빈도 제한 정책 등록. 차 계정 목록과 아이 출발 알림을 클라이언트별 고정 창 30회/분으로 막고, 넘으면 본문 없이 429와 Retry-After를 돌려준다.
-    /// 아이 픽업 안내 조회는 토큰별 30회/분, 아이 픽업 안내 API 전체 공용 상한은 600회/분이다.
+    /// 아이 픽업 안내 조회는 토큰별 30회/분, 링크 열람 기록은 토큰별 10회/분, 아이 픽업 안내 API 전체 공용 상한은 600회/분이다.
     /// </summary>
     public static IServiceCollection AddRateLimitPolicies(this IServiceCollection services)
     {
@@ -112,6 +112,16 @@ public static class InfrastructureExtensions
                     ? RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
                     {
                         PermitLimit = ChildPickupRateLimit.ViewPermitLimit,
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueLimit = 0
+                    })
+                    : RateLimitPartition.GetNoLimiter(string.Empty));
+
+            options.AddPolicy(ChildPickupRateLimit.OpenPolicyName, context =>
+                ChildPickupPartitionKey(context) is { } key
+                    ? RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = ChildPickupRateLimit.OpenPermitLimit,
                         Window = TimeSpan.FromMinutes(1),
                         QueueLimit = 0
                     })
