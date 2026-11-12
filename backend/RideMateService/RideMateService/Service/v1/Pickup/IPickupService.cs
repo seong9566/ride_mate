@@ -41,4 +41,16 @@ public interface IPickupService
     /// </summary>
     Task<ResponseModel<DetailPickupLinkStatusDto>> DetailPickupLinkStatusService(PickupLinkStatusQueryDto dto,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 아이가 지금 출발하거나 출발 예정 시각을 설정·변경한다
+    /// </summary>
+    Task<ResponseModel<ChildLeaveDto>> AddChildLeaveService(string? token, AddChildLeaveDto dto,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 아이의 출발 예정 시각을 취소한다
+    /// </summary>
+    Task<ResponseModel<ChildLeaveDto>> DeleteChildLeaveService(string? token,
+        CancellationToken cancellationToken = default);
 }

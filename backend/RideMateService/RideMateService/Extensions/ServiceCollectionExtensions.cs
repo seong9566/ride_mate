@@ -75,7 +75,7 @@ public static class ServiceCollectionExtensions
 public static class InfrastructureExtensions
 {
     /// <summary>
-    /// 요청 빈도 제한 정책 등록. 차 계정 목록(로그인 전 조회)만 클라이언트별 고정 창 30회/분으로 막고, 넘으면 본문 없이 429와 Retry-After를 돌려준다.
+    /// 요청 빈도 제한 정책 등록. 차 계정 목록과 아이 출발 알림을 클라이언트별 고정 창 30회/분으로 막고, 넘으면 본문 없이 429와 Retry-After를 돌려준다.
     /// </summary>
     public static IServiceCollection AddRateLimitPolicies(this IServiceCollection services)
     {
@@ -93,6 +93,14 @@ public static class InfrastructureExtensions
                 _ => new FixedWindowRateLimiterOptions
                 {
                     PermitLimit = LoginSessionListRateLimit.PermitLimit,
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueLimit = 0
+                }));
+            options.AddPolicy(ChildLeaveRateLimit.PolicyName, context => RateLimitPartition.GetFixedWindowLimiter(
+                LoginSessionListRateLimit.PartitionKey(context.Connection.RemoteIpAddress),
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = ChildLeaveRateLimit.PermitLimit,
                     Window = TimeSpan.FromMinutes(1),
                     QueueLimit = 0
                 }));
