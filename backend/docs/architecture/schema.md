@@ -242,7 +242,9 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `ACADEMY_ID` | INT | N | FK → ACADEMY |
 | `DISPLAY_NAME` | VARCHAR(20) | N | 부모가 지은 학원 이름. 화면에는 이 이름을 보여준다 |
 | `END_TIME` | TIME | N | 하원 시각 |
+| `PICKUP_SPOT_ID` | INT | Y | FK → PICKUP_SPOT. 우리 픽업 장소(부모가 고른 기본 픽업 지점). NULL이면 `PRIORITY` 순으로 배정한다 |
 
+- `PICKUP_SPOT_ID`는 그 학원의 살아 있는 후보(`ACADEMY_PICKUP_SPOT` 행과 지점이 살아 있고 지점 `USE_YN = 1`)만 담는다. 제약으로 걸 수 없어 `UpdateSchedulePickupSpot`이 저장할 때 Service에서 확인하고, 읽는 쪽도 후보 조회에 없으면 무시한다. 시간표 편집으로 학원이 바뀌면 같은 `TIMETABLE` 쓰기에서 NULL로 되돌린다(학원이 그대로면 건드리지 않는다). 시간표 삭제는 바꾸지 않는다. 쓰기는 `USER_INFO`를 먼저 잠그는 요일별 픽업 스위치 변경과 같은 순서다(`AREA`를 잠그지 않는다). [ADR-0025]
 - CHECK: `END_TIME BETWEEN '14:00:00' AND '23:30:00'`, `MINUTE(END_TIME) % 5 = 0 AND SECOND(END_TIME) = 0`
 - 등록 개수 제한(가정 10건)과 같은 요일 ±40분 겹침 경고는 Service에서 한다.
 - 시간표 등록과 픽업 스위치 변경은 트랜잭션 첫 문장에서 `USER_INFO`를 `FOR UPDATE`로 잠근 뒤 개수·겹침·소유를 확인한다(T13 아이 등록과 같은 순서). 새 학원 행을 학원가와 함께 넣거나 좌표를 채우면 FK 때문에 그 `AREA` 행에 공유 잠금이 걸린다 — 삭제·계획 생성처럼 `AREA`를 먼저 잠그는 경로를 구현할 때 순서를 확인한다.
@@ -402,6 +404,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `WALK_MIN` | TINYINT | N | 학원에서 지점까지 아이 도보 시간(분) |
 | `WALK_PATH` | LINESTRING SRID 4326 | Y | 도보 경로 선 |
 | `PRIORITY` | TINYINT | N | 배정 우선순위. 1이 가장 먼저 |
+| `NOTE` | VARCHAR(100) | Y | 학원 기준 지점 한 줄 안내(예: 길 건너야 해요). 운영팀이 넣는다 |
 
 - 학원 행을 새로 만들 때 같은 `AREA`의 지점 중 가까운 순으로 최대 3곳의 행을 함께 만든다. `PRIORITY`는 가까운 순으로 1부터 붙인다. 도보 시간과 경로는 보행자 경로 API로 구하고, 실패하면 직선 거리를 설정값인 도보 속도로 나눠 올림하고 `WALK_PATH`는 비운다.
 - 학원과 지점은 같은 `AREA`여야 한다. 제약으로는 걸 수 없어, 운영팀이 넣을 때는 SQL에서, 학원을 추가할 때는 Service에서 확인한다.
@@ -661,7 +664,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 
 1. 트랜잭션의 첫 문장으로 그 학원가의 `AREA` 행을 잠근다: `SELECT AREA_ID FROM AREA WHERE AREA_ID = ? FOR UPDATE`. 이 문장보다 먼저 다른 조회를 하지 않는다. 먼저 조회하면 그 시점의 스냅샷이 고정되어, 잠금을 얻고도 직전에 커밋된 계획을 보지 못한다.
 2. 새 계획을 만들 때는 `TIMETABLE_DAY` 행을 `FOR UPDATE`로 읽어 삭제되지 않았는지, `PICKUP_YN`이 켜져 있는지, `LAST_PICKUP_DATE`가 그날이 아닌지 확인한다. 잠그지 않고 읽으면 탑승 처리나 삭제와 겹칠 때 계획이 잘못 만들어진다. 이때 시간표의 학원·학원가·하원 시각도 다시 읽는다. 1의 잠금을 기다리는 사이 시간표 편집이 학원을 다른 학원가로 바꿨으면 잠근 학원가가 틀리므로, 트랜잭션을 끝내고 처음부터 다시 한다.
-3. `ACADEMY_PICKUP_SPOT.PRIORITY` 순으로 후보 지점을 본다. `USE_YN`이 꺼졌거나 아이 도착 시각이 `PICKUP_SPOT_BLOCK`에 걸리는 지점은 건너뛴다(하한을 적용하거나 늦춘 시각은 다시 보지 않는다).
+3. `ACADEMY_PICKUP_SPOT.PRIORITY` 순으로 후보 지점을 본다. 그 시간표의 우리 픽업 장소(`TIMETABLE.PICKUP_SPOT_ID`)가 있고 지금도 그 학원의 후보면 그 지점을 먼저 보고 나머지는 `PRIORITY` 순이다. [ADR-0025] `USE_YN`이 꺼졌거나 아이 도착 시각이 `PICKUP_SPOT_BLOCK`에 걸리는 지점은 건너뛴다(하한을 적용하거나 늦춘 시각은 다시 보지 않는다).
 4. 후보 지점에서 `SLOT_DT`가 배정 시각(계획을 만들 때는 아이 도착과 차 도착 예상 중 늦은 쪽, 장소 바꾸기에서 계획이 `STARTED`면 지금 `SLOT_DT`보다 이르지 않게)의 앞뒤 간격 안에 있는 진행 중 계획(`EXPIRE_DT` > 지금)을 세어 정원과 비교한다. 꽉 찼으면 배정 시각을 1분씩 늦춰 다시 보고(설정값까지, 가정 2분), 그래도 없으면 다음 지점으로 넘긴다.
 5. 모든 후보가 안 되면 `PICKUP_SPOT_ID`와 `SLOT_DT`를 비운 채 계획을 만든다. 화면은 "가까운 픽업 장소를 찾지 못했어요"를 보여준다.
 6. 계획을 넣거나 고치고 커밋한다.

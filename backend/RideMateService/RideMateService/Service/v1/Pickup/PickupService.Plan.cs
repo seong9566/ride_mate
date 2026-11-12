@@ -216,7 +216,7 @@ public partial class PickupService
                 }
                 else
                 {
-                    var assignment = await AssignDefaultSpotAsync(day.AcademyId, date, day.EndTime, dayType, thisTime,
+                    var assignment = await AssignDefaultSpotAsync(day.AcademyId, day.PreferredSpotId, date, day.EndTime, dayType, thisTime,
                         null, carArrival, dbTransaction, cancellationToken).ConfigureAwait(false);
                     spotId = assignment?.PickupSpotId;
                     slotDt = assignment?.SlotDt;
@@ -447,7 +447,7 @@ public partial class PickupService
             else
             {
                 // 자기 자신의 현재 자리는 정원 세기에서 뺀다. 쓸 지점이 없으면 장소 없는 계획이 된다
-                var assignment = await AssignDefaultSpotAsync(academyId, date, endTime, dayType, thisTime, pickupPlanId,
+                var assignment = await AssignDefaultSpotAsync(academyId, plan.PreferredSpotId, date, endTime, dayType, thisTime, pickupPlanId,
                     notBefore, dbTransaction, cancellationToken).ConfigureAwait(false);
                 entity.PickupSpotId = assignment?.PickupSpotId;
                 entity.SlotDt = assignment?.SlotDt;
@@ -846,14 +846,15 @@ public partial class PickupService
         return pickup is null ? null : new PickupTarget(null, pickup);
     }
 
-    // 기본 지점 배정(설계 6.1 "기본 지점 배정 순서"). 후보를 PRIORITY 순으로 보며(USE_YN = 0은 조회에서 빠진다)
+    // 기본 지점 배정(설계 6.1 "기본 지점 배정 순서"). 우리 픽업 장소(preferredSpotId)가 후보면 맨 앞에, 나머지는 PRIORITY 순으로 보며(USE_YN = 0은 조회에서 빠진다) [ADR-0025]
     // 아이 도착 시각이 금지 시간 [시작, 종료)에 걸리면 건너뛴다. 남은 지점마다 시작 시각 = max(아이 도착, notBefore)부터
     // SlotShiftMaxMin까지 1분씩 늦춰 정원이 남은 첫 시각을 쓴다. 늦춘 시각은 금지 시간을 다시 보지 않는다. 없으면 null
-    private async Task<SlotAssignment?> AssignDefaultSpotAsync(int academyId, DateOnly date, TimeSpan endTime,
+    private async Task<SlotAssignment?> AssignDefaultSpotAsync(int academyId, int? preferredSpotId, DateOnly date, TimeSpan endTime,
         string dayType, DateTime now, int? excludePlanId, DateTime? notBefore, IDbTransaction tx,
         CancellationToken cancellationToken)
     {
-        var spots = await _pickupRepository.GetAcademyPickupSpotsAsync(academyId, cancellationToken).ConfigureAwait(false);
+        var spots = await _pickupRepository.GetAcademyPickupSpotsAsync(academyId, preferredSpotId, cancellationToken)
+            .ConfigureAwait(false);
         if (spots.Count == 0)
             return null;
 

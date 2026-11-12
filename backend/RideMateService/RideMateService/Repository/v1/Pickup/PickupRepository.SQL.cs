@@ -27,7 +27,8 @@ public partial class PickupRepository
                        t.DISPLAY_NAME AS DisplayName,
                        CASE WHEN e.EXCEPTION_TYPE = 'TIME_CHANGE' THEN e.CHANGED_END_TIME ELSE t.END_TIME END AS EndTime,
                        a.LAT AS AcademyLat,
-                       a.LNG AS AcademyLng
+                       a.LNG AS AcademyLng,
+                       t.PICKUP_SPOT_ID AS PreferredSpotId
                 FROM CHILD AS c
                 INNER JOIN TIMETABLE AS t
                         ON t.CHILD_ID = c.CHILD_ID
@@ -189,15 +190,79 @@ public partial class PickupRepository
     }
 
     /// <summary>
-    /// 학원의 픽업 지점 후보 중 사용 중인 것을 우선순위 순으로 조회한다
+    /// 로그인한 부모의 살아 있는 아이의 살아 있는 시간표 한 건을 픽업 장소 후보 목록용으로 조회한다. 없거나 남의 것이면 null.
+    /// 그 날짜 요일의 살아 있는 요일 행이 있으면 TIME_CHANGE 예외를 반영한 하원 시각을 EndTime으로 돌려준다
     /// </summary>
-    public async Task<List<PickupSpotRow>> GetAcademyPickupSpotsAsync(int academyId,
+    public async Task<PickupSpotTargetRow?> GetPickupSpotTargetAsync(int userId, int timetableId, DateOnly date,
+        byte dayOfWeek, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("userId", userId);
+            dp.Add("timetableId", timetableId);
+            dp.Add("date", date.ToDateTime(TimeOnly.MinValue), DbType.Date);
+            dp.Add("dayOfWeek", dayOfWeek);
+
+            var sql = @"
+                SELECT t.TIMETABLE_ID AS TimetableId,
+                       t.DISPLAY_NAME AS DisplayName,
+                       a.ACADEMY_ID AS AcademyId,
+                       a.AREA_ID AS AreaId,
+                       ar.AREA_NAME AS AreaName,
+                       a.LAT AS AcademyLat,
+                       a.LNG AS AcademyLng,
+                       t.PICKUP_SPOT_ID AS PreferredSpotId,
+                       CASE WHEN e.EXCEPTION_TYPE = 'TIME_CHANGE' THEN e.CHANGED_END_TIME ELSE t.END_TIME END AS EndTime,
+                       td.TIMETABLE_DAY_ID AS TimetableDayId
+                FROM TIMETABLE AS t
+                INNER JOIN CHILD AS c
+                        ON c.CHILD_ID = t.CHILD_ID
+                       AND c.DELETE_YN = FALSE
+                INNER JOIN ACADEMY AS a
+                        ON a.ACADEMY_ID = t.ACADEMY_ID
+                       AND a.DELETE_YN = FALSE
+                LEFT JOIN AREA AS ar
+                       ON ar.AREA_ID = a.AREA_ID
+                      AND ar.DELETE_YN = FALSE
+                LEFT JOIN TIMETABLE_DAY AS td
+                       ON td.TIMETABLE_ID = t.TIMETABLE_ID
+                      AND td.DAY_OF_WEEK = @dayOfWeek
+                      AND td.DELETE_YN = FALSE
+                LEFT JOIN TIMETABLE_EXCEPTION AS e
+                       ON e.TIMETABLE_DAY_ID = td.TIMETABLE_DAY_ID
+                      AND e.TARGET_DATE = @date
+                      AND e.DELETE_YN = FALSE
+                WHERE t.TIMETABLE_ID = @timetableId
+                  AND t.DELETE_YN = FALSE
+                  AND c.USER_ID = @userId
+                LIMIT 1";
+
+            return await _dapper.QueryFirstOrDefaultAsync<PickupSpotTargetRow>(
+                new CommandDefinition(sql, dp, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 학원의 픽업 지점 후보 중 사용 중인 것을 조회한다. 우리 픽업 장소(preferredSpotId)가 후보면 맨 앞에, 나머지는 우선순위 순이다.
+    /// 순서가 상관없으면 preferredSpotId에 null을 넘긴다
+    /// </summary>
+    public async Task<List<PickupSpotRow>> GetAcademyPickupSpotsAsync(int academyId, int? preferredSpotId,
         CancellationToken cancellationToken = default)
     {
         try
         {
             var dp = new DynamicParameters();
             dp.Add("academyId", academyId);
+            dp.Add("preferredSpotId", preferredSpotId);
 
             var sql = @"
                 SELECT s.PICKUP_SPOT_ID AS PickupSpotId,
@@ -206,7 +271,10 @@ public partial class PickupRepository
                        s.LNG AS Lng,
                        aps.WALK_MIN AS WalkMin,
                        ST_AsText(aps.WALK_PATH) AS WalkPathWkt,
-                       s.CAPACITY AS Capacity
+                       s.CAPACITY AS Capacity,
+                       s.GUIDE_TEXT AS GuideText,
+                       s.PHOTO_URL AS PhotoUrl,
+                       aps.NOTE AS Note
                 FROM ACADEMY_PICKUP_SPOT AS aps
                 INNER JOIN PICKUP_SPOT AS s
                         ON s.PICKUP_SPOT_ID = aps.PICKUP_SPOT_ID
@@ -214,7 +282,7 @@ public partial class PickupRepository
                        AND s.DELETE_YN = FALSE
                 WHERE aps.ACADEMY_ID = @academyId
                   AND aps.DELETE_YN = FALSE
-                ORDER BY aps.PRIORITY, aps.ACADEMY_PICKUP_SPOT_ID";
+                ORDER BY (s.PICKUP_SPOT_ID <=> @preferredSpotId) DESC, aps.PRIORITY, aps.ACADEMY_PICKUP_SPOT_ID";
 
             var rows = await _dapper.QueryAsync<PickupSpotRow>(
                 new CommandDefinition(sql, dp, cancellationToken: cancellationToken)).ConfigureAwait(false);
@@ -725,7 +793,8 @@ public partial class PickupRepository
                        p.ACADEMY_ID AS AcademyId,
                        a.LAT AS AcademyLat,
                        a.LNG AS AcademyLng,
-                       p.PARKING_LOT_ID AS ParkingLotId
+                       p.PARKING_LOT_ID AS ParkingLotId,
+                       t.PICKUP_SPOT_ID AS PreferredSpotId
                 FROM PICKUP_PLAN AS p
                 LEFT JOIN PICKUP_SPOT AS s
                        ON s.PICKUP_SPOT_ID = p.PICKUP_SPOT_ID
@@ -892,7 +961,8 @@ public partial class PickupRepository
                        td.LAST_PICKUP_DATE AS LastPickupDate,
                        CASE WHEN e.EXCEPTION_TYPE = 'TIME_CHANGE' THEN e.CHANGED_END_TIME ELSE t.END_TIME END AS EndTime,
                        (e.EXCEPTION_TYPE IS NOT NULL AND e.EXCEPTION_TYPE = 'SKIP') AS Skipped,
-                       (td.DELETE_YN = FALSE AND t.DELETE_YN = FALSE AND c.DELETE_YN = FALSE) AS Alive
+                       (td.DELETE_YN = FALSE AND t.DELETE_YN = FALSE AND c.DELETE_YN = FALSE) AS Alive,
+                       t.PICKUP_SPOT_ID AS PreferredSpotId
                 FROM TIMETABLE_DAY AS td
                 INNER JOIN TIMETABLE AS t
                         ON t.TIMETABLE_ID = td.TIMETABLE_ID
@@ -925,7 +995,7 @@ public partial class PickupRepository
     /// excludePlanId가 있으면 그 계획은 빼고 센다
     /// </summary>
     public async Task<int> CountSlotPlansAsync(int pickupSpotId, DateTime slotDt, int windowMin, DateTime now,
-        int? excludePlanId, IDbTransaction transaction, CancellationToken cancellationToken = default)
+        int? excludePlanId, IDbTransaction? transaction, CancellationToken cancellationToken = default)
     {
         try
         {

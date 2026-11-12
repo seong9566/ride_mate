@@ -425,15 +425,16 @@ public partial class PickupService : IPickupService
             EndTime = plan.EndTime
                       ?? throw new InvalidOperationException($"live pickup plan without end time: plan={plan.PickupPlanId}"),
             AcademyLat = plan.AcademyLat,
-            AcademyLng = plan.AcademyLng
+            AcademyLng = plan.AcademyLng,
+            PreferredSpotId = plan.PreferredSpotId
         };
 
-    // 기본 지점: 우선순위 순으로 아이 도착 시각이 금지 시간 [시작, 종료)에 들지 않는 첫 지점.
+    // 기본 지점: 우리 픽업 장소가 후보면 맨 앞에, 나머지는 우선순위 순으로 보며 [ADR-0025] 아이 도착 시각이 금지 시간 [시작, 종료)에 들지 않는 첫 지점.
     // 금지 시간에 걸려 건너뛴 지점마다 HIGHER_SPOT_BLOCKED를 reasons에 더한다. 쓸 지점이 없으면 null
     private async Task<DepartureGuidePickupDto?> SelectDefaultSpotAsync(TodayPickupRow target, DateOnly date, string dayType,
         List<DepartureGuideReasonDto> reasons, CancellationToken cancellationToken)
     {
-        var spots = await _pickupRepository.GetAcademyPickupSpotsAsync(target.AcademyId, cancellationToken).ConfigureAwait(false);
+        var spots = await _pickupRepository.GetAcademyPickupSpotsAsync(target.AcademyId, target.PreferredSpotId, cancellationToken).ConfigureAwait(false);
         if (spots.Count == 0)
             return null;
 
@@ -494,7 +495,7 @@ public partial class PickupService : IPickupService
         List<GeoPointDto>? walkPath = null;
         if (plan.AcademyId is { } academyId)
         {
-            var spots = await _pickupRepository.GetAcademyPickupSpotsAsync(academyId, cancellationToken).ConfigureAwait(false);
+            var spots = await _pickupRepository.GetAcademyPickupSpotsAsync(academyId, plan.PreferredSpotId, cancellationToken).ConfigureAwait(false);
             var index = spots.FindIndex(s => s.PickupSpotId == spotId);
             if (index >= 0)
             {

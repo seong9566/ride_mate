@@ -30,6 +30,12 @@ public interface IScheduleRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 시간표의 우리 픽업 장소(PICKUP_SPOT_ID)와 수정 감사 컬럼만 바꾼다. null이면 지운다. 바뀐 행이 없으면 false를 돌려준다.
+    /// </summary>
+    Task<bool> UpdateSchedulePickupSpotAsync(int timetableId, int? pickupSpotId, DateTime updateDt, string updateUser,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 시간표를 지운다. 날짜별 예외 → 요일 → 시간표 순으로 표마다 UPDATE 한 번씩 DELETE_YN을 켜고, 시간표의 DISPLAY_NAME은 빈 문자열로 바꾼다.
     /// 시간표 행이 바뀌지 않았으면 false를 돌려준다.
     /// </summary>
@@ -38,9 +44,10 @@ public interface IScheduleRepository
 
     /// <summary>
     /// 시간표를 편집한다. 뺀 요일의 날짜별 예외 → 뺀 요일 → 되살릴 요일 → 새 요일 → 시간표 순으로 쓴다.
-    /// 되살린 요일은 픽업 스위치를 켜고 LAST_PICKUP_DATE는 그대로 둔다. 시간표 행이 바뀌지 않았으면 false를 돌려준다.
+    /// 되살린 요일은 픽업 스위치를 켜고 LAST_PICKUP_DATE는 그대로 둔다. 학원이 바뀌었으면(academyChanged) 같은 시간표 쓰기에서
+    /// 우리 픽업 장소를 비운다. 시간표 행이 바뀌지 않았으면 false를 돌려준다.
     /// </summary>
-    Task<bool> UpdateScheduleAsync(int timetableId, int academyId, string displayName, TimeSpan endTime,
+    Task<bool> UpdateScheduleAsync(int timetableId, int academyId, bool academyChanged, string displayName, TimeSpan endTime,
         IReadOnlyCollection<int> deleteDayIds, IReadOnlyCollection<int> reviveDayIds, IReadOnlyCollection<TimetableDay> newDays,
         DateTime updateDt, string updateUser, CancellationToken cancellationToken = default);
 
@@ -102,6 +109,19 @@ public interface IScheduleRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 그 시간표의 우리 픽업 장소를 목록 항목의 pickupSpot과 같은 모양으로 돌려준다. 후보가 없으면 null이다.
+    /// 쓰기 트랜잭션 안에서 부르면 그 트랜잭션을 넘긴다.
+    /// </summary>
+    Task<SchedulePickupSpotDto?> GetSchedulePickupSpotAsync(int timetableId, IDbTransaction? transaction = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 그 지점이 그 학원의 살아 있는 후보(후보 행 살아 있음 + 지점 살아 있음 + 지점 USE_YN = 1)인지 본다.
+    /// </summary>
+    Task<bool> IsAcademyPickupSpotAsync(int academyId, int pickupSpotId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 그 계정의 살아 있는 아이의 살아 있는 시간표가 가리키는 학원의 학원가 ID를 돌려준다.
     /// 시간표가 없거나 남의 것이거나 학원에 좌표가 없으면 null이다. 트랜잭션 없이 부르면 잠글 학원가를 고르는 일반 조회이고,
     /// 트랜잭션을 넘기면 FOR SHARE 잠금 읽기로 최신 값을 읽고 그 아이·시간표·학원 행을 잠근다(학원가가 채워지지 못하게 한다).
@@ -121,7 +141,7 @@ public interface IScheduleRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 그 아이의 살아 있는 시간표 한 건의 학원 ID·하원 시각을 돌려준다. 없거나 남의 것이면 null이다.
+    /// 그 아이의 살아 있는 시간표 한 건의 학원 ID·하원 시각·우리 픽업 장소를 돌려준다. 없거나 남의 것이면 null이다.
     /// </summary>
     Task<LiveScheduleRow?> GetLiveScheduleAsync(int childId, int timetableId, IDbTransaction transaction,
         CancellationToken cancellationToken = default);

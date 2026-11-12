@@ -45,12 +45,21 @@ public class DepartureGuideQueryDto : IValidatableObject
     [Range(-180.0, 180.0)]
     public decimal? pickupLng { get; set; }
 
-    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    /// <summary>
+    /// currentDt 검증. 픽업 장소 후보 목록 요청도 같은 규칙을 쓴다
+    /// </summary>
+    public static IEnumerable<ValidationResult> ValidateCurrentDt(DateTime? currentDt)
     {
         // 쿼리 바인딩은 Z·오프셋이 붙은 값을 UTC로 바꿔 시각이 밀린다. 오프셋 없는 로컬 시각(Unspecified)만 받는다
         if (currentDt is { Kind: not DateTimeKind.Unspecified })
             yield return new ValidationResult("currentDt는 오프셋 없는 로컬 시각이어야 합니다.",
                 new[] { nameof(currentDt) });
+    }
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        foreach (var result in ValidateCurrentDt(currentDt))
+            yield return result;
 
         if ((pickupLat is null) != (pickupLng is null))
             yield return new ValidationResult("pickupLat와 pickupLng는 함께 보내야 합니다.",
