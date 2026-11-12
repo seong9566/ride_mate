@@ -56,17 +56,17 @@ public class ChildPickupDto
     public DateTime? slotDt { get; set; }
 
     /// <summary>
-    /// 화면에 보여줄 도착 예정 시각. 지금은 배정 도착 시각과 같다
+    /// 화면에 보여줄 도착 예정 시각. 신선한 차 위치의 etaSec가 있으면 보고 시각 + etaSec(NAVI), 그 밖에는 배정 시각(SLOT)
     /// </summary>
     public DateTime? arrivalDt { get; set; }
 
     /// <summary>
-    /// 도착 예정의 근거. SLOT(배정 시각). 배정 시각이 없으면 null
+    /// 도착 예정의 근거. NAVI(신선한 위치의 보고 시각 + etaSec), SLOT(배정 시각). 둘 다 없으면 null
     /// </summary>
     public string? arrivalSource { get; set; }
 
     /// <summary>
-    /// 차 현재 위치. 차 위치 보고가 생기면 값이 있다. 지금은 늘 null
+    /// 차 현재 위치. 기능이 켜져 있고 보고 후 VehicleStaleSec(기본 30초) 이내일 때만 채우며 그 밖에는 null
     /// </summary>
     public ChildPickupVehicleDto? vehicle { get; set; }
 

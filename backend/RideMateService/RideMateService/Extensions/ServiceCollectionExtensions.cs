@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.RateLimiting;
@@ -48,6 +49,7 @@ public static class ServiceCollectionExtensions
     {
         services.AddTransient<IPickupRepository, PickupRepository>();
         services.AddTransient<IPickupService, PickupService>();
+        services.AddSingleton<IPickupLiveHub, PickupLiveHub>();
         return services;
     }
 
@@ -106,6 +108,16 @@ public static class InfrastructureExtensions
                     Window = TimeSpan.FromMinutes(1),
                     QueueLimit = 0
                 }));
+
+            options.AddPolicy(PickupPositionRateLimit.PolicyName, context =>
+                context.User.FindFirstValue("sub") is { } userId
+                    ? RateLimitPartition.GetFixedWindowLimiter(userId, _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = PickupPositionRateLimit.PermitLimit,
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueLimit = 0
+                    })
+                    : RateLimitPartition.GetNoLimiter(string.Empty));
 
             // 아이 픽업 안내 API: 토큰별 제한 → 전체 공용 상한 순서로 묶는다. 토큰별 제한을 통과한 요청만 공용 상한을 쓴다.
             // 엔드포인트 정책은 GlobalLimiter 뒤에 획득되고 고정 창 허용량은 거절돼도 돌려주지 않으므로 둘 다 여기 둔다(PR #40 리뷰)
@@ -231,11 +243,12 @@ public static class InfrastructureExtensions
     }
 
     /// <summary>
-    /// 카카오 설정(Kakao), 공공데이터 설정(PublicData), 출발 안내 설정(DepartureGuide), 대기 장소 설정(WaitingPlace), 픽업 링크 설정(PickupLink), 픽업 계획 설정(PickupPlan)을 등록하고,
+    /// 카카오 설정(Kakao), 공공데이터 설정(PublicData), 출발 안내 설정(DepartureGuide), 대기 장소 설정(WaitingPlace), 픽업 링크 설정(PickupLink), 픽업 계획 설정(PickupPlan), 실시간 픽업 설정(PickupLive)을 등록하고,
     /// 도보 경로·좌표→주소 변환 클라이언트(타임아웃 3초)와 주차장 실시간 클라이언트를 typed HttpClient로 등록한다.
     /// Kakao:RestApiKey와 PublicData:ServiceKey가 비어 있어도 기동은 하며, 이때 해당 클라이언트는 외부 API를 부르지 않고 null을 돌려준다.
     /// PickupLink:BaseUrl이 http(s) 절대 URI가 아니거나 PickupLink:MaxAttempts·InFlightTimeoutSec·LeaveSoonMin·LeaveMaxAheadMin이 1보다 작으면 기동할 때 InvalidOperationException을 던진다.
     /// PickupPlan:CreateLeadHours·ExpireAfterHours·ExpireIntervalSec·StopRadiusM이 1보다 작거나 SlotWindowMin·SlotShiftMaxMin이 0보다 작거나 ExpireAfterHours가 DepartureGuide:PickupWindowHours보다 작아도 같다.
+    /// PickupLive:VehicleStaleSec·PositionMinIntervalSec·HeartbeatSec·StreamMaxLifetimeMin·MaxStreamsPerPlan이 1보다 작아도 같다.
     /// </summary>
     public static IServiceCollection AddMapInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
@@ -278,6 +291,20 @@ public static class InfrastructureExtensions
         if (pickupPlanOptions.ExpireAfterHours < departureGuideOptions.PickupWindowHours)
             throw new InvalidOperationException("PickupPlan:ExpireAfterHours 설정은 DepartureGuide:PickupWindowHours 이상이어야 합니다.");
         services.Configure<PickupPlanOptions>(pickupPlan);
+
+        var pickupLive = configuration.GetSection("PickupLive");
+        var pickupLiveOptions = pickupLive.Get<PickupLiveOptions>() ?? new PickupLiveOptions();
+        if (pickupLiveOptions.VehicleStaleSec < 1)
+            throw new InvalidOperationException("PickupLive:VehicleStaleSec 설정은 1 이상이어야 합니다.");
+        if (pickupLiveOptions.PositionMinIntervalSec < 1)
+            throw new InvalidOperationException("PickupLive:PositionMinIntervalSec 설정은 1 이상이어야 합니다.");
+        if (pickupLiveOptions.HeartbeatSec < 1)
+            throw new InvalidOperationException("PickupLive:HeartbeatSec 설정은 1 이상이어야 합니다.");
+        if (pickupLiveOptions.StreamMaxLifetimeMin < 1)
+            throw new InvalidOperationException("PickupLive:StreamMaxLifetimeMin 설정은 1 이상이어야 합니다.");
+        if (pickupLiveOptions.MaxStreamsPerPlan < 1)
+            throw new InvalidOperationException("PickupLive:MaxStreamsPerPlan 설정은 1 이상이어야 합니다.");
+        services.Configure<PickupLiveOptions>(pickupLive);
 
         services.AddHttpClient<IWalkRouteClient, KakaoWalkRouteClient>(client =>
         {

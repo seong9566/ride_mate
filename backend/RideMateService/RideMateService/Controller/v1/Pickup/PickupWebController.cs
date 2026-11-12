@@ -1,5 +1,8 @@
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Options;
+using Newtonsoft.Json;
 using RideMateService.Comm;
 using RideMateService.Comm.Dto.v1.Pickup.Request;
 using RideMateService.Comm.Dto.v1.Pickup.Response;
@@ -13,11 +16,14 @@ namespace RideMateService.Controller.v1.Pickup;
 [ApiController]
 public class PickupWebController : ApiControllerBase
 {
+    private readonly JsonSerializerSettings _jsonSettings;
     private readonly ILogService _logService;
     private readonly IPickupService _pickupService;
 
-    public PickupWebController(ILogService logService, IPickupService pickupService)
+    public PickupWebController(ILogService logService, IPickupService pickupService,
+        IOptions<MvcNewtonsoftJsonOptions> jsonOptions)
     {
+        this._jsonSettings = jsonOptions.Value.SerializerSettings;
         this._logService = logService;
         this._pickupService = pickupService;
     }
@@ -102,6 +108,64 @@ public class PickupWebController : ApiControllerBase
 #if DEBUG
             _logService.ConsoleWarning(ex.ToString());
 #endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
+
+    /// <summary>아이 픽업 안내 실시간 연결(SSE)</summary>
+    /// <remarks>X-Pickup-Token 헤더로 픽업 링크 토큰을 전달한다(EventSource는 헤더를 못 붙이므로 웹은 fetch 스트리밍으로 읽는다).
+    /// 판정 실패는 SSE가 아니라 JSON이다: 404 링크 없음, 429 요청 초과, 500.
+    /// 성공하면 text/event-stream으로 연결 직후 `snapshot`(화면 전체) 하나, 이후 바뀔 때마다 `snapshot`(change 포함)과 `vehicle`(차 위치)을 보낸다. 15초마다 `: ping` 주석 줄. 링크가 끝나거나(EXPIRE_DT 시각 포함) 30분이 지나거나 같은 계획에 연결이 5개를 넘어 가장 오래된 연결이면 서버가 닫는다. 다시 연결하면 snapshot부터 받는다(놓친 이벤트 재생 없음).</remarks>
+    [HttpGet]
+    [Route("v1/Pickup/W/DetailChildPickupStream")]
+    [ChildPickupLimit(ChildPickupRateLimit.StreamGroup, ChildPickupRateLimit.StreamPermitLimit)]
+    [SwaggerOperation(Summary = "아이 픽업 안내 실시간 연결(휴대폰 웹, SSE)")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ResponseModel<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(void), StatusCodes.Status429TooManyRequests)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> DetailChildPickupStream(
+        [FromHeader(Name = "X-Pickup-Token")] string? token, CancellationToken cancellationToken)
+    {
+        int? pickupPlanId = null;
+        try
+        {
+            var model = await _pickupService.OpenChildPickupStreamService(token, cancellationToken)
+                .ConfigureAwait(false);
+            if (model.code != 200)
+                return ToActionResult(model);
+
+            pickupPlanId = model.data!.PickupPlanId;
+            Response.StatusCode = StatusCodes.Status200OK;
+            Response.ContentType = "text/event-stream; charset=utf-8";
+            Response.Headers.CacheControl = "no-store";
+            Response.Headers["X-Accel-Buffering"] = "no";
+            HttpContext.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
+            await foreach (var e in _pickupService.ReadChildPickupStreamAsync(model.data!, cancellationToken))
+            {
+                var payload = e.EventName is null
+                    ? ": ping\n\n"
+                    : $"event: {e.EventName}\ndata: {JsonConvert.SerializeObject(e.Data, Formatting.None, _jsonSettings)}\n\n";
+                await Response.WriteAsync(payload, cancellationToken).ConfigureAwait(false);
+                await Response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
+            }
+            return new EmptyResult();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new EmptyResult();
+        }
+        catch (Exception ex)
+        {
+            var message = $"child pickup stream failed: plan={pickupPlanId?.ToString() ?? "unknown"}\n{ex}";
+            _logService.LogMessage(message);
+#if DEBUG
+            _logService.ConsoleWarning(message);
+#endif
+            if (Response.HasStarted)
+                return new EmptyResult();
+
+            Response.ContentType = null;
             return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
         }
     }

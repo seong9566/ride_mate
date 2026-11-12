@@ -307,6 +307,7 @@ public partial class PickupService
                     }
 
                     await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+                    SignalPlanChanged(plan.PickupPlanId);
                     createdPlanId = plan.PickupPlanId;
                 }
             }
@@ -490,6 +491,7 @@ public partial class PickupService
             }
 
             await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+            SignalPlanChanged(pickupPlanId);
 
             return PlanOk(await BuildPlanDtoAsync(pickupPlanId, true, null, cancellationToken).ConfigureAwait(false));
         }
@@ -677,6 +679,7 @@ public partial class PickupService
         }
 
         await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+        SignalPlanChanged(pickupPlanId);
 
         return PlanOk(await BuildPlanDtoAsync(pickupPlanId, reassigned, null, cancellationToken).ConfigureAwait(false));
     }
@@ -738,6 +741,7 @@ public partial class PickupService
         }
 
         await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+        SignalPlanEnded(pickupPlanId);
         return true;
     }
 

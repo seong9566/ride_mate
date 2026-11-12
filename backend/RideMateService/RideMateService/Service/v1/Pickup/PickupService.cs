@@ -49,6 +49,9 @@ public partial class PickupService : IPickupService
     private readonly PickupLinkOptions _linkOptions;
     private readonly PickupPlanOptions _planOptions;
 
+    private readonly IPickupLiveHub _liveHub;
+    private readonly PickupLiveOptions _liveOptions;
+
     public PickupService(IPickupRepository pickupRepository,
         ILogService logService,
         IHttpContextAccessor httpContextAccessor,
@@ -62,7 +65,9 @@ public partial class PickupService : IPickupService
         IPhoneCryptoService phoneCryptoService,
         ISmsSender smsSender,
         IOptions<PickupLinkOptions> linkOptions,
-        IOptions<PickupPlanOptions> planOptions)
+        IOptions<PickupPlanOptions> planOptions,
+        IPickupLiveHub liveHub,
+        IOptions<PickupLiveOptions> liveOptions)
     {
         this._pickupRepository = pickupRepository;
         this._logService = logService;
@@ -78,6 +83,8 @@ public partial class PickupService : IPickupService
         this._smsSender = smsSender;
         this._linkOptions = linkOptions.Value;
         this._planOptions = planOptions.Value;
+        this._liveHub = liveHub;
+        this._liveOptions = liveOptions.Value;
     }
 
     /// <summary>
@@ -253,6 +260,11 @@ public partial class PickupService : IPickupService
             return new ResponseModel<GetRestrictedZoneList> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
         }
     }
+
+    // 커밋한 뒤 그 계획의 실시간 연결에 "바뀜"을 알린다. 롤백·바꿀 것 없음 경로에서는 부르지 않는다
+    private void SignalPlanChanged(int pickupPlanId) => _liveHub.NotifyPlanChanged(pickupPlanId);
+    // 계획이 끝난(탑승·취소·만료) 커밋 뒤에 부른다. 허브의 차 위치를 지우고 연결에 알린다
+    private void SignalPlanEnded(int pickupPlanId) => _liveHub.NotifyPlanEnded(pickupPlanId);
 
     private async Task<DepartureComputation> ComputeDepartureAsync(int userId, DepartureGuideQueryDto dto,
         CancellationToken ct)

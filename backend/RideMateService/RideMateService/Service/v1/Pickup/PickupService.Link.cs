@@ -348,6 +348,7 @@ public partial class PickupService
                 }
 
                 await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+                SignalPlanChanged(pickupPlanId);
                 pickupEventId = pickupEvent.PickupEventId;
 
                 // 트랜잭션 2가 추적 중인 옛 인스턴스 대신 DB의 현재 행(그사이 익명화된 DELETE_YN 등)을 읽게 비운다
@@ -391,6 +392,7 @@ public partial class PickupService
                     _linkOptions.InFlightTimeoutSec, _linkOptions.MaxAttempts);
 
                 await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+                SignalPlanChanged(pickupPlanId);
             }
 
             // 8) 응답 — 사업자가 접수했으면 200, 거절·시간 초과면 101
