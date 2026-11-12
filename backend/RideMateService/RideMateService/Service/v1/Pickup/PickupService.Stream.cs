@@ -26,7 +26,7 @@ public partial class PickupService
             {
                 code = 200,
                 message = "요청이 정상 처리되었습니다.",
-                data = new ChildPickupStreamTicket(pickupPlanId.Value, tokenHash, result.Value.Dto, result.Value.ExpireDt)
+                data = new ChildPickupStreamTicket(pickupPlanId.Value, tokenHash, result.Value.ExpireDt)
             };
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -107,13 +107,18 @@ public partial class PickupService
     {
         var connectedDt = DateTime.Now;
         using var sub = _liveHub.Subscribe(ticket.PickupPlanId);
+        var initial = await LoadChildPickupAsync(ticket.TokenHash, cancellationToken).ConfigureAwait(false);
+        if (initial is null)
+            yield break;
         cancellationToken.ThrowIfCancellationRequested();
-        yield return SnapshotEvent(ticket.Snapshot, null);
-        if (ticket.Snapshot.linkStatus != LinkStatusActive)
+        yield return SnapshotEvent(initial.Value.Dto, null);
+        if (initial.Value.Dto.linkStatus != LinkStatusActive)
             yield break;
 
-        var last = ticket.Snapshot;
-        var expireDt = ticket.ExpireDt;
+        var last = initial.Value.Dto;
+        var expireDt = initial.Value.ExpireDt;
+        DateTime? soonAt = last.leave?.leaveStatus == "SCHEDULED" && last.leave.plannedLeaveDt is { } p
+            ? p.AddMinutes(-_linkOptions.LeaveSoonMin) : null;
         var deadline = connectedDt.AddMinutes(_liveOptions.StreamMaxLifetimeMin);
         var nextHeartbeat = connectedDt.AddSeconds(_liveOptions.HeartbeatSec);
         var lastVehicleHadPosition = last.vehicle is not null;
@@ -122,18 +127,20 @@ public partial class PickupService
             var wake = nextHeartbeat < deadline ? nextHeartbeat : deadline;
             if (expireDt is { } expires && expires < wake)
                 wake = expires;
+            if (soonAt is { } soon && soon < wake)
+                wake = soon;
             if (!await WaitForChildPickupSignalAsync(sub, wake, cancellationToken).ConfigureAwait(false))
                 yield break;
 
-            var reload = false;
-            var moved = false;
-            while (sub.Signals.TryRead(out var signal))
+            while (sub.Wake.TryRead(out _))
             {
-                reload |= signal is PickupLiveSignal.PlanChanged or PickupLiveSignal.PlanEnded;
-                moved |= signal == PickupLiveSignal.VehicleMoved;
             }
+            var signals = sub.TakeSignals();
+            var reload = signals.HasFlag(PickupLiveSignal.PlanChanged) || signals.HasFlag(PickupLiveSignal.PlanEnded);
+            var moved = signals.HasFlag(PickupLiveSignal.VehicleMoved);
             var now = DateTime.Now;
-            if (reload || expireDt is { } expiration && now >= expiration)
+            if (reload || expireDt is { } expiration && now >= expiration
+                || soonAt is { } leaveSoon && now >= leaveSoon)
             {
                 var next = await LoadChildPickupAsync(ticket.TokenHash, cancellationToken).ConfigureAwait(false);
                 if (next is null)
@@ -146,6 +153,8 @@ public partial class PickupService
                 }
                 last = next.Value.Dto;
                 expireDt = next.Value.ExpireDt;
+                soonAt = last.leave?.leaveStatus == "SCHEDULED" && last.leave.plannedLeaveDt is { } planned
+                    ? planned.AddMinutes(-_linkOptions.LeaveSoonMin) : null;
                 if (last.linkStatus != LinkStatusActive)
                     yield break;
                 now = DateTime.Now;
@@ -182,11 +191,11 @@ public partial class PickupService
         try
         {
             var remaining = wake - DateTime.Now;
-            var signal = sub.Signals.WaitToReadAsync(waitCancellation.Token).AsTask();
+            var signal = sub.Wake.WaitToReadAsync(waitCancellation.Token).AsTask();
             var timer = Task.Delay(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero, waitCancellation.Token);
             await Task.WhenAny(signal, timer).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
-            return !sub.Signals.Completion.IsCompleted && (!signal.IsCompleted || await signal.ConfigureAwait(false));
+            return !sub.Wake.Completion.IsCompleted && (!signal.IsCompleted || await signal.ConfigureAwait(false));
         }
         finally
         {
