@@ -155,6 +155,15 @@ public class LinkEventRow
 }
 
 /// <summary>
+/// 아이 출발 요청용 픽업 세션 한 건
+/// </summary>
+public class LeaveSessionRow
+{
+    public int PickupPlanId { get; set; }
+    public DateTime? CloseDt { get; set; }
+}
+
+/// <summary>
 /// 오늘 계획 한 건(응답 만들기·대상 고르기용). 지점은 LEFT JOIN이라 지점이 없거나 삭제됐으면 Spot* 값이 null이다.
 /// CustomWalkPathWkt는 SRID 4326 WKT라 점이 "위도 경도" 순이다. AcademyName은 시간표의 DISPLAY_NAME이다.
 /// AcademyLat·AcademyLng는 계획 학원의 현재 좌표다. 끝난 계획은 UserId·AcademyId가 NULL이다.

@@ -639,7 +639,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 **익명화.** 계획이 `BOARDED`·`EXPIRED`·`CANCELED`가 되면 같은 트랜잭션에서 아래를 한다. [ADR-0008]
 
 1. `USER_ID`·`CHILD_ID`·`TIMETABLE_DAY_ID`·`ACADEMY_ID`·`END_TIME`·`WALK_MIN`과 `CUSTOM_LAT`·`CUSTOM_LNG`·`CUSTOM_NAME`·`CUSTOM_WALK_PATH`를 NULL로 바꾼다.
-2. 그 계획의 `END_TIME_CHANGED` 이벤트는 `DETAIL`을 NULL로 바꾼다. 하원 시각이 들어 있기 때문이다.
+2. 그 계획의 `END_TIME_CHANGED`·`LEAVE_SCHEDULED` 이벤트는 `DETAIL`을 NULL로 바꾼다. 하원 시각과 아이가 정한 출발 시각이 들어 있기 때문이다.
 3. `DELETE_YN`을 켠다. `PICKUP_SESSION`·`PICKUP_EVENT`도 함께 켠다.
 
 계획 행의 1과 3은 한 UPDATE로 한다. 나눠서 하면 `WALK_MIN`을 비우는 순간 CHECK에 걸린다. `CUSTOM_LAT`·`CUSTOM_LNG`·`CUSTOM_NAME`도 한 UPDATE에서 함께 비운다(`CK_PICKUP_PLAN_03`). 임의 좌표 계획은 `PICKUP_SPOT_ID`가 NULL이고 `SLOT_DT`가 남으므로, `DELETE_YN`을 켜지 않고 좌표만 비우면 `CK_PICKUP_PLAN_01`에 걸린다.
@@ -698,6 +698,8 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `LINK_SENT` | 링크 발송 | 채널, 성공 여부, 발송 업체 결과 코드 |
 | `LINK_OPENED` | 아이가 링크 열람 | — |
 | `CHILD_LEAVING` | 아이가 "지금 나가요" | — |
+| `LEAVE_SCHEDULED` | 아이가 출발 시각을 정하거나 바꿈 | 출발 시각 `{"leaveDt":"2026-11-12T22:03:00"}` |
+| `LEAVE_CANCELED` | 아이가 출발 시각을 취소 | — |
 | `STOPPED` | 배정 장소 반경 안 정차(배정 장소가 없는 계획의 정차 포함) | — |
 | `WRONG_STOP` | 배정 장소 반경 밖에 정차 | `{"zoneTypes": ["NO_PARKING", …]}`(걸린 `ZONE_TYPE`, 없으면 빈 배열) 또는 `{"zoneTypes": null}`(판정 불가: 학원가 밖·구역 데이터 없음). 좌표·거리는 넣지 않는다 |
 | `REMIND_SENT` | "도착했어요" 다시 알림 | 채널, 성공 여부, 발송 업체 결과 코드 |
@@ -712,6 +714,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
   - 시도 횟수에는 성공·실패·진행 중을 모두 센다. 한도는 `PickupLink:MaxAttempts`(3)다.
 - UNIQUE: `(PICKUP_PLAN_ID, CLIENT_EVENT_ID)`. 차량은 연결이 끊기면 이벤트를 쌓아 두었다가 다시 보낸다. 같은 이벤트가 두 번 와도 한 번만 들어간다. NULL은 겹쳐도 걸리지 않는다.
 - 횟수 제한(다시 알림 1회, "지금 나가요" 1회)은 이 이력을 세어 Service에서 확인한다.
+- 출발 시각은 `CHILD_LEAVING` 전까지 몇 번이고 바꿀 수 있다. 지금 상태는 마지막 `LEAVE_SCHEDULED`·`LEAVE_CANCELED`로 정한다.
 - `DETAIL`에는 위 표에 적힌 값만 넣는다. 발송 업체 응답을 그대로 넣지 않는다. 수신 번호가 들어 있을 수 있다.
 - `PLANNED`·`REASSIGNED`의 `DETAIL`에 임의 좌표, 장소 이름, 주소를 넣지 않는다. `custom` 플래그만 남긴다. 계획이 끝나 익명화한 뒤에도 이벤트 이력은 남기 때문이다.
 - `EVENT_DT`: 차량이 일으킨 이벤트(`STARTED`, 사유가 `LATE_START`인 `REASSIGNED`, `WAIT_STARTED`, `STOPPED`, `WRONG_STOP`, `BOARDED`)는 차량이 보낸 `eventDt`다. 사유가 `LOCATION_CHANGED`인 `REASSIGNED`, `CANCELED`, 서버가 만든 이벤트(`PLANNED`, `EXPIRED` 등)는 서버 현재 시각이다.

@@ -13,7 +13,6 @@ public partial class PickupService
     private const string EventLinkSent = "LINK_SENT";
     private const string EventRemindSent = "REMIND_SENT";
     private const string EventLinkOpened = "LINK_OPENED";
-    private const string EventChildLeaving = "CHILD_LEAVING";
     private const string SendChannelSms = "SMS";
     private const string AuditUser = "PARENT";
     private const string ReasonPlanClosed = "PLAN_CLOSED";
@@ -87,12 +86,14 @@ public partial class PickupService
             // 4) 이벤트 이력으로 상태를 계산한다. 열람·지금 나가요는 유형별 첫 이벤트(PICKUP_EVENT_ID 순)의 EVENT_DT다
             var events = await _pickupRepository.GetLinkEventsAsync(dto.pickupPlanSeq.Value, null, cancellationToken)
                 .ConfigureAwait(false);
+            var leaveEvents = await _pickupRepository.GetLeaveEventsAsync(dto.pickupPlanSeq.Value, null, cancellationToken)
+                .ConfigureAwait(false);
             var link = PickupLinkSendState.Summarize(events, EventLinkSent, now,
                 _linkOptions.InFlightTimeoutSec, _linkOptions.MaxAttempts);
             var remind = PickupLinkSendState.Summarize(events, EventRemindSent, now,
                 _linkOptions.InFlightTimeoutSec, _linkOptions.MaxAttempts);
+            var leave = ChildLeaveState.Summarize(leaveEvents, now, _linkOptions.LeaveSoonMin);
             var opened = events.FirstOrDefault(e => e.EventType == EventLinkOpened);
-            var leaving = events.FirstOrDefault(e => e.EventType == EventChildLeaving);
 
             return new ResponseModel<DetailPickupLinkStatusDto>
             {
@@ -104,8 +105,11 @@ public partial class PickupService
                     remainingAttempts = link.RemainingAttempts,
                     opened = opened is not null,
                     openedDt = opened?.EventDt,
-                    leaving = leaving is not null,
-                    leavingDt = leaving?.EventDt,
+                    // 지금 나가요는 출발 상태와 같은 조회 결과로 채워 leaving == (leaveStatus == LEAVING)을 지킨다
+                    leaving = leave.LeavingDt is not null,
+                    leavingDt = leave.LeavingDt,
+                    leaveStatus = leave.Status,
+                    plannedLeaveDt = leave.PlannedLeaveDt,
                     remindStatus = remind.Status
                 },
                 code = 200

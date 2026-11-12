@@ -1264,14 +1264,14 @@ public partial class PickupRepository
             if (closed == 0)
                 return false;
 
-            // 4) 하원 시각이 든 END_TIME_CHANGED 이벤트의 DETAIL을 비운다
+            // 4) 하원 시각이 든 END_TIME_CHANGED와 아이가 정한 출발 시각이 든 LEAVE_SCHEDULED 이벤트의 DETAIL을 비운다
             var clearDetailSql = @"
                 UPDATE PICKUP_EVENT
                 SET DETAIL = NULL,
                     UPDATE_DT = @now,
                     UPDATE_USER = @updateUser
                 WHERE PICKUP_PLAN_ID = @pickupPlanId
-                  AND EVENT_TYPE = 'END_TIME_CHANGED'";
+                  AND EVENT_TYPE IN ('END_TIME_CHANGED', 'LEAVE_SCHEDULED')";
             await _dapper.ExecuteAsync(
                 new CommandDefinition(clearDetailSql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
 

@@ -75,7 +75,7 @@ public static class ServiceCollectionExtensions
 public static class InfrastructureExtensions
 {
     /// <summary>
-    /// 요청 빈도 제한 정책 등록. 차 계정 목록(로그인 전 조회)만 클라이언트별 고정 창 30회/분으로 막고, 넘으면 본문 없이 429와 Retry-After를 돌려준다.
+    /// 요청 빈도 제한 정책 등록. 차 계정 목록과 아이 출발 알림을 클라이언트별 고정 창 30회/분으로 막고, 넘으면 본문 없이 429와 Retry-After를 돌려준다.
     /// </summary>
     public static IServiceCollection AddRateLimitPolicies(this IServiceCollection services)
     {
@@ -93,6 +93,14 @@ public static class InfrastructureExtensions
                 _ => new FixedWindowRateLimiterOptions
                 {
                     PermitLimit = LoginSessionListRateLimit.PermitLimit,
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueLimit = 0
+                }));
+            options.AddPolicy(ChildLeaveRateLimit.PolicyName, context => RateLimitPartition.GetFixedWindowLimiter(
+                LoginSessionListRateLimit.PartitionKey(context.Connection.RemoteIpAddress),
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = ChildLeaveRateLimit.PermitLimit,
                     Window = TimeSpan.FromMinutes(1),
                     QueueLimit = 0
                 }));
@@ -183,7 +191,7 @@ public static class InfrastructureExtensions
     /// 카카오 설정(Kakao), 공공데이터 설정(PublicData), 출발 안내 설정(DepartureGuide), 대기 장소 설정(WaitingPlace), 픽업 링크 설정(PickupLink), 픽업 계획 설정(PickupPlan)을 등록하고,
     /// 도보 경로·좌표→주소 변환 클라이언트(타임아웃 3초)와 주차장 실시간 클라이언트를 typed HttpClient로 등록한다.
     /// Kakao:RestApiKey와 PublicData:ServiceKey가 비어 있어도 기동은 하며, 이때 해당 클라이언트는 외부 API를 부르지 않고 null을 돌려준다.
-    /// PickupLink:BaseUrl이 http(s) 절대 URI가 아니거나 PickupLink:MaxAttempts·InFlightTimeoutSec가 1보다 작으면 기동할 때 InvalidOperationException을 던진다.
+    /// PickupLink:BaseUrl이 http(s) 절대 URI가 아니거나 PickupLink:MaxAttempts·InFlightTimeoutSec·LeaveSoonMin·LeaveMaxAheadMin이 1보다 작으면 기동할 때 InvalidOperationException을 던진다.
     /// PickupPlan:CreateLeadHours·ExpireAfterHours·ExpireIntervalSec·StopRadiusM이 1보다 작거나 SlotWindowMin·SlotShiftMaxMin이 0보다 작거나 ExpireAfterHours가 DepartureGuide:PickupWindowHours보다 작아도 같다.
     /// </summary>
     public static IServiceCollection AddMapInfrastructure(this IServiceCollection services, IConfiguration configuration)
@@ -202,6 +210,10 @@ public static class InfrastructureExtensions
             throw new InvalidOperationException("PickupLink:MaxAttempts 설정은 1 이상이어야 합니다.");
         if (pickupLinkOptions.InFlightTimeoutSec < 1)
             throw new InvalidOperationException("PickupLink:InFlightTimeoutSec 설정은 1 이상이어야 합니다.");
+        if (pickupLinkOptions.LeaveSoonMin < 1)
+            throw new InvalidOperationException("PickupLink:LeaveSoonMin 설정은 1 이상이어야 합니다.");
+        if (pickupLinkOptions.LeaveMaxAheadMin < 1)
+            throw new InvalidOperationException("PickupLink:LeaveMaxAheadMin 설정은 1 이상이어야 합니다.");
         services.Configure<PickupLinkOptions>(pickupLink);
 
         var pickupPlan = configuration.GetSection("PickupPlan");
