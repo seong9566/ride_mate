@@ -14,7 +14,7 @@ public class UpdatePickupPlanStartDto
     public Guid? clientEventId { get; set; }
 
     /// <summary>
-    /// 차량에서 출발한 시각(KST, 오프셋 없는 로컬 시각). 서버 현재 시각 기준 -10분 ~ +1분
+    /// 차량에서 출발한 시각(KST, 오프셋 없는 로컬 시각). 서버 현재 시각 + 1분 이하. 진행 중 계획이 있으면 그 픽업 날짜 00:00 이후, 계획을 새로 만들 때는 서버 현재 시각 −10분 이후
     /// </summary>
     [Required]
     public DateTime? eventDt { get; set; }

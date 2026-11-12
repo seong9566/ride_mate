@@ -53,14 +53,14 @@ public partial class PickupService
             if (!int.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("sub"), out var userId))
                 return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 401 };
 
-            // 2) 입력 검증 — 필수값, 픽업 좌표는 둘 다 있거나 둘 다 없어야 하고 eventDt는 서버 현재 시각 기준 -10분 ~ +1분 안이어야 한다
+            // 2) 입력 검증 — 필수값, 픽업 좌표는 둘 다 있거나 둘 다 없어야 하고 eventDt는 서버 현재 시각 + 1분을 넘지 않아야 한다. 과거 쪽은 진행 중 계획이 있으면 그 계획의 픽업 날짜, 계획을 새로 만들 때는 서버 현재 시각 −10분으로 본다
             if (dto?.clientEventId is null || dto.eventDt is null || dto.driveMin is null
                 || (dto.pickupLat is null) != (dto.pickupLng is null))
                 return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
 
             var now = DateTime.Now;
             var eventDt = dto.eventDt.Value;
-            if (eventDt < now.AddMinutes(-StartEventPastLimitMin) || eventDt > now.AddMinutes(StartEventFutureLimitMin))
+            if (eventDt > now.AddMinutes(StartEventFutureLimitMin))
                 return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
 
             var clientEventId = dto.clientEventId.Value;
@@ -74,6 +74,10 @@ public partial class PickupService
             if (target.Plan is { } livePlan)
                 return await StartExistingPlanAsync(userId, livePlan.PickupPlanId, clientEventId, eventDt, driveMin,
                     cancellationToken).ConfigureAwait(false);
+
+            // 계획을 새로 만드는 시작만 서버 현재 시각 −10분을 하한으로 둔다
+            if (eventDt < now.AddMinutes(-StartEventPastLimitMin))
+                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
 
             // 4) 잠근 시간표의 학원가가 잠근 학원가와 다르면(그사이 시간표 편집) 대상 고르기부터 다시 한다
             for (var attempt = 1; attempt <= PlanAreaRetryMaxAttempts; attempt++)
@@ -515,6 +519,10 @@ public partial class PickupService
         var plan = await _pickupRepository.GetPlanByIdAsync(pickupPlanId, null, cancellationToken).ConfigureAwait(false);
         if (plan is null)
             return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 404 };
+
+        // 진행 중 계획의 시작은 계획의 픽업 날짜 00:00이 하한이다(정차·탑승·대기와 같다)
+        if (IsBeforePlanDay(eventDt, plan.PickupDate))
+            return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
 
         var rejected = CheckPlanLocationChangeable(plan.UserId, plan.Status, plan.ExpireDt, userId, now);
         if (rejected is not null)
