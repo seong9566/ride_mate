@@ -64,6 +64,56 @@ public partial class PickupRepository
     }
 
     /// <summary>
+    /// 학원가의 살아 있는 대기 장소를 조회한다
+    /// </summary>
+    public async Task<List<ParkingLotRow>> GetParkingLotsAsync(int areaId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("areaId", areaId);
+
+            var sql = @"
+                SELECT p.PARKING_LOT_ID AS ParkingLotId,
+                       p.LOT_NAME AS LotName,
+                       p.LAT AS Lat,
+                       p.LNG AS Lng,
+                       p.WEEKDAY_OPEN_TIME AS WeekdayOpenTime,
+                       p.WEEKDAY_CLOSE_TIME AS WeekdayCloseTime,
+                       p.SAT_OPEN_TIME AS SatOpenTime,
+                       p.SAT_CLOSE_TIME AS SatCloseTime,
+                       p.HOLIDAY_OPEN_TIME AS HolidayOpenTime,
+                       p.HOLIDAY_CLOSE_TIME AS HolidayCloseTime,
+                       p.BASE_MIN AS BaseMin,
+                       p.BASE_FEE AS BaseFee,
+                       p.ADD_UNIT_MIN AS AddUnitMin,
+                       p.ADD_FEE AS AddFee,
+                       p.DAY_PASS_FEE AS DayPassFee,
+                       p.DAY_MAX_FEE AS DayMaxFee,
+                       p.REALTIME_REF AS RealtimeRef,
+                       p.AVAILABLE_SPACES AS AvailableSpaces,
+                       p.AVAILABLE_UPDATE_DT AS AvailableUpdateDt
+                FROM PARKING_LOT AS p
+                WHERE p.AREA_ID = @areaId
+                  AND p.DELETE_YN = FALSE
+                ORDER BY p.PARKING_LOT_ID";
+
+            var rows = await _dapper.QueryAsync<ParkingLotRow>(
+                new CommandDefinition(sql, dp, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            return rows.ToList();
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
     /// 학원의 픽업 지점 후보 중 사용 중인 것을 우선순위 순으로 조회한다
     /// </summary>
     public async Task<List<PickupSpotRow>> GetAcademyPickupSpotsAsync(int academyId,
