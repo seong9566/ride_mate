@@ -20,7 +20,7 @@ public class UpdatePickupPlanBoardDto
     public Guid? clientEventId { get; set; }
 
     /// <summary>
-    /// 차량이 탑승을 감지한 시각(KST, 오프셋 없는 로컬 시각). 서버 현재 시각 기준 -10분 ~ +1분
+    /// 차량이 탑승을 감지한 시각(KST, 오프셋 없는 로컬 시각). 서버 현재 시각 + 1분 이하, 계획의 픽업 날짜 00:00 이후
     /// </summary>
     [Required]
     public DateTime? eventDt { get; set; }

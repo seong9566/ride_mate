@@ -55,14 +55,14 @@ public partial class PickupService
             if (!int.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("sub"), out var userId))
                 return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 401 };
 
-            // 2) 입력 검증 — 필수값, eventDt는 서버 현재 시각 기준 -10분 ~ +1분 안이어야 한다(경로 시작과 같다)
+            // 2) 입력 검증 — 필수값, eventDt는 서버 현재 시각 + 1분을 넘지 않아야 한다. 과거 쪽은 계획을 읽은 뒤 계획의 픽업 날짜로 본다
             if (dto?.pickupPlanSeq is null || dto.clientEventId is null || dto.eventDt is null || dto.lat is null
                 || dto.lng is null)
                 return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
 
             var now = DateTime.Now;
             var eventDt = dto.eventDt.Value;
-            if (eventDt < now.AddMinutes(-StartEventPastLimitMin) || eventDt > now.AddMinutes(StartEventFutureLimitMin))
+            if (eventDt > now.AddMinutes(StartEventFutureLimitMin))
                 return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
 
             var pickupPlanId = dto.pickupPlanSeq.Value;
@@ -86,6 +86,10 @@ public partial class PickupService
             if (sameEvent is not null && StopEventTypes.Contains(sameEvent.EventType))
                 return await ReplayLiveStopAsync(pickupPlanId, sameEvent.EventType, sameEvent.Detail, cancellationToken)
                     .ConfigureAwait(false);
+
+            // 과거 쪽 하한은 계획의 픽업 날짜 00:00이다. 만료 전이면 오프라인으로 늦게 온 이벤트도 받는다
+            if (IsBeforePlanDay(eventDt, plan.PickupDate))
+                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
 
             var rejected = CheckPlanStoppable(plan.UserId, plan.Status, plan.ExpireDt, userId, now);
             if (rejected is not null)
@@ -263,13 +267,13 @@ public partial class PickupService
             if (!int.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("sub"), out var userId))
                 return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 401 };
 
-            // 2) 입력 검증 — 필수값, eventDt는 서버 현재 시각 기준 -10분 ~ +1분 안이어야 한다(경로 시작과 같다)
+            // 2) 입력 검증 — 필수값, eventDt는 서버 현재 시각 + 1분을 넘지 않아야 한다. 과거 쪽은 계획을 읽은 뒤 계획의 픽업 날짜로 본다
             if (dto?.pickupPlanSeq is null || dto.clientEventId is null || dto.eventDt is null)
                 return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
 
             var now = DateTime.Now;
             var eventDt = dto.eventDt.Value;
-            if (eventDt < now.AddMinutes(-StartEventPastLimitMin) || eventDt > now.AddMinutes(StartEventFutureLimitMin))
+            if (eventDt > now.AddMinutes(StartEventFutureLimitMin))
                 return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
 
             var pickupPlanId = dto.pickupPlanSeq.Value;
@@ -291,6 +295,10 @@ public partial class PickupService
                 .ConfigureAwait(false);
             if (replay is not null)
                 return replay;
+
+            // 과거 쪽 하한은 계획의 픽업 날짜 00:00이다. 만료 전이면 오프라인으로 늦게 온 이벤트도 받는다
+            if (IsBeforePlanDay(eventDt, plan.PickupDate))
+                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
 
             // 진행 중인 모든 상태(PLANNED·STARTED·WAITING·STOPPED·LOOPING)에서 받는다. 정차가 늦게 오거나 빠져도 탑승은 기록한다
             if (plan.ExpireDt <= now)
@@ -582,14 +590,14 @@ public partial class PickupService
             if (!int.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("sub"), out var userId))
                 return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 401 };
 
-            // 2) 입력 검증 — 필수값, 주차장 ID는 1 이상, eventDt는 서버 현재 시각 기준 -10분 ~ +1분 안이어야 한다(경로 시작과 같다)
+            // 2) 입력 검증 — 필수값, 주차장 ID는 1 이상, eventDt는 서버 현재 시각 + 1분을 넘지 않아야 한다. 과거 쪽은 계획을 읽은 뒤 계획의 픽업 날짜로 본다
             if (dto?.pickupPlanSeq is null || dto.clientEventId is null || dto.eventDt is null
                 || dto.parkingLotSeq is not > 0)
                 return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
 
             var now = DateTime.Now;
             var eventDt = dto.eventDt.Value;
-            if (eventDt < now.AddMinutes(-StartEventPastLimitMin) || eventDt > now.AddMinutes(StartEventFutureLimitMin))
+            if (eventDt > now.AddMinutes(StartEventFutureLimitMin))
                 return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
 
             var pickupPlanId = dto.pickupPlanSeq.Value;
@@ -611,6 +619,10 @@ public partial class PickupService
                 cancellationToken).ConfigureAwait(false);
             if (sameEvent?.EventType == EventWaitStarted)
                 return PlanOk(await BuildPlanDtoAsync(pickupPlanId, false, null, cancellationToken).ConfigureAwait(false));
+
+            // 과거 쪽 하한은 계획의 픽업 날짜 00:00이다. 만료 전이면 오프라인으로 늦게 온 이벤트도 받는다
+            if (IsBeforePlanDay(eventDt, plan.PickupDate))
+                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
 
             // PLANNED·STARTED·WAITING만 받는다. 정차·한 바퀴 중이면 409 ALREADY_STOPPED, 만료 시각이 지났으면 409 PLAN_CLOSED
             var rejected = CheckPlanLocationChangeable(plan.UserId, plan.Status, plan.ExpireDt, userId, now);
@@ -813,6 +825,12 @@ public partial class PickupService
             enforcement = zoneTypes.Count > 0 ? EnforcementRestricted : EnforcementUnknown,
             zoneTypes = zoneTypes
         };
+    }
+
+    // 진행 중 계획에 온 차량 이벤트 시각이 그 계획의 픽업 날짜 00:00보다 이른지
+    private static bool IsBeforePlanDay(DateTime eventDt, DateOnly pickupDate)
+    {
+        return eventDt < pickupDate.ToDateTime(TimeOnly.MinValue);
     }
 
     // 정차를 받을 수 있는지(설계 4.2). 남의 계획은 404, 만료 시각이 지났으면 409 PLAN_CLOSED, 한 바퀴 중이면 409 INVALID_STATUS,
