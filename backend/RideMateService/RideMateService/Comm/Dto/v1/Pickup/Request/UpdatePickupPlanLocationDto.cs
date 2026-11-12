@@ -8,6 +8,12 @@ namespace RideMateService.Comm.Dto.v1.Pickup.Request;
 public class UpdatePickupPlanLocationDto
 {
     /// <summary>
+    /// 오늘 고른 후보 지점. 픽업 좌표와 함께 보낼 수 없다
+    /// </summary>
+    [Range(1, int.MaxValue)]
+    public int? pickupSpotSeq { get; set; }
+
+    /// <summary>
     /// 오늘 계획 ID
     /// </summary>
     [Required]

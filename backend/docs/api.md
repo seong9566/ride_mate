@@ -180,6 +180,10 @@
 
 ## 출발 안내 계산
 
+- 요청 query에 선택 값 `pickupSpotSeq`(int?, 1 이상)를 받는다. 좌표와 함께 보내면 좌표 한쪽 누락과 같은 `ProblemDetails` 400이다.
+- 계획이 없으면 선택 지점만 미리보기한다. 저장된 도보 시간·경로(`walkSource = STORED`)를 쓰며 정원과 `HIGHER_SPOT_BLOCKED`는 보지 않는다. 후보가 아니면 `reasons = [{ code: "INVALID_PICKUP_SPOT", pickupSpotSeq }]`, 아이 도착이 금지 시간이면 `SELECTED_SPOT_BLOCKED`와 `pickupSpotSeq, spotName, blockReason, blockStartTime, blockEndTime`을 준다. 이 두 경우 pickup·계산 필드는 null이다. 성공 시 단속 판정·학원 앞 근거는 기존과 같다.
+- 계획이 있으면 `pickupSpotSeq`도 무시한다. 응답 `areaName`은 대상 학원의 학원가 이름이며 계획이 있으면 계획의 학원가 이름이다. 없으면 null이다. 대기 장소 추천 DTO는 변경하지 않는다.
+
 - 주소는 `GET /api/v1/Pickup/M/sign/DetailDepartureGuide`다. 인증 구간 `sign`이 있어 Bearer가 필요하고, 사용자는 JWT의 `sub`에서 꺼낸다.
 - 요청 값은 query다(`currentDt`·`currentLat`·`currentLng`는 필수, `driveMin`·`pickupLat`·`pickupLng`는 선택). `pickupLat`와 `pickupLng`는 함께 보내야 하며 한쪽만 오면 `ProblemDetails` 400이 나간다.
 - 계산 전용이라 DB에 쓰지 않는다. 대상 픽업은 아래 "오늘 픽업 계획"의 계획 API와 같은 규칙으로 고른다.
@@ -222,6 +226,8 @@
 
 ## 픽업 장소 후보 목록
 
+고른 지점은 출발 안내·경로 시작·장소 바꾸기의 `pickupSpotSeq`로 보낸다.
+
 - 주소는 `GET /api/v1/Pickup/M/sign/GetPickupSpotList`다. 인증 구간 `sign`이 있어 Bearer가 필요하고, 사용자는 JWT의 `sub`에서 꺼낸다. 요청 query는 `scheduleSeq`(필수, 1 이상)와 `currentDt`(필수, 오프셋 없는 KST 로컬 시각)다.
 - 조회 전용이라 DB에 쓰지 않는다. 시간표의 학원에 등록된 후보(살아 있는 `ACADEMY_PICKUP_SPOT` 중 지점이 살아 있고 `USE_YN = 1`)를 평가 날짜(`currentDt`의 날짜)와 요일 유형(`WEEKDAY`·`SAT`·`HOLIDAY`, 출발 안내와 같은 방식)으로 평가해 준다. 하원 시각은 시간표 `END_TIME`이고, 그 날짜 요일의 요일 행에 `TIME_CHANGE` 예외가 있으면 바뀐 시각이다(`endTime`으로 내려준다).
 - 응답 `data`는 `{ scheduleSeq, academyName, endTime, areaName, reason, academyFrontRestricted, spots }`다. `spots` 항목은 `{ pickupSpotSeq, spotName, lat, lng, guideText, photoUrl, note, walkMin, walkPath, distanceM, recommended, preferred, available, unavailableReason, blockReason, blockStartTime, blockEndTime, busy }`다. 값이 없는 필드도 null로 나간다.
@@ -248,6 +254,25 @@
 
 ## 오늘 픽업 계획
 
+| API | 추가 요청 본문 |
+|---|---|
+| `UpdatePickupPlanStart` | `pickupSpotSeq`: int?, 1 이상. 계획 생성에만 사용 |
+| `UpdatePickupPlanLocation` | `pickupSpotSeq`: int?, 1 이상. 계획의 후보 지점 재배정 |
+
+- `pickupSpotSeq`와 픽업 좌표를 함께 보내면 `data: null`인 400이다. 지점·좌표가 모두 없을 때만 기본 지점을 고른다. 진행 중 계획의 경로 시작은 지점 선택도 무시한다.
+- 선택 지점은 대상 학원의 살아 있는 후보 연결·살아 있는 지점·`USE_YN = 1`이어야 한다. 부모가 오늘 고른 지점은 꽉 차도 다음 후보로 넘기지 않는다. 앱은 `GetPickupSpotList`를 다시 불러 고르게 한다. 우리 픽업 장소는 자동 저장하지 않는다.
+- 계획 생성 판정 순서: 입력 400 → 대상 고르기(없으면 101) → `TOO_EARLY` → `NO_ACADEMY_LOCATION` → AREA·TIMETABLE_DAY 잠금 → 101·`NO_ACADEMY_LOCATION`·`TOO_EARLY` 재확인 → `INVALID_PICKUP_SPOT` → `SPOT_UNAVAILABLE` → `SPOT_FULL`. 그사이 만들어진 계획은 기존 규칙대로 시작한다.
+- 장소 바꾸기는 기존 404 → `ALREADY_STOPPED` → 404 → `PLAN_CLOSED` 순서와 clientEventId 규칙을 유지한다. 지점 선택도 좌표처럼 잠금 전에 `NO_ACADEMY_LOCATION`을 검사한다. AREA → 계획 행 잠금·상태 재확인·clientEventId 확인 뒤 선택 지점을 판정한다. 실패하면 기존 계획을 유지한다.
+- 선택 지점의 아이 도착 시각으로 금지 시간을 검사한다. 배정 시작은 아이 도착과 차 도착 예상 중 늦은 시각(장소 바꾸기는 STARTED일 때 기존 slotDt 하한)이며 SlotShiftMaxMin까지 1분씩 정원을 확인한다. 장소 바꾸기는 자기 계획을 정원에서 제외하고 CUSTOM_*를 비우며 REASSIGNED를 남긴다.
+
+| reason (409) | 상황 | API |
+|---|---|---|
+| `INVALID_PICKUP_SPOT` | 대상 학원의 사용 가능한 후보가 아님 | 경로 시작·장소 바꾸기 |
+| `SPOT_UNAVAILABLE` | 아이 도착 시각이 선택 지점의 금지 시간 | 경로 시작·장소 바꾸기 |
+| `SPOT_FULL` | 허용된 시각 모두 선택 지점 정원이 가득 참 | 경로 시작·장소 바꾸기 |
+
+세 사유도 기존 409처럼 reason만 채운 계획 DTO로 반환한다.
+
 차량이 경로 시작으로 오늘 픽업 계획(`PICKUP_PLAN`)을 만들어 시작하고, 픽업 장소를 바꾸고, 대기 장소 도착·정차·탑승을 기록하고, 부모가 오늘 픽업을 취소하는 여섯 API다. 모두 인증 구간 `sign`이 있어 Bearer가 필요하고, 사용자는 JWT의 `sub`에서 꺼낸다. 배정·잠금·만료·익명화 규칙은 `architecture/schema.md`의 `PICKUP_PLAN` 절이다.
 
 - 기본 지점 배정은 그 시간표의 우리 픽업 장소(`UpdateSchedulePickupSpot`)가 지금도 그 학원의 후보면 그 지점을 먼저 보고, 나머지는 `PRIORITY` 순으로 본다. 정원·금지 시간 규칙은 그대로라 꽉 차면 다음 후보로 넘어간다. 출발 안내 계산·대기 장소 추천의 기본 지점도 같다. [ADR-0025]
@@ -270,7 +295,7 @@
 - 시간 창: 계획이 없을 때 서버 현재 시각이 `하원 시각 − PickupPlan:CreateLeadHours`(3시간)보다 이르면 경로 시작이 409 `TOO_EARLY`다.
 - 계획이 없을 때 학원 좌표나 학원가가 없으면 계획을 만들지 않고 경로 시작이 409 `NO_ACADEMY_LOCATION`이다. 이때 출발 안내는 지금처럼 `NO_ACADEMY_LOCATION` 근거로 동작한다.
 - 임의 좌표는 위도 -90~90, 경도 -180~180 범위만 본다. 학원가 경계나 학원과의 거리는 보지 않는다. 서버는 학원 → 좌표 카카오 도보 경로(실패하면 직선 거리 ÷ 아이 도보 속도를 올린 분, 127분까지)와 카카오 좌표→주소 변환으로 도보 시간과 장소 이름을 정한다. 장소 이름은 도로명 주소의 건물 이름, 도로명 주소, 지번 주소 순으로 있는 것(100자까지)이고, 키가 없거나 실패·3초 시간 초과·결과 없음이면 `부모님이 정한 장소`다. 임의 좌표는 정원을 보지 않고 배정 시각이 `하원 + 정리 시간 + 도보 시간`이다(경로 시작이 계획을 만들 때는 이 값과 차 도착 예상 중 늦은 쪽).
-- `UpdatePickupPlanLocation`에서는 좌표가 둘 다 없으면 "기본 지점으로 되돌리기"다. 위 라우트 절의 "PATCH에서 빠진 필드는 바꾸지 않음" 규칙의 예외다. 한쪽만 오면 400이다. 같은 좌표를 다시 보내도 다시 배정하고 이벤트를 남긴다. 계획이 `STARTED`면 늦은 출발 결과나 경로 시작에서 정한 차 도착 하한을 지키려고 배정 시각을 지금 `slotDt`보다 앞당기지 않는다. 바꿀 수 있는 상태는 `PLANNED`·`STARTED`·`WAITING`이다.
+- `UpdatePickupPlanLocation`에서는 pickupSpotSeq와 좌표가 모두 없으면 "기본 지점으로 되돌리기"다. 위 라우트 절의 "PATCH에서 빠진 필드는 바꾸지 않음" 규칙의 예외다. 한쪽만 오면 400이다. 같은 좌표를 다시 보내도 다시 배정하고 이벤트를 남긴다. 계획이 `STARTED`면 늦은 출발 결과나 경로 시작에서 정한 차 도착 하한을 지키려고 배정 시각을 지금 `slotDt`보다 앞당기지 않는다. 바꿀 수 있는 상태는 `PLANNED`·`STARTED`·`WAITING`이다.
 - `UpdatePickupPlanStart`는 `eventDt`를 시작 시각으로 기록한다. `eventDt`는 오프셋 없는 KST 로컬 시각이고 서버 현재 시각 + 1분을 넘지 않아야 한다. 과거 쪽은 진행 중 계획이 있으면 그 계획의 시작 시각(`START_DT`, 없으면 픽업 날짜 `PICKUP_DATE` 00:00), 계획을 새로 만들 때는 서버 현재 시각 −10분까지다. 밖이면 `data`가 null인 400이다. 시작 요청에는 계획 ID가 없으므로, `START_DT` 하한은 끝난 다른 계획의 늦은 재전송이 지금 계획을 다시 시작하지 못하게 막는다. `driveMin`은 0~300이다.
   - 계획이 없으면 만들면서 시작한다. 차 도착 예상(`eventDt + driveMin`, 분 단위 올림)을 배정 시각의 하한으로 쓴다. 기본 지점은 우선순위·금지 시간·정원으로 배정하되 각 지점의 시작 시각이 아이 도착과 차 도착 예상 중 늦은 쪽이다(정원이 차면 다음 지점으로 넘어간다). 임의 좌표는 아이 도착과 차 도착 예상 중 늦은 쪽이 배정 시각이다. 계획을 `STARTED`로 넣고 `PLANNED`·`STARTED` 이벤트를 남긴다. [ADR-0023]
   - 계획을 만드는 사이 다른 요청이 같은 픽업의 계획을 만들었으면(빠르게 두 번 누름) 그 계획을 시작한다. 그래서 두 요청 모두 같은 계획으로 200이다.

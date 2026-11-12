@@ -642,6 +642,16 @@
         "summary": "출발 안내 계산",
         "parameters": [
           {
+            "name": "pickupSpotSeq",
+            "in": "query",
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
             "name": "currentDt",
             "in": "query",
             "required": true,
@@ -729,6 +739,16 @@
         ],
         "summary": "대기 장소 추천 목록",
         "parameters": [
+          {
+            "name": "pickupSpotSeq",
+            "in": "query",
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
           {
             "name": "currentDt",
             "in": "query",
@@ -2874,6 +2894,13 @@
         ],
         "type": "object",
         "properties": {
+          "pickupSpotSeq": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
           "pickupPlanSeq": {
             "type": "integer",
             "format": "int32"
@@ -2941,6 +2968,13 @@
         ],
         "type": "object",
         "properties": {
+          "pickupSpotSeq": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
           "clientEventId": {
             "type": "string",
             "format": "uuid"
@@ -3316,6 +3350,10 @@
       "RideMateService_Comm_Dto_v1_Pickup_Response_DetailDepartureGuideDto": {
         "type": "object",
         "properties": {
+          "areaName": {
+            "type": "string",
+            "nullable": true
+          },
           "academyName": {
             "type": "string",
             "nullable": true

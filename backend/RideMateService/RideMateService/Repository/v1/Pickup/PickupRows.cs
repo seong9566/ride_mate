@@ -5,6 +5,8 @@ namespace RideMateService.Repository.v1.Pickup;
 /// </summary>
 public class TodayPickupRow
 {
+    public string? AreaName { get; set; }
+
     public int TimetableDayId { get; set; }
     public int AcademyId { get; set; }
     public int? AreaId { get; set; }
@@ -187,6 +189,8 @@ public class LeaveSessionRow
 /// </summary>
 public class LivePlanRow
 {
+    public string? AreaName { get; set; }
+
     public int PickupPlanId { get; set; }
     public int? UserId { get; set; }
     public int? TimetableDayId { get; set; }

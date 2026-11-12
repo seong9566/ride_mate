@@ -8,6 +8,12 @@ namespace RideMateService.Comm.Dto.v1.Pickup.Request;
 public class DepartureGuideQueryDto : IValidatableObject
 {
     /// <summary>
+    /// 오늘 고른 후보 지점. 픽업 좌표와 함께 보낼 수 없다
+    /// </summary>
+    [Range(1, int.MaxValue)]
+    public int? pickupSpotSeq { get; set; }
+
+    /// <summary>
     /// 앱의 현재 시각(KST, 오프셋 없는 로컬 시각)
     /// </summary>
     [Required]
@@ -60,6 +66,10 @@ public class DepartureGuideQueryDto : IValidatableObject
     {
         foreach (var result in ValidateCurrentDt(currentDt))
             yield return result;
+
+        if (pickupSpotSeq is not null && (pickupLat is not null || pickupLng is not null))
+            yield return new ValidationResult("pickupSpotSeq와 픽업 좌표는 함께 보낼 수 없습니다.",
+                new[] { nameof(pickupSpotSeq), nameof(pickupLat), nameof(pickupLng) });
 
         if ((pickupLat is null) != (pickupLng is null))
             yield return new ValidationResult("pickupLat와 pickupLng는 함께 보내야 합니다.",

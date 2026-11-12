@@ -6,6 +6,11 @@ namespace RideMateService.Comm.Dto.v1.Pickup.Response;
 public class DetailDepartureGuideDto
 {
     /// <summary>
+    /// 대상 학원가 이름. 없으면 null
+    /// </summary>
+    public string? areaName { get; set; }
+
+    /// <summary>
     /// 부모가 지정한 학원 이름
     /// </summary>
     public string academyName { get; set; } = string.Empty;
