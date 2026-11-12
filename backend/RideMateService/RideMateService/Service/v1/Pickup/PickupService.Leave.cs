@@ -26,7 +26,7 @@ public partial class PickupService
 
             // 지금 나가요는 되돌릴 수 없으므로 leaveNow: true로만 받는다. 빈 값·키 오타가 지금 나가요로 기록되지 않게 둘 중 하나만 허용한다
             var leaveNow = dto?.leaveNow == true;
-            if (leaveNow == leaveDt.HasValue)
+            if (dto?.leaveNow == false || leaveNow == leaveDt.HasValue)
                 return LeaveBadRequest();
 
             if (!PickupLinkToken.IsWellFormed(token))
@@ -44,6 +44,7 @@ public partial class PickupService
             var plan = await _pickupRepository.LockPickupPlanAsync(session.PickupPlanId,
                 transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
             var now = NowToSecond();
+            // CloseDt는 잠그기 전에 읽은 값이지만, 계획을 끝내는 트랜잭션이 STATUS와 세션 CLOSE_DT를 함께 바꾸므로 잠근 뒤의 STATUS 검사가 그 경우를 잡는다
             if (plan is null || ClosedPlanStatuses.Contains(plan.Status) || plan.ExpireDt <= now
                 || session.CloseDt is not null)
             {
@@ -148,6 +149,7 @@ public partial class PickupService
             var plan = await _pickupRepository.LockPickupPlanAsync(session.PickupPlanId,
                 transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
             var now = NowToSecond();
+            // CloseDt는 잠그기 전에 읽은 값이지만, 계획을 끝내는 트랜잭션이 STATUS와 세션 CLOSE_DT를 함께 바꾸므로 잠근 뒤의 STATUS 검사가 그 경우를 잡는다
             if (plan is null || ClosedPlanStatuses.Contains(plan.Status) || plan.ExpireDt <= now
                 || session.CloseDt is not null)
             {

@@ -225,7 +225,7 @@ public interface IPickupRepository
     /// <summary>
     /// 오늘 계획을 끝내고 익명화한다. 호출자가 계획 행을 이미 PK로 잠갔다고 본다.
     /// 순서: TIMETABLE_DAY 잠금(계획이 가리키면) → 계획 UPDATE 한 문장(상태·CLOSE_DT, 참조·하원 시각·도보 시간·임의 좌표 칸 NULL, DELETE_YN, 감사)
-    /// → END_TIME_CHANGED 이벤트 DETAIL NULL → setLastPickupDate면 TIMETABLE_DAY.LAST_PICKUP_DATE = 계획의 PICKUP_DATE
+    /// → END_TIME_CHANGED·LEAVE_SCHEDULED 이벤트 DETAIL NULL → setLastPickupDate면 TIMETABLE_DAY.LAST_PICKUP_DATE = 계획의 PICKUP_DATE
     /// → 세션 CLOSE_DT·DELETE_YN → 이벤트 DELETE_YN → closeStatus 이벤트(DELETE_YN = 1) 삽입.
     /// 계획이 없거나 이미 끝났으면 아무것도 바꾸지 않고 false
     /// </summary>
