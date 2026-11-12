@@ -31,6 +31,10 @@ public partial class PickupService
     // 도착했는지 알 수 없는 발송 실패 결과 코드(SolapiSmsSender). 그 밖의 실패는 사업자가 거절한 것이다
     private static readonly string[] UnknownDeliveryResultCodes = { "TIMEOUT", "ERROR" };
     private static readonly string[] StoppableStatuses = { "PLANNED", "STARTED", "WAITING", "STOPPED" };
+    private const string PlanStatusWaiting = "WAITING";
+    private const string EventWaitStarted = "WAIT_STARTED";
+    private const string ReasonInvalidParkingLot = "INVALID_PARKING_LOT";
+    private static readonly string[] WaitEventTypes = { EventWaitStarted };
 
     /// <summary>
     /// 정차 기록(설계 4.2). 배정 장소와의 거리와 정차 위치의 단속 구역을 판정해 STOPPED 또는 WRONG_STOP 이벤트를 넣고 계획을 STOPPED로 바꾼다
@@ -548,6 +552,175 @@ public partial class PickupService
         }
     }
 
+    /// <summary>
+    /// 대기 장소 도착(설계 4.5). 같은 학원가의 주차장이면 계획을 WAITING으로 바꾸고 주차장을 기록한다.
+    /// 이미 WAITING이면 주차장만 바꾸고 WAIT_START_DT는 그대로 둔다
+    /// </summary>
+    public Task<ResponseModel<PickupPlanDto>> UpdatePickupPlanWaitService(UpdatePickupPlanWaitDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        return RetryOnDeadlockAsync(() => UpdatePickupPlanWaitCoreAsync(dto, cancellationToken), cancellationToken);
+    }
+
+    // 교착은 RetryOnDeadlockAsync가 다시 실행하므로 여기서는 500으로 바꾸지 않고 올려보낸다
+    private async Task<ResponseModel<PickupPlanDto>> UpdatePickupPlanWaitCoreAsync(UpdatePickupPlanWaitDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // 1) 인증 확인 — 로그인 사용자(USER_ID)는 HttpContext의 클레임 sub에서 꺼낸다
+            if (!int.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("sub"), out var userId))
+                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 401 };
+
+            // 2) 입력 검증 — 필수값, 주차장 ID는 1 이상, eventDt는 서버 현재 시각 기준 -10분 ~ +1분 안이어야 한다(경로 시작과 같다)
+            if (dto?.pickupPlanSeq is null || dto.clientEventId is null || dto.eventDt is null
+                || dto.parkingLotSeq is not > 0)
+                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
+
+            var now = DateTime.Now;
+            var eventDt = dto.eventDt.Value;
+            if (eventDt < now.AddMinutes(-StartEventPastLimitMin) || eventDt > now.AddMinutes(StartEventFutureLimitMin))
+                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
+
+            var pickupPlanId = dto.pickupPlanSeq.Value;
+            var clientEventId = dto.clientEventId.Value;
+            var parkingLotId = dto.parkingLotSeq.Value;
+
+            // 3) 잠금 없이 소유·상태·만료를 먼저 본다. 없거나 끝난 계획이면 같은 요청의 재전송인지 보고, 아니면 404
+            var plan = await _pickupRepository.GetPlanByIdAsync(pickupPlanId, null, cancellationToken).ConfigureAwait(false);
+            if (plan is null || plan.UserId is null || ClosedPlanStatuses.Contains(plan.Status))
+                return await TryReplayEndedAsync(plan, pickupPlanId, clientEventId, WaitEventTypes, cancellationToken)
+                           .ConfigureAwait(false)
+                       ?? new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 404 };
+
+            if (plan.UserId != userId)
+                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 404 };
+
+            // 같은 요청의 재전송은 만료·상태 409보다 먼저 본다(네 API가 같은 순서다). 지금 계획을 돌려준다
+            var sameEvent = await _pickupRepository.GetPlanEventByClientIdAsync(pickupPlanId, clientEventId,
+                cancellationToken).ConfigureAwait(false);
+            if (sameEvent?.EventType == EventWaitStarted)
+                return PlanOk(await BuildPlanDtoAsync(pickupPlanId, false, null, cancellationToken).ConfigureAwait(false));
+
+            // PLANNED·STARTED·WAITING만 받는다. 정차·한 바퀴 중이면 409 ALREADY_STOPPED, 만료 시각이 지났으면 409 PLAN_CLOSED
+            var rejected = CheckPlanLocationChangeable(plan.UserId, plan.Status, plan.ExpireDt, userId, now);
+            if (rejected is not null)
+                return rejected;
+
+            // 4) 주차장은 계획과 같은 학원가의 살아 있는 것이어야 한다. 계획의 AREA_ID는 바뀌지 않으므로 잠근 뒤 다시 보지 않는다
+            if (!await _pickupRepository.IsParkingLotInAreaAsync(parkingLotId, plan.AreaId, cancellationToken)
+                    .ConfigureAwait(false))
+                return PlanConflict(ReasonInvalidParkingLot);
+
+            // 5) 트랜잭션 — 예외로 빠져나가면 await using이 트랜잭션을 롤백한다
+            var transaction = await _context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            await using var transactionScope = transaction.ConfigureAwait(false);
+            var dbTransaction = transaction.GetDbTransaction();
+
+            // 5-1) 계획 행을 PK로 잠그는 것이 첫 문장이다(재배정이 없어 AREA는 잠그지 않는다). 잠근 값으로 다시 판정한다
+            var locked = await _pickupRepository.LockPickupPlanByIdAsync(pickupPlanId, dbTransaction, cancellationToken)
+                .ConfigureAwait(false);
+            // 기준 시각은 잠금을 얻은 뒤에 잡는다
+            var thisTime = DateTime.Now;
+            if (locked is null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 404 };
+            }
+
+            // 잠금을 기다리는 사이 계획이 끝났으면(탑승·취소·만료) 같은 요청의 재전송인지 본다
+            if (locked.UserId is null || ClosedPlanStatuses.Contains(locked.Status))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                var ended = await _pickupRepository.GetPlanByIdAsync(pickupPlanId, null, cancellationToken).ConfigureAwait(false);
+                return await TryReplayEndedAsync(ended, pickupPlanId, clientEventId, WaitEventTypes, cancellationToken)
+                           .ConfigureAwait(false)
+                       ?? new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 404 };
+            }
+
+            if (locked.UserId != userId)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 404 };
+            }
+
+            // 5-2) 같은 clientEventId의 대기 이벤트가 이미 있으면 같은 요청을 다시 부른 것이다. 만료·상태 409보다 먼저 보고 지금 계획을 돌려준다
+            var sameEventType = await _pickupRepository.GetPlanEventTypeAsync(pickupPlanId, clientEventId, dbTransaction,
+                cancellationToken).ConfigureAwait(false);
+            if (sameEventType == EventWaitStarted)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return PlanOk(await BuildPlanDtoAsync(pickupPlanId, false, null, cancellationToken).ConfigureAwait(false));
+            }
+
+            rejected = CheckPlanLocationChangeable(locked.UserId, locked.Status, locked.ExpireDt, userId, thisTime);
+            if (rejected is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return rejected;
+            }
+
+            // 다른 유형의 이벤트가 그 번호를 쓰고 있으면 잘못된 요청이다
+            if (sameEventType is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
+            }
+
+            var entity = await _pickupRepository.GetPickupPlanEntityAsync(pickupPlanId, cancellationToken).ConfigureAwait(false);
+            if (entity is null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 404 };
+            }
+
+            // 5-3) STATUS = WAITING. WAIT_START_DT는 처음 도착한 시각이라 비어 있을 때만 채운다(다른 주차장으로 옮겨도 그대로)
+            entity.Status = PlanStatusWaiting;
+            entity.WaitStartDt ??= eventDt;
+            entity.ParkingLotId = parkingLotId;
+            entity.UpdateDt = thisTime;
+            entity.UpdateUser = AuditUser;
+
+            if (!await _pickupRepository.UpdatePickupPlanAsync(entity, cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<PickupPlanDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+            }
+
+            // 5-4) WAIT_STARTED 이벤트(DETAIL = 주차장 ID, 설계 7절)
+            var waitEvent = new PickupEvent
+            {
+                PickupPlanId = pickupPlanId,
+                EventType = EventWaitStarted,
+                EventDt = eventDt,
+                ClientEventId = clientEventId,
+                Detail = JsonSerializer.Serialize(new WaitStartedDetail(parkingLotId)),
+                CreateDt = thisTime,
+                CreateUser = AuditUser,
+                UpdateDt = thisTime,
+                UpdateUser = AuditUser,
+                DeleteYn = false
+            };
+            if (!await _pickupRepository.AddPickupEventAsync(waitEvent, cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<PickupPlanDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+            }
+
+            await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+
+            return PlanOk(await BuildPlanDtoAsync(pickupPlanId, false, null, cancellationToken).ConfigureAwait(false));
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && !IsDeadlock(ex)) // 요청 취소·교착은 그대로 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return new ResponseModel<PickupPlanDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+        }
+    }
+
     // 취소 문자 대상인지(설계 4.4). LINK_SENT 중 하나라도 성공했거나, 결과가 없거나(진행 중), 도착했는지 모르는 실패(TIMEOUT·ERROR)면
     // 아이가 링크를 받았을 수 있다. 사업자가 거절한 실패만 있거나 링크 발송이 없으면 false
     private static bool ChildMayHaveLink(IReadOnlyList<LinkEventRow> events)
@@ -652,4 +825,7 @@ public partial class PickupService
 
     // WRONG_STOP 이벤트 DETAIL(설계 7절). 정차 좌표·거리는 넣지 않는다. 판정할 수 없으면 zoneTypes가 null
     private sealed record WrongStopDetail(List<string>? zoneTypes);
+
+    // WAIT_STARTED 이벤트 DETAIL(설계 7절)
+    private sealed record WaitStartedDetail(int parkingLotId);
 }

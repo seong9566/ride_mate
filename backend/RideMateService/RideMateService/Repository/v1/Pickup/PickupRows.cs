@@ -157,7 +157,8 @@ public class LinkEventRow
 /// <summary>
 /// 오늘 계획 한 건(응답 만들기·대상 고르기용). 지점은 LEFT JOIN이라 지점이 없거나 삭제됐으면 Spot* 값이 null이다.
 /// CustomWalkPathWkt는 SRID 4326 WKT라 점이 "위도 경도" 순이다. AcademyName은 시간표의 DISPLAY_NAME이다.
-/// AcademyLat·AcademyLng는 계획 학원의 현재 좌표다. 끝난 계획은 UserId·AcademyId가 NULL이다
+/// AcademyLat·AcademyLng는 계획 학원의 현재 좌표다. 끝난 계획은 UserId·AcademyId가 NULL이다.
+/// ParkingLotId는 대기 장소에 도착했을 때 고른 주차장이다(없으면 null)
 /// </summary>
 public class LivePlanRow
 {
@@ -185,6 +186,7 @@ public class LivePlanRow
     public int? AcademyId { get; set; }
     public decimal? AcademyLat { get; set; }
     public decimal? AcademyLng { get; set; }
+    public int? ParkingLotId { get; set; }
 }
 
 /// <summary>

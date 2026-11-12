@@ -114,6 +114,39 @@ public partial class PickupRepository
     }
 
     /// <summary>
+    /// 주차장이 그 학원가(AREA_ID)의 살아 있는 대기 장소인지 본다. 없거나 삭제됐거나 다른 학원가면 false
+    /// </summary>
+    public async Task<bool> IsParkingLotInAreaAsync(int parkingLotId, int areaId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("parkingLotId", parkingLotId);
+            dp.Add("areaId", areaId);
+
+            var sql = @"
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM PARKING_LOT AS p
+                    WHERE p.PARKING_LOT_ID = @parkingLotId
+                      AND p.AREA_ID = @areaId
+                      AND p.DELETE_YN = FALSE)";
+
+            return await _dapper.ExecuteScalarAsync<bool>(
+                new CommandDefinition(sql, dp, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
     /// 학원의 픽업 지점 후보 중 사용 중인 것을 우선순위 순으로 조회한다
     /// </summary>
     public async Task<List<PickupSpotRow>> GetAcademyPickupSpotsAsync(int academyId,
@@ -649,7 +682,8 @@ public partial class PickupRepository
                        t.DISPLAY_NAME AS AcademyName,
                        p.ACADEMY_ID AS AcademyId,
                        a.LAT AS AcademyLat,
-                       a.LNG AS AcademyLng
+                       a.LNG AS AcademyLng,
+                       p.PARKING_LOT_ID AS ParkingLotId
                 FROM PICKUP_PLAN AS p
                 LEFT JOIN PICKUP_SPOT AS s
                        ON s.PICKUP_SPOT_ID = p.PICKUP_SPOT_ID

@@ -83,6 +83,13 @@ public interface IPickupService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 대기 장소 도착. PLANNED·STARTED·WAITING 계획을 WAITING으로 바꾸고 계획과 같은 학원가의 주차장을 기록한다.
+    /// 이미 WAITING이면 주차장만 바꾸고 처음 도착 시각(WAIT_START_DT)은 그대로 둔다. 같은 clientEventId를 다시 보내면(계획이 끝났어도) 한 번만 반영하고 200을 돌려준다
+    /// </summary>
+    Task<ResponseModel<PickupPlanDto>> UpdatePickupPlanWaitService(UpdatePickupPlanWaitDto dto,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 만료 주기 작업 한 회차. EXPIRE_DT가 지난 진행 중 계획을 계획마다 따로 트랜잭션으로 EXPIRED로 끝내고 익명화한다.
     /// 끝낸 계획 수를 돌려준다. 한 계획의 오류는 로그만 남기고 다음 계획으로 간다. HTTP 요청 밖(주기 작업)에서 부른다
     /// </summary>

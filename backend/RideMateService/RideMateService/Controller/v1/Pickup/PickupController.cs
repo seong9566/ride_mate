@@ -366,6 +366,37 @@ public class PickupController : ApiControllerBase
     }
 
     /// <summary>
+    /// 대기 장소 도착(같은 학원가의 주차장을 기록하고 계획을 WAITING으로 바꾼다)
+    /// </summary>
+    [Produces("application/json")]
+    [HttpPatch]
+    [Route("v1/Pickup/M/sign/UpdatePickupPlanWait")]
+    [SwaggerOperation(Summary = "대기 장소 도착")]
+    [ProducesResponseType(typeof(ResponseModel<PickupPlanDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdatePickupPlanWait([FromBody] UpdatePickupPlanWaitDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _pickupService.UpdatePickupPlanWaitService(dto, cancellationToken).ConfigureAwait(false);
+            return ToActionResult(model);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // 앱이 요청을 끊었다. 오류로 기록하지 않는다
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
+
+    /// <summary>
     /// 부모 취소(오늘 계획을 CANCELED로 끝내고, 아이가 링크를 받았을 수 있으면 취소 문자를 보낸다)
     /// </summary>
     [Produces("application/json")]
