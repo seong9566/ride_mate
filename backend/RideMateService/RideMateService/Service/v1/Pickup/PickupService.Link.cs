@@ -11,6 +11,7 @@ namespace RideMateService.Service.v1.Pickup;
 public partial class PickupService
 {
     private const string EventLinkSent = "LINK_SENT";
+    private const string EventLinkResent = "LINK_RESENT";
     private const string EventRemindSent = "REMIND_SENT";
     private const string EventLinkOpened = "LINK_OPENED";
     private const string SendChannelSms = "SMS";
@@ -47,6 +48,24 @@ public partial class PickupService
     }
 
     /// <summary>
+    /// 정차 전 픽업 링크 다시 보내기(같은 링크를 LINK_SENT와 같은 문구로 한 번 더 보낸다)
+    /// </summary>
+    public async Task<ResponseModel<PickupLinkSendDto>> AddPickupLinkResendService(AddPickupLinkResendDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        // 입력 검증 — AddPickupLink와 같다. etaDt는 서버 현재 시각 기준 -10분 ~ +3시간 안이어야 한다
+        if (dto?.pickupPlanSeq is null || dto.etaDt is null || dto.clientEventId is null)
+            return new ResponseModel<PickupLinkSendDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
+
+        var now = DateTime.Now;
+        if (dto.etaDt.Value < now.AddMinutes(-EtaPastLimitMin) || dto.etaDt.Value > now.AddHours(EtaFutureLimitHours))
+            return new ResponseModel<PickupLinkSendDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
+
+        return await SendPickupMessageAsync(dto.pickupPlanSeq.Value, dto.clientEventId.Value, EventLinkResent,
+            dto.etaDt.Value, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// 정차 후 "도착했어요" 다시 알림 문자 발송
     /// </summary>
     public async Task<ResponseModel<PickupLinkSendDto>> AddPickupRemindService(AddPickupRemindDto dto,
@@ -61,7 +80,7 @@ public partial class PickupService
     }
 
     /// <summary>
-    /// 픽업 링크 전달 상태 조회(링크·다시 알림 발송, 열람, 지금 나가요). 차량이 10초 간격으로 부른다
+    /// 픽업 링크 전달 상태 조회(링크·다시 알림 발송, 열람, 지금 나가요). 실시간 연결(DetailPickupLinkStream)을 쓸 수 없을 때 차량이 간격을 두고 부른다
     /// </summary>
     public async Task<ResponseModel<DetailPickupLinkStatusDto>> DetailPickupLinkStatusService(
         PickupLinkStatusQueryDto dto, CancellationToken cancellationToken = default)
@@ -76,42 +95,16 @@ public partial class PickupService
             if (dto?.pickupPlanSeq is null)
                 return new ResponseModel<DetailPickupLinkStatusDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
 
-            // 3) 계획 확인 — 없거나, 남의 계획이거나, 끝났거나(USER_ID가 NULL, STATUS가 BOARDED·EXPIRED·CANCELED), EXPIRE_DT가 지났으면 404다
-            var now = DateTime.Now;
-            var plan = await _pickupRepository.GetLinkStatusPlanAsync(dto.pickupPlanSeq.Value, userId, cancellationToken)
+            // 3)·4) 계획 확인과 상태 계산(LoadPickupLinkStatusAsync). 없거나 남의 계획·끝난 계획·만료 시각 지남이면 404다
+            var result = await LoadPickupLinkStatusAsync(dto.pickupPlanSeq.Value, userId, cancellationToken)
                 .ConfigureAwait(false);
-            if (plan is null || ClosedPlanStatuses.Contains(plan.Status) || plan.ExpireDt <= now)
+            if (result is null)
                 return new ResponseModel<DetailPickupLinkStatusDto> { message = "잘못된 요청입니다.", data = null, code = 404 };
-
-            // 4) 이벤트 이력으로 상태를 계산한다. 열람·지금 나가요는 유형별 첫 이벤트(PICKUP_EVENT_ID 순)의 EVENT_DT다
-            var events = await _pickupRepository.GetLinkEventsAsync(dto.pickupPlanSeq.Value, null, cancellationToken)
-                .ConfigureAwait(false);
-            var leaveEvents = await _pickupRepository.GetLeaveEventsAsync(dto.pickupPlanSeq.Value, null, cancellationToken)
-                .ConfigureAwait(false);
-            var link = PickupLinkSendState.Summarize(events, EventLinkSent, now,
-                _linkOptions.InFlightTimeoutSec, _linkOptions.MaxAttempts);
-            var remind = PickupLinkSendState.Summarize(events, EventRemindSent, now,
-                _linkOptions.InFlightTimeoutSec, _linkOptions.MaxAttempts);
-            var leave = ChildLeaveState.Summarize(leaveEvents, now, _linkOptions.LeaveSoonMin);
-            var opened = events.FirstOrDefault(e => e.EventType == EventLinkOpened);
 
             return new ResponseModel<DetailPickupLinkStatusDto>
             {
                 message = "요청이 정상 처리되었습니다.",
-                data = new DetailPickupLinkStatusDto
-                {
-                    linkStatus = link.Status,
-                    sentDt = link.SentDt,
-                    remainingAttempts = link.RemainingAttempts,
-                    opened = opened is not null,
-                    openedDt = opened?.EventDt,
-                    // 지금 나가요는 출발 상태와 같은 조회 결과로 채워 leaving == (leaveStatus == LEAVING)을 지킨다
-                    leaving = leave.LeavingDt is not null,
-                    leavingDt = leave.LeavingDt,
-                    leaveStatus = leave.Status,
-                    plannedLeaveDt = leave.PlannedLeaveDt,
-                    remindStatus = remind.Status
-                },
+                data = result.Value.Dto,
                 code = 200
             };
         }
@@ -125,7 +118,49 @@ public partial class PickupService
         }
     }
 
-    // 링크·다시 알림 문자 발송의 공통 흐름(설계 4.1·4.2 처리 1~8). eventType은 LINK_SENT·REMIND_SENT, etaDt는 LINK_SENT 문구에만 쓴다.
+    // 전달 상태 조회와 차량 실시간 연결이 같이 쓰는 계산. 계획이 없거나, 남의 계획이거나, 끝났거나(USER_ID가 NULL,
+    // STATUS가 BOARDED·EXPIRED·CANCELED), EXPIRE_DT가 지났으면 null이다. 열람·지금 나가요는 유형별 첫 이벤트(PICKUP_EVENT_ID 순)의 EVENT_DT다
+    private async Task<(DetailPickupLinkStatusDto Dto, DateTime ExpireDt)?> LoadPickupLinkStatusAsync(int pickupPlanId,
+        int userId, CancellationToken cancellationToken)
+    {
+        var now = DateTime.Now;
+        var plan = await _pickupRepository.GetLinkStatusPlanAsync(pickupPlanId, userId, cancellationToken)
+            .ConfigureAwait(false);
+        if (plan is null || ClosedPlanStatuses.Contains(plan.Status) || plan.ExpireDt <= now)
+            return null;
+
+        var events = await _pickupRepository.GetLinkEventsAsync(pickupPlanId, null, cancellationToken)
+            .ConfigureAwait(false);
+        var leaveEvents = await _pickupRepository.GetLeaveEventsAsync(pickupPlanId, null, cancellationToken)
+            .ConfigureAwait(false);
+        var link = PickupLinkSendState.Summarize(events, EventLinkSent, now,
+            _linkOptions.InFlightTimeoutSec, _linkOptions.MaxAttempts);
+        var resend = PickupLinkSendState.Summarize(events, EventLinkResent, now,
+            _linkOptions.InFlightTimeoutSec, _linkOptions.MaxAttempts);
+        var remind = PickupLinkSendState.Summarize(events, EventRemindSent, now,
+            _linkOptions.InFlightTimeoutSec, _linkOptions.MaxAttempts);
+        var leave = ChildLeaveState.Summarize(leaveEvents, now, _linkOptions.LeaveSoonMin);
+        var opened = events.FirstOrDefault(e => e.EventType == EventLinkOpened);
+
+        return (new DetailPickupLinkStatusDto
+        {
+            linkStatus = link.Status,
+            sentDt = link.SentDt,
+            remainingAttempts = link.RemainingAttempts,
+            opened = opened is not null,
+            openedDt = opened?.EventDt,
+            // 지금 나가요는 출발 상태와 같은 조회 결과로 채워 leaving == (leaveStatus == LEAVING)을 지킨다
+            leaving = leave.LeavingDt is not null,
+            leavingDt = leave.LeavingDt,
+            leaveStatus = leave.Status,
+            plannedLeaveDt = leave.PlannedLeaveDt,
+            remindStatus = remind.Status,
+            resendStatus = resend.Status,
+            resentDt = resend.SentDt
+        }, plan.ExpireDt);
+    }
+
+    // 링크·다시 알림 문자 발송의 공통 흐름(설계 4.1·4.2 처리 1~8). eventType은 LINK_SENT·LINK_RESENT·REMIND_SENT, etaDt는 LINK_SENT·LINK_RESENT 문구에만 쓴다.
     // 진행 중 이벤트를 먼저 커밋하고 잠금 밖에서 보낸 뒤, 계획 행을 다시 잠그고 결과를 채운다
     private async Task<ResponseModel<PickupLinkSendDto>> SendPickupMessageAsync(int pickupPlanId, Guid clientEventId,
         string eventType, DateTime? etaDt, CancellationToken cancellationToken)
@@ -220,6 +255,26 @@ public partial class PickupService
                 var events = await _pickupRepository.GetLinkEventsAsync(pickupPlanId, transaction.GetDbTransaction(),
                     cancellationToken).ConfigureAwait(false);
 
+                // 정차 전 다시 보내기는 정차 전이어야 하고(ALREADY_STOPPED), 접수된 LINK_SENT와 세션이 있어야 한다(LINK_NOT_SENT)
+                if (eventType == EventLinkResent)
+                {
+                    if (StoppedPlanStatuses.Contains(plan.Status))
+                    {
+                        await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return LinkConflict(ReasonAlreadyStopped);
+                    }
+
+                    var sentSummary = PickupLinkSendState.Summarize(events, EventLinkSent, thisTime,
+                        _linkOptions.InFlightTimeoutSec, _linkOptions.MaxAttempts);
+                    var sentSession = await _pickupRepository.GetPickupSessionAsync(pickupPlanId, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (sentSummary.Status != PickupLinkSendState.StatusSent || sentSession is null)
+                    {
+                        await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return LinkConflict(ReasonLinkNotSent);
+                    }
+                }
+
                 // 다시 알림은 4.1 다음에 둘을 더 본다(설계 4.3). 정차 중이어야 하고, 이미 보낸 링크가 있어야 한다
                 if (eventType == EventRemindSent)
                 {
@@ -235,6 +290,18 @@ public partial class PickupService
                     {
                         await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
                         return LinkConflict(ReasonLinkNotSent);
+                    }
+
+                    // 정차 전에 시작한 링크 다시 보내기(LINK_RESENT)가 아직 진행 중이면 받지 않는다. 다시 보내기 문자(이전 도착 예정 시각)가
+                    // "도착했어요" 뒤에 나가는 순서 역전을 막는다. 정차 뒤에는 다시 보내기가 새로 시작되지 않는다
+                    var resendSummary = PickupLinkSendState.Summarize(events, EventLinkResent, thisTime,
+                        _linkOptions.InFlightTimeoutSec, _linkOptions.MaxAttempts);
+                    if (resendSummary.Status == PickupLinkSendState.StatusSending)
+                    {
+                        var remindSummary = PickupLinkSendState.Summarize(events, EventRemindSent, thisTime,
+                            _linkOptions.InFlightTimeoutSec, _linkOptions.MaxAttempts);
+                        await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                        return LinkConflict(ReasonInProgress, remindSummary.RemainingAttempts, receiverLast4);
                     }
                 }
 
@@ -289,8 +356,8 @@ public partial class PickupService
                 string token;
                 if (session is null)
                 {
-                    // 다시 알림은 세션을 만들지 않는다. 세션이 없으면 보낸 링크가 없는 것이다
-                    if (eventType == EventRemindSent)
+                    // 다시 알림·다시 보내기는 세션을 만들지 않는다. 세션이 없으면 보낸 링크가 없는 것이다
+                    if (eventType == EventRemindSent || eventType == EventLinkResent)
                     {
                         await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
                         return LinkConflict(ReasonLinkNotSent);
@@ -323,7 +390,7 @@ public partial class PickupService
                 }
 
                 var url = PickupLinkToken.BuildUrl(_linkOptions.BaseUrl, token);
-                message = eventType == EventLinkSent
+                message = eventType is EventLinkSent or EventLinkResent
                     ? PickupLinkMessage.Link(target.UserName, etaDt!.Value, spotName, url)
                     : PickupLinkMessage.Remind(target.UserName, spotName, url);
 
@@ -348,6 +415,7 @@ public partial class PickupService
                 }
 
                 await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+                SignalPlanChanged(pickupPlanId);
                 pickupEventId = pickupEvent.PickupEventId;
 
                 // 트랜잭션 2가 추적 중인 옛 인스턴스 대신 DB의 현재 행(그사이 익명화된 DELETE_YN 등)을 읽게 비운다
@@ -391,6 +459,7 @@ public partial class PickupService
                     _linkOptions.InFlightTimeoutSec, _linkOptions.MaxAttempts);
 
                 await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+                SignalPlanChanged(pickupPlanId);
             }
 
             // 8) 응답 — 사업자가 접수했으면 200, 거절·시간 초과면 101

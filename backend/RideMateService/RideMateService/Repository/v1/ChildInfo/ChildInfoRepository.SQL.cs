@@ -72,7 +72,7 @@ public partial class ChildInfoRepository
     }
 
     /// <summary>
-    /// 그 계정의 살아 있는 아이를 돌려준다. 없으면 null이다. 아이 ID·이름·암호화한 번호·발송 채널만 채워진다.
+    /// 그 계정의 살아 있는 아이를 돌려준다. 없으면 null이다. 아이 ID·이름·암호화한 번호·번호 해시·발송 채널만 채워진다.
     /// </summary>
     public async Task<Child?> GetLiveChildAsync(int userId, IDbTransaction transaction,
         CancellationToken cancellationToken = default)
@@ -86,6 +86,7 @@ public partial class ChildInfoRepository
                 SELECT t.CHILD_ID AS ChildId,
                        t.CHILD_NAME AS ChildName,
                        t.PHONE_ENC AS PhoneEnc,
+                       t.PHONE_HASH AS PhoneHash,
                        t.SEND_CHANNEL AS SendChannel
                 FROM CHILD AS t
                 WHERE t.USER_ID = @userId

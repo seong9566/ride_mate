@@ -78,9 +78,18 @@ public interface IPickupRepository
     Task<bool> IsParkingLotInAreaAsync(int parkingLotId, int areaId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 학원의 픽업 지점 후보 중 사용 중인 것을 우선순위 순으로 조회한다
+    /// 로그인한 부모의 살아 있는 아이의 살아 있는 시간표 한 건을 픽업 장소 후보 목록용으로 조회한다. 없거나 남의 것이면 null.
+    /// 그 날짜 요일의 살아 있는 요일 행이 있으면 TIME_CHANGE 예외를 반영한 하원 시각을 EndTime으로 돌려준다
     /// </summary>
-    Task<List<PickupSpotRow>> GetAcademyPickupSpotsAsync(int academyId, CancellationToken cancellationToken = default);
+    Task<PickupSpotTargetRow?> GetPickupSpotTargetAsync(int userId, int timetableId, DateOnly date, byte dayOfWeek,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 학원의 픽업 지점 후보 중 사용 중인 것을 조회한다. 우리 픽업 장소(preferredSpotId)가 후보면 맨 앞에, 나머지는 우선순위 순이다.
+    /// 순서가 상관없으면 preferredSpotId에 null을 넘긴다
+    /// </summary>
+    Task<List<PickupSpotRow>> GetAcademyPickupSpotsAsync(int academyId, int? preferredSpotId,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 픽업 지점들의 그 요일 유형 금지 시간을 조회한다
@@ -141,7 +150,7 @@ public interface IPickupRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 오늘 계획의 링크 관련 이벤트(LINK_SENT·REMIND_SENT·LINK_OPENED·CHILD_LEAVING)를 PICKUP_EVENT_ID 순으로 조회한다
+    /// 오늘 계획의 링크 관련 이벤트(LINK_SENT·LINK_RESENT·REMIND_SENT·LINK_OPENED·CHILD_LEAVING)를 PICKUP_EVENT_ID 순으로 조회한다
     /// </summary>
     Task<List<LinkEventRow>> GetLinkEventsAsync(int pickupPlanId, IDbTransaction? transaction,
         CancellationToken cancellationToken = default);
@@ -197,10 +206,10 @@ public interface IPickupRepository
 
     /// <summary>
     /// 지점에서 배정 시각 앞뒤 windowMin분 안에 있는 진행 중 계획(끝나지 않은 STATUS, EXPIRE_DT > now) 수를 센다.
-    /// excludePlanId가 있으면 그 계획은 빼고 센다
+    /// excludePlanId가 있으면 그 계획은 빼고 센다. 트랜잭션 없이 부르면 잠금 없는 일반 조회다
     /// </summary>
     Task<int> CountSlotPlansAsync(int pickupSpotId, DateTime slotDt, int windowMin, DateTime now, int? excludePlanId,
-        IDbTransaction transaction, CancellationToken cancellationToken = default);
+        IDbTransaction? transaction, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 오늘 계획 행을 PK 인덱스(FORCE INDEX (PRIMARY))로 FOR UPDATE 잠그고 읽는다. 재배정 트랜잭션에서 AREA 잠금 다음에 부른다.
@@ -259,4 +268,30 @@ public interface IPickupRepository
     Task<bool> ClosePickupPlanAsync(int pickupPlanId, string closeStatus, bool setLastPickupDate, DateTime now,
         string updateUser, IDbTransaction transaction, CancellationToken cancellationToken = default,
         Guid? clientEventId = null, DateTime? eventDt = null, DateTime? boardDt = null);
+
+    /// <summary>
+    /// 픽업 계획의 운전자 이름과 차량 정보를 조회한다. 운전자가 없으면 null
+    /// </summary>
+    Task<ChildPickupDriverRow?> GetChildPickupDriverAsync(int pickupPlanId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 픽업 계획의 마지막 정차 이벤트 종류(STOPPED·WRONG_STOP)를 조회한다. 없으면 null
+    /// </summary>
+    Task<string?> GetLastStopEventTypeAsync(int pickupPlanId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 위치 보고 대상 계획의 소유자·상태·만료 시각을 잠금 없이 조회한다
+    /// </summary>
+    Task<PositionPlanRow?> GetPositionPlanAsync(int pickupPlanId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 로그인한 부모의 살아 있는 아이의 살아 있는 시간표에서 학원과 학원가를 조회한다. 없거나 남의 시간표면 null
+    /// </summary>
+    Task<SpotRequestScheduleRow?> GetSpotRequestScheduleAsync(int userId, int timetableId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 픽업 장소 추가 요청 등록. 저장 뒤 model의 요청 ID가 채워진다
+    /// </summary>
+    Task<bool> AddPickupSpotRequestAsync(PickupSpotRequest model, CancellationToken cancellationToken = default);
 }

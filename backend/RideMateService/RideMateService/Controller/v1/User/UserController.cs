@@ -112,4 +112,71 @@ public class UserController : ApiControllerBase
             return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
         }
     }
+
+    /// <summary>
+    /// 자동 발송 설정 저장
+    /// </summary>
+    /// <remarks>
+    /// 응답 code: 200 정상, 400 잘못된 요청, 401 인증 실패, 500 서버 처리 실패
+    /// </remarks>
+    [Produces("application/json")]
+    [HttpPatch]
+    [Consumes("application/json")]
+    [Route("v1/User/M/sign/UpdateSetting")]
+    [SwaggerOperation(Summary = "설정 저장")]
+    [ProducesResponseType(typeof(ResponseModel<SettingDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdateSetting([FromBody] UpdateSettingDto dto, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _userService.UpdateSettingService(dto, cancellationToken).ConfigureAwait(false);
+            return ToActionResult(model);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // 앱이 요청을 끊었다. 오류로 기록하지 않는다
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
+
+    /// <summary>
+    /// 계정 정보 조회
+    /// </summary>
+    /// <remarks>
+    /// 응답 code: 200 정상, 401 인증 실패, 500 서버 처리 실패
+    /// </remarks>
+    [Produces("application/json")]
+    [HttpGet]
+    [Route("v1/User/M/sign/DetailUser")]
+    [SwaggerOperation(Summary = "계정 정보 조회")]
+    [ProducesResponseType(typeof(ResponseModel<DetailUserDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> DetailUser(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _userService.DetailUserService(cancellationToken).ConfigureAwait(false);
+            return ToActionResult(model);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // 앱이 요청을 끊었다. 오류로 기록하지 않는다
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
 }

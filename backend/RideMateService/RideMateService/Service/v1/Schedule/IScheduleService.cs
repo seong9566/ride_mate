@@ -24,6 +24,12 @@ public interface IScheduleService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 우리 픽업 장소 저장
+    /// </summary>
+    Task<ResponseModel<UpdateSchedulePickupSpotResultDto>> UpdateSchedulePickupSpotService(
+        UpdateSchedulePickupSpotDto dto, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 시간표 삭제
     /// </summary>
     Task<ResponseModel<DeleteScheduleResultDto>> DeleteScheduleService(DeleteScheduleDto dto,

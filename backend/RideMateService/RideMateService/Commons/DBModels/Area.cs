@@ -54,6 +54,8 @@ public partial class Area
 
     public virtual ICollection<PickupPlan> PickupPlans { get; set; } = new List<PickupPlan>();
 
+    public virtual ICollection<PickupSpotRequest> PickupSpotRequests { get; set; } = new List<PickupSpotRequest>();
+
     public virtual ICollection<PickupSpot> PickupSpots { get; set; } = new List<PickupSpot>();
 
     public virtual ICollection<RestrictedZone> RestrictedZones { get; set; } = new List<RestrictedZone>();

@@ -10,4 +10,10 @@ public interface IChildInfoService
     /// 아이 정보 저장
     /// </summary>
     Task<ResponseModel<AddChildResultDto>> AddChildService(AddChildDto dto, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 아이 정보 수정
+    /// </summary>
+    Task<ResponseModel<AddChildResultDto>> UpdateChildService(UpdateChildDto dto,
+        CancellationToken cancellationToken = default);
 }

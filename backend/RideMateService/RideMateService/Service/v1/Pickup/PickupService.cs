@@ -49,6 +49,9 @@ public partial class PickupService : IPickupService
     private readonly PickupLinkOptions _linkOptions;
     private readonly PickupPlanOptions _planOptions;
 
+    private readonly IPickupLiveHub _liveHub;
+    private readonly PickupLiveOptions _liveOptions;
+
     public PickupService(IPickupRepository pickupRepository,
         ILogService logService,
         IHttpContextAccessor httpContextAccessor,
@@ -62,7 +65,9 @@ public partial class PickupService : IPickupService
         IPhoneCryptoService phoneCryptoService,
         ISmsSender smsSender,
         IOptions<PickupLinkOptions> linkOptions,
-        IOptions<PickupPlanOptions> planOptions)
+        IOptions<PickupPlanOptions> planOptions,
+        IPickupLiveHub liveHub,
+        IOptions<PickupLiveOptions> liveOptions)
     {
         this._pickupRepository = pickupRepository;
         this._logService = logService;
@@ -78,6 +83,8 @@ public partial class PickupService : IPickupService
         this._smsSender = smsSender;
         this._linkOptions = linkOptions.Value;
         this._planOptions = planOptions.Value;
+        this._liveHub = liveHub;
+        this._liveOptions = liveOptions.Value;
     }
 
     /// <summary>
@@ -94,7 +101,9 @@ public partial class PickupService : IPickupService
 
             // 2) 입력 검증 — 필수값이 없거나 픽업 좌표가 한쪽만 오면 거절한다
             if (dto?.currentDt is null || dto.currentLat is null || dto.currentLng is null
-                || (dto.pickupLat is null) != (dto.pickupLng is null))
+                || (dto.pickupLat is null) != (dto.pickupLng is null)
+                || dto.pickupSpotSeq is < 1
+                || (dto.pickupSpotSeq is not null && (dto.pickupLat is not null || dto.pickupLng is not null)))
                 return new ResponseModel<DetailDepartureGuideDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
 
             var computation = await ComputeDepartureAsync(userId, dto, cancellationToken).ConfigureAwait(false);
@@ -254,6 +263,11 @@ public partial class PickupService : IPickupService
         }
     }
 
+    // 커밋한 뒤 그 계획의 실시간 연결에 "바뀜"을 알린다. 롤백·바꿀 것 없음 경로에서는 부르지 않는다
+    private void SignalPlanChanged(int pickupPlanId) => _liveHub.NotifyPlanChanged(pickupPlanId);
+    // 계획이 끝난(탑승·취소·만료) 커밋 뒤에 부른다. 허브의 차 위치를 지우고 연결에 알린다
+    private void SignalPlanEnded(int pickupPlanId) => _liveHub.NotifyPlanEnded(pickupPlanId);
+
     private async Task<DepartureComputation> ComputeDepartureAsync(int userId, DepartureGuideQueryDto dto,
         CancellationToken ct)
     {
@@ -286,6 +300,7 @@ public partial class PickupService : IPickupService
             result = new DetailDepartureGuideDto
             {
                 academyName = target.DisplayName,
+                areaName = target.AreaName,
                 endTime = target.EndTime.ToString(@"hh\:mm"),
                 pickupPlanSeq = plan.PickupPlanId,
                 planStatus = plan.Status
@@ -320,6 +335,7 @@ public partial class PickupService : IPickupService
             result = new DetailDepartureGuideDto
             {
                 academyName = target.DisplayName,
+                areaName = target.AreaName,
                 endTime = target.EndTime.ToString(@"hh\:mm")
             };
 
@@ -333,10 +349,11 @@ public partial class PickupService : IPickupService
             // 5) 픽업 장소와 도보 시간
             if (dto.pickupLat is null || dto.pickupLng is null)
             {
-                pickup = await SelectDefaultSpotAsync(target, date, dayType, result.reasons, ct).ConfigureAwait(false);
+                pickup = await SelectDefaultSpotAsync(target, date, dayType, result.reasons, ct, dto.pickupSpotSeq).ConfigureAwait(false);
                 if (pickup is null)
                 {
-                    result.reasons.Add(new DepartureGuideReasonDto { code = ReasonNoSpotAvailable });
+                    if (dto.pickupSpotSeq is null)
+                        result.reasons.Add(new DepartureGuideReasonDto { code = ReasonNoSpotAvailable });
                     return new DepartureComputation { Code = 200, Result = result, Target = target, DayType = dayType, IsHoliday = holiday.IsHoliday, Now = now };
                 }
 
@@ -409,19 +426,27 @@ public partial class PickupService : IPickupService
             AcademyId = plan.AcademyId
                         ?? throw new InvalidOperationException($"live pickup plan without academy: plan={plan.PickupPlanId}"),
             AreaId = plan.AreaId,
+            AreaName = plan.AreaName,
             DisplayName = plan.AcademyName ?? string.Empty,
             EndTime = plan.EndTime
                       ?? throw new InvalidOperationException($"live pickup plan without end time: plan={plan.PickupPlanId}"),
             AcademyLat = plan.AcademyLat,
-            AcademyLng = plan.AcademyLng
+            AcademyLng = plan.AcademyLng,
+            PreferredSpotId = plan.PreferredSpotId
         };
 
-    // 기본 지점: 우선순위 순으로 아이 도착 시각이 금지 시간 [시작, 종료)에 들지 않는 첫 지점.
+    // 기본 지점: 우리 픽업 장소가 후보면 맨 앞에, 나머지는 우선순위 순으로 보며 [ADR-0025] 아이 도착 시각이 금지 시간 [시작, 종료)에 들지 않는 첫 지점.
     // 금지 시간에 걸려 건너뛴 지점마다 HIGHER_SPOT_BLOCKED를 reasons에 더한다. 쓸 지점이 없으면 null
     private async Task<DepartureGuidePickupDto?> SelectDefaultSpotAsync(TodayPickupRow target, DateOnly date, string dayType,
-        List<DepartureGuideReasonDto> reasons, CancellationToken cancellationToken)
+        List<DepartureGuideReasonDto> reasons, CancellationToken cancellationToken, int? selectedSpotId = null)
     {
-        var spots = await _pickupRepository.GetAcademyPickupSpotsAsync(target.AcademyId, cancellationToken).ConfigureAwait(false);
+        var spots = await _pickupRepository.GetAcademyPickupSpotsAsync(target.AcademyId, target.PreferredSpotId, cancellationToken).ConfigureAwait(false);
+        if (selectedSpotId is { } selected)
+        {
+            spots = spots.Where(s => s.PickupSpotId == selected).ToList();
+            if (spots.Count == 0)
+                reasons.Add(new DepartureGuideReasonDto { code = "INVALID_PICKUP_SPOT", pickupSpotSeq = selected });
+        }
         if (spots.Count == 0)
             return null;
 
@@ -435,7 +460,10 @@ public partial class PickupService : IPickupService
                                                    && b.StartTime <= arrival && arrival < b.EndTime);
             if (block is not null)
             {
-                reasons.Add(HigherSpotBlockedReason(spot, block));
+                var reason = HigherSpotBlockedReason(spot, block);
+                if (selectedSpotId is not null)
+                    reason.code = "SELECTED_SPOT_BLOCKED";
+                reasons.Add(reason);
                 continue;
             }
 
@@ -482,7 +510,7 @@ public partial class PickupService : IPickupService
         List<GeoPointDto>? walkPath = null;
         if (plan.AcademyId is { } academyId)
         {
-            var spots = await _pickupRepository.GetAcademyPickupSpotsAsync(academyId, cancellationToken).ConfigureAwait(false);
+            var spots = await _pickupRepository.GetAcademyPickupSpotsAsync(academyId, plan.PreferredSpotId, cancellationToken).ConfigureAwait(false);
             var index = spots.FindIndex(s => s.PickupSpotId == spotId);
             if (index >= 0)
             {

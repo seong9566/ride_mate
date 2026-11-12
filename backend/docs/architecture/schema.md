@@ -56,7 +56,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 
 - 계정·인증: `USER_INFO`, `LOGIN_SESSION`, `PHONE_VERIFICATION`, `QR_LOGIN`, `CONSENT`
 - 아이·시간표: `CHILD`, `ACADEMY`, `TIMETABLE`, `TIMETABLE_DAY`, `TIMETABLE_EXCEPTION`
-- 기준 데이터: `AREA`, `PICKUP_SPOT`, `PICKUP_SPOT_BLOCK`, `ACADEMY_PICKUP_SPOT`, `LOOP_ROUTE`, `RESTRICTED_ZONE`, `PARKING_LOT`, `HOLIDAY`
+- 기준 데이터: `AREA`, `PICKUP_SPOT`, `PICKUP_SPOT_REQUEST`, `PICKUP_SPOT_BLOCK`, `ACADEMY_PICKUP_SPOT`, `LOOP_ROUTE`, `RESTRICTED_ZONE`, `PARKING_LOT`, `HOLIDAY`
 - 도로 소통 수집: `TRAFFIC_LINK`, `TRAFFIC_COLLECT_RUN`, `TRAFFIC_SPEED`, `TRAFFIC_HOURLY_SPEED`, `TRAFFIC_PROFILE`
 - 픽업 진행: `PICKUP_PLAN`, `PICKUP_SESSION`, `PICKUP_EVENT`
 
@@ -86,7 +86,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 - 차 정보는 아이 화면에 보이는 값이다. 기획이 확정되지 않아 NULL 허용으로 두고 최초 설정에서 선택 입력으로 받는다.
 - `CAR_COLOR`는 `WHITE`·`BLACK`·`GRAY`·`ETC`만 받는다. DB는 자유 문자열로 두고(기획이 색상 목록을 바꿀 수 있어 CHECK를 걸지 않는다) 검사는 Service에서 한다.
 - `CAR_MODEL`은 화면 입력이 앞뒤 공백을 지운 뒤 1~20자(유니코드 코드 포인트 수)다. 칸은 VARCHAR(50)이다.
-- 집·차 저장과 초기 설정 완료는 트랜잭션 첫 문장에서 `USER_INFO`를 `FOR UPDATE`로 잠그고 그 뒤 바꾸는 칸(`DEST_*`·`CAR_*`·`SETUP_DONE_DT`)만 갱신한다. 요청에 없는 칸을 옛 값으로 덮어쓰지 않는다.
+- 집·차·자동 발송 저장과 초기 설정 완료는 트랜잭션 첫 문장에서 `USER_INFO`를 `FOR UPDATE`로 잠그고 그 뒤 바꾸는 칸(`DEST_*`·`CAR_*`·`AUTO_SEND_YN`·`SETUP_DONE_DT`)만 갱신한다. 요청에 없는 칸을 옛 값으로 덮어쓰지 않는다.
 - 아이 화면에 보이는 호칭은 따로 두지 않고 운전자 이름(`USER_NAME`)을 쓴다. 가입 화면에서 엄마·아빠·할머니·직접 입력으로 받는다. [ADR-0016]
 - 운전자 이름은 가입할 때 필수로 받는다. 형식은 검사하지 않는다. 앞뒤 공백을 지운 값을 저장하고, 지운 뒤 비었거나 50자(유니코드 코드 포인트 수, MySQL `CHAR_LENGTH` 기준)를 넘으면 거절한다. 입력 화면은 아직 명세서에 없다.
 - `PHONE_ENC`는 AES-256-GCM 암호문이다. 키 버전 1바이트(`0x01`) + nonce 12바이트 + 암호문 + tag 16바이트를 이어 저장한다. [ADR-0013]
@@ -133,7 +133,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 - 틀린 횟수와 잠금은 용도와 관계없이 번호 단위다. 새 행을 만들 때 그 번호의 직전 행이 인증되지 않았고 만든 지 10분이 지나지 않았으면 `FAIL_CNT`를 이어받는다. 다시 받는다고 횟수가 0으로 돌아가지 않는다.
 - 잠금 중인지는 그 번호의 가장 최근 행에서 `LOCK_UNTIL_DT`로 판단한다. 잠긴 동안에는 새 인증번호를 보내지 않는다.
 - 같은 번호로는 1분에 한 번만 보낸다(가정값).
-- 인증에 성공했거나 만료된 지 24시간이 지난 행은 주기 작업이 `PHONE_HASH`·`CODE_HASH`를 빈 문자열로 바꾸고 `DELETE_YN`을 켠다. 동의 증빙에 필요한 시각과 방법은 `CONSENT`에 있다.
+- 주기 작업(`PhoneVerificationCleanupWorker`, 서버 시작 때와 10분마다)이 `DELETE_YN = 0`인 행 중 인증에 성공한 지 10분이 지난 행(`VERIFY_DT`가 있고 10분 전보다 이전, 용도와 관계없다)과 인증하지 않고 만료된 지 24시간이 지난 행(`VERIFY_DT`가 없고 `EXPIRE_DT`가 24시간 전보다 이전)의 `PHONE_HASH`·`CODE_HASH`를 빈 문자열로 바꾸고 `DELETE_YN`을 켠다. 한 번에 500행씩, 대상이 없을 때까지 되풀이하며 같은 회차 안에서는 앞 묶음의 마지막 ID 다음부터 읽는다. 행은 지우지 않는다(`CONSENT.PHONE_VERIFICATION_ID`가 가리킨다). 인증 성공 뒤 10분은 보호자 동의 저장(`AddConsent`)이 인증 행을 찾는 시간(`GuardianConsentValidMinutes`)이라 그 전에는 지우지 않는다. 동의 증빙에 필요한 시각과 방법은 `CONSENT`에 있다.
 - `GUARDIAN`은 로그인한 운전자 계정의 번호로만 보낸다.
 - 틀린 횟수를 올릴 때는 그 행을 `FOR UPDATE`로 잠그고 읽는다. 동시에 여러 번 시도해도 횟수가 빠지지 않는다.
 - 인덱스: `(PHONE_HASH, PURPOSE, PHONE_VERIFICATION_ID)`
@@ -203,6 +203,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 - 아이 번호가 부모 번호와 같으면 등록을 거절한다. 같은지는 `PHONE_HASH`끼리 Service에서 비교한다.
 - 화면에 내려줄 때는 Service에서 복호화한 뒤 가운데 자리를 가린다.
 - 아이 등록은 트랜잭션 첫 문장에서 `USER_INFO`를 `FOR UPDATE`로 잠그고 그 뒤에 기존 아이·번호를 조회한다. 계정당 살아 있는 아이 1명은 DB 제약이 아니라 이 잠금으로 지킨다. 아이를 추가하는 다른 경로도 같은 잠금을 먼저 잡는다.
+- 아이 정보 수정(`UpdateChild`)도 트랜잭션 첫 문장에서 `USER_INFO`를 먼저 잠근 뒤, 아이 정보 동의(`CHILD_INFO`)를 다시 확인하고(없으면 101) 그 계정의 살아 있는 아이를 확인한다. 바뀐 칸만 쓰고 `UPDATE_DT`·`UPDATE_USER`를 갱신하며, 바뀐 것이 없으면 아무것도 쓰지 않는다. 번호를 바꾸면 `PHONE_ENC`와 `PHONE_HASH`를 함께 바꾼다. 지금 번호와 같은 번호는 바꾸지 않은 것으로 보아 부모 번호·중복 판정을 건너뛴다. `PHONE_HASH`가 NULL인 옛 행은 `PHONE_ENC`를 복호화해 숫자를 비교하고(해시를 채우지 않는다), 복호화에 실패하면 바뀐 것으로 본다. 진행 중 픽업이 있어도 막지 않는다. `PICKUP_*`에는 번호를 저장하지 않으므로 이후 발송부터 새 번호로 나간다.
 - 삭제는 아래 "아이·계정 삭제" 순서를 따른다. 복구는 할 수 없다.
 
 ### ACADEMY — 학원
@@ -241,7 +242,9 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `ACADEMY_ID` | INT | N | FK → ACADEMY |
 | `DISPLAY_NAME` | VARCHAR(20) | N | 부모가 지은 학원 이름. 화면에는 이 이름을 보여준다 |
 | `END_TIME` | TIME | N | 하원 시각 |
+| `PICKUP_SPOT_ID` | INT | Y | FK → PICKUP_SPOT. 우리 픽업 장소(부모가 고른 기본 픽업 지점). NULL이면 `PRIORITY` 순으로 배정한다 |
 
+- `PICKUP_SPOT_ID`는 그 학원의 살아 있는 후보(`ACADEMY_PICKUP_SPOT` 행과 지점이 살아 있고 지점 `USE_YN = 1`)만 담는다. 제약으로 걸 수 없어 `UpdateSchedulePickupSpot`이 저장할 때 Service에서 확인하고, 읽는 쪽도 후보 조회에 없으면 무시한다. 시간표 편집으로 학원이 바뀌면 같은 `TIMETABLE` 쓰기에서 NULL로 되돌린다(학원이 그대로면 건드리지 않는다). 시간표 삭제는 바꾸지 않는다. 쓰기는 `USER_INFO`를 먼저 잠그는 요일별 픽업 스위치 변경과 같은 순서다(`AREA`를 잠그지 않는다). [ADR-0025]
 - CHECK: `END_TIME BETWEEN '14:00:00' AND '23:30:00'`, `MINUTE(END_TIME) % 5 = 0 AND SECOND(END_TIME) = 0`
 - 등록 개수 제한(가정 10건)과 같은 요일 ±40분 겹침 경고는 Service에서 한다.
 - 시간표 등록과 픽업 스위치 변경은 트랜잭션 첫 문장에서 `USER_INFO`를 `FOR UPDATE`로 잠근 뒤 개수·겹침·소유를 확인한다(T13 아이 등록과 같은 순서). 새 학원 행을 학원가와 함께 넣거나 좌표를 채우면 FK 때문에 그 `AREA` 행에 공유 잠금이 걸린다 — 삭제·계획 생성처럼 `AREA`를 먼저 잠그는 경로를 구현할 때 순서를 확인한다.
@@ -348,6 +351,31 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 
 - CHECK: `CAPACITY >= 1`
 
+### PICKUP_SPOT_REQUEST — 픽업 장소 추가 요청
+
+후보 지점에 원하는 곳이 없을 때 부모가 남기는 요청이다. 운영팀이 DB에서 보고 현장 검증 후보로 쓴다. 처리 API와 관리 화면은 없다.
+
+| 컬럼 | 타입 | NULL | 설명 |
+|---|---|---|---|
+| `PICKUP_SPOT_REQUEST_ID` | INT | N | PK |
+| `ACADEMY_ID` | INT | N | FK → ACADEMY. 요청한 시간표의 학원 |
+| `AREA_ID` | INT | Y | FK → AREA. 학원에 좌표가 없으면 NULL |
+| `LAT`·`LNG` | DECIMAL(10,7) | Y | 원하는 위치 |
+| `PLACE_NAME` | VARCHAR(100) | Y | 원하는 장소 이름 |
+| `MEMO` | VARCHAR(200) | Y | 요청 메모 |
+| `STATUS` | VARCHAR(20) | N | 처리 상태 |
+
+| `STATUS` | 뜻 |
+|---|---|
+| `REQUESTED` | 접수됨. 서버가 넣는 처음 값 |
+| `ACCEPTED` | 운영팀이 검증 후보로 받음 |
+| `REJECTED` | 운영팀이 받지 않음 |
+
+- CHECK: `(LAT IS NULL) = (LNG IS NULL)`
+- 인덱스: `ACADEMY_ID`, `AREA_ID`
+- 계정·아이·시간표를 가리키는 칸을 두지 않는다. 원하는 위치가 학원 근처라 계정과 이으면 아이를 좁힐 수 있다. 감사 컬럼은 `CREATE_USER`·`UPDATE_USER` = `PARENT`다. [ADR-0008]
+- `STATUS`는 운영팀이 DB에서 바꾼다. 서버는 `REQUESTED`로 넣기만 하고 읽지 않는다.
+
 ### PICKUP_SPOT_BLOCK — 픽업 지점을 쓸 수 없는 시간
 
 주정차 금지 시간과 현장에서 확인한 안내판 시간을 지점별로 가공해 넣는다. 그 시각에 걸리는 지점은 배정하지 않는다.
@@ -376,6 +404,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `WALK_MIN` | TINYINT | N | 학원에서 지점까지 아이 도보 시간(분) |
 | `WALK_PATH` | LINESTRING SRID 4326 | Y | 도보 경로 선 |
 | `PRIORITY` | TINYINT | N | 배정 우선순위. 1이 가장 먼저 |
+| `NOTE` | VARCHAR(100) | Y | 학원 기준 지점 한 줄 안내(예: 길 건너야 해요). 운영팀이 넣는다 |
 
 - 학원 행을 새로 만들 때 같은 `AREA`의 지점 중 가까운 순으로 최대 3곳의 행을 함께 만든다. `PRIORITY`는 가까운 순으로 1부터 붙인다. 도보 시간과 경로는 보행자 경로 API로 구하고, 실패하면 직선 거리를 설정값인 도보 속도로 나눠 올림하고 `WALK_PATH`는 비운다.
 - 학원과 지점은 같은 `AREA`여야 한다. 제약으로는 걸 수 없어, 운영팀이 넣을 때는 SQL에서, 학원을 추가할 때는 Service에서 확인한다.
@@ -631,11 +660,11 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 
 **배정 시각.** 아이가 픽업 지점에 도착할 것으로 보는 시각이다. `하원 시각 + 정리 시간 + WALK_MIN`으로 계산한다. 정리 시간은 설정값이다(가정 1분). 경로 시작이 계획을 만들 때는 차 도착 예상(`eventDt + driveMin`, 분 단위 올림)보다 이르게 잡지 않는다. [ADR-0023]
 
-**배정.** 같은 지점에서 배정 시각 앞뒤로 설정값(기본 2분) 안에 있는 진행 중 계획의 수가 `PICKUP_SPOT.CAPACITY`를 넘지 않게 한다. 진행 중 계획은 `STATUS`가 끝나지 않았고 `EXPIRE_DT`가 서버 현재 시각보다 뒤인 계획이다. 만료 처리가 아직 돌지 않아 `STATUS`가 남아 있어도 `EXPIRE_DT`가 지났으면 세지 않는다. 배정과 재배정은 아래 순서를 한 트랜잭션에서 지킨다. [ADR-0009]
+**배정.** 부모가 지점을 고르면(`pickupSpotSeq`) 그 지점만 보고, 꽉 차면 배정하지 않는다(409). 같은 지점에서 배정 시각 앞뒤로 설정값(기본 2분) 안에 있는 진행 중 계획의 수가 `PICKUP_SPOT.CAPACITY`를 넘지 않게 한다. 진행 중 계획은 `STATUS`가 끝나지 않았고 `EXPIRE_DT`가 서버 현재 시각보다 뒤인 계획이다. 만료 처리가 아직 돌지 않아 `STATUS`가 남아 있어도 `EXPIRE_DT`가 지났으면 세지 않는다. 배정과 재배정은 아래 순서를 한 트랜잭션에서 지킨다. [ADR-0009]
 
 1. 트랜잭션의 첫 문장으로 그 학원가의 `AREA` 행을 잠근다: `SELECT AREA_ID FROM AREA WHERE AREA_ID = ? FOR UPDATE`. 이 문장보다 먼저 다른 조회를 하지 않는다. 먼저 조회하면 그 시점의 스냅샷이 고정되어, 잠금을 얻고도 직전에 커밋된 계획을 보지 못한다.
 2. 새 계획을 만들 때는 `TIMETABLE_DAY` 행을 `FOR UPDATE`로 읽어 삭제되지 않았는지, `PICKUP_YN`이 켜져 있는지, `LAST_PICKUP_DATE`가 그날이 아닌지 확인한다. 잠그지 않고 읽으면 탑승 처리나 삭제와 겹칠 때 계획이 잘못 만들어진다. 이때 시간표의 학원·학원가·하원 시각도 다시 읽는다. 1의 잠금을 기다리는 사이 시간표 편집이 학원을 다른 학원가로 바꿨으면 잠근 학원가가 틀리므로, 트랜잭션을 끝내고 처음부터 다시 한다.
-3. `ACADEMY_PICKUP_SPOT.PRIORITY` 순으로 후보 지점을 본다. `USE_YN`이 꺼졌거나 아이 도착 시각이 `PICKUP_SPOT_BLOCK`에 걸리는 지점은 건너뛴다(하한을 적용하거나 늦춘 시각은 다시 보지 않는다).
+3. `ACADEMY_PICKUP_SPOT.PRIORITY` 순으로 후보 지점을 본다. 그 시간표의 우리 픽업 장소(`TIMETABLE.PICKUP_SPOT_ID`)가 있고 지금도 그 학원의 후보면 그 지점을 먼저 보고 나머지는 `PRIORITY` 순이다. [ADR-0025] `USE_YN`이 꺼졌거나 아이 도착 시각이 `PICKUP_SPOT_BLOCK`에 걸리는 지점은 건너뛴다(하한을 적용하거나 늦춘 시각은 다시 보지 않는다).
 4. 후보 지점에서 `SLOT_DT`가 배정 시각(계획을 만들 때는 아이 도착과 차 도착 예상 중 늦은 쪽, 장소 바꾸기에서 계획이 `STARTED`면 지금 `SLOT_DT`보다 이르지 않게)의 앞뒤 간격 안에 있는 진행 중 계획(`EXPIRE_DT` > 지금)을 세어 정원과 비교한다. 꽉 찼으면 배정 시각을 1분씩 늦춰 다시 보고(설정값까지, 가정 2분), 그래도 없으면 다음 지점으로 넘긴다.
 5. 모든 후보가 안 되면 `PICKUP_SPOT_ID`와 `SLOT_DT`를 비운 채 계획을 만든다. 화면은 "가까운 픽업 장소를 찾지 못했어요"를 보여준다.
 6. 계획을 넣거나 고치고 커밋한다.
@@ -728,6 +757,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `END_TIME_CHANGED` | 오늘 하원 시각 변경 | 전·후 시각 |
 | `REASSIGNED` | 지점·시각 재배정 | `{"reason": "LATE_START"·"LOCATION_CHANGED", "fromSpotId", "toSpotId", "fromCustom", "toCustom", "fromSlotDt", "toSlotDt"}` |
 | `LINK_SENT` | 링크 발송 | 채널, 성공 여부, 발송 업체 결과 코드 |
+| `LINK_RESENT` | 정차 전 같은 링크 다시 보내기 | 채널, 성공 여부, 발송 업체 결과 코드(`LINK_SENT`와 같은 모양) |
 | `LINK_OPENED` | 아이가 링크 열람 | — |
 | `CHILD_LEAVING` | 아이가 "지금 나가요" | — |
 | `LEAVE_SCHEDULED` | 아이가 출발 시각을 정하거나 바꿈 | 출발 시각 `{"leaveDt":"2026-11-12T22:03:00"}` |
@@ -740,7 +770,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `EXPIRED` | 만료 | — |
 | `CANCELED` | 취소 | — |
 
-- `LINK_SENT`·`REMIND_SENT`의 `DETAIL`은 `{"channel":"SMS","success":true,"resultCode":"2000"}` 모양(`channel`, `success`, `resultCode`)이다. `resultCode`는 사업자의 결과 코드 문자열뿐이다(접수 `2000`, 개발 발송기 `DEV`, 시간 초과 `TIMEOUT`, 그 밖의 예외 `ERROR`).
+- `LINK_SENT`·`LINK_RESENT`·`REMIND_SENT`의 `DETAIL`은 `{"channel":"SMS","success":true,"resultCode":"2000"}` 모양(`channel`, `success`, `resultCode`)이다. `resultCode`는 사업자의 결과 코드 문자열뿐이다(접수 `2000`, 개발 발송기 `DEV`, 시간 초과 `TIMEOUT`, 그 밖의 예외 `ERROR`).
   - 보내기 전에 `success`와 `resultCode`가 null인 진행 중 이벤트를 먼저 넣고 커밋한다. 잠금 밖에서 문자를 보낸 뒤 계획 행을 다시 잠그고 같은 행의 `DETAIL`을 결과로 고친다. 이 두 이벤트는 넣은 뒤 결과 칸을 채우려고 한 번 고친다.
   - `success`가 null이면 결과를 기다리는 진행 중 발송이다. `CREATE_DT`가 `PickupLink:InFlightTimeoutSec`(30초)보다 오래됐는데 결과가 없으면 실패로 센다.
   - 시도 횟수에는 성공·실패·진행 중을 모두 센다. 한도는 `PickupLink:MaxAttempts`(3)다.

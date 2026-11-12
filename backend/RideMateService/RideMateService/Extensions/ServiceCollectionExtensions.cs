@@ -1,4 +1,6 @@
+using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Text;
 using System.Threading.RateLimiting;
 using Microsoft.Extensions.Options;
 using RideMateService.Comm;
@@ -47,6 +49,7 @@ public static class ServiceCollectionExtensions
     {
         services.AddTransient<IPickupRepository, PickupRepository>();
         services.AddTransient<IPickupService, PickupService>();
+        services.AddSingleton<IPickupLiveHub, PickupLiveHub>();
         return services;
     }
 
@@ -76,6 +79,7 @@ public static class InfrastructureExtensions
 {
     /// <summary>
     /// 요청 빈도 제한 정책 등록. 차 계정 목록과 아이 출발 알림을 클라이언트별 고정 창 30회/분으로 막고, 넘으면 본문 없이 429와 Retry-After를 돌려준다.
+    /// 아이 픽업 안내 조회는 토큰별 30회/분, 링크 열람 기록은 토큰별 10회/분이고, 토큰별 제한을 통과한 요청만 두 API 전체 공용 상한 600회/분을 쓴다(GlobalLimiter 체인).
     /// </summary>
     public static IServiceCollection AddRateLimitPolicies(this IServiceCollection services)
     {
@@ -104,8 +108,73 @@ public static class InfrastructureExtensions
                     Window = TimeSpan.FromMinutes(1),
                     QueueLimit = 0
                 }));
+
+            options.AddPolicy(PickupPositionRateLimit.PolicyName, context =>
+                context.User.FindFirstValue("sub") is { } userId
+                    ? RateLimitPartition.GetFixedWindowLimiter(userId, _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = PickupPositionRateLimit.PermitLimit,
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueLimit = 0
+                    })
+                    : RateLimitPartition.GetNoLimiter(string.Empty));
+            options.AddPolicy(PickupLinkStreamRateLimit.PolicyName, context =>
+                context.User.FindFirstValue("sub") is { } userId
+                    ? RateLimitPartition.GetFixedWindowLimiter(userId, _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = PickupLinkStreamRateLimit.PermitLimit,
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueLimit = 0
+                    })
+                    : RateLimitPartition.GetNoLimiter(string.Empty));
+
+            options.AddPolicy(PickupSpotRequestRateLimit.PolicyName, context =>
+                context.User.FindFirstValue("sub") is { } userId
+                    ? RateLimitPartition.GetFixedWindowLimiter(userId, _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = PickupSpotRequestRateLimit.PermitLimit,
+                        Window = TimeSpan.FromHours(1),
+                        QueueLimit = 0
+                    })
+                    : RateLimitPartition.GetNoLimiter(string.Empty));
+
+            // 아이 픽업 안내 API: 토큰별 제한 → 전체 공용 상한 순서로 묶는다. 토큰별 제한을 통과한 요청만 공용 상한을 쓴다.
+            // 엔드포인트 정책은 GlobalLimiter 뒤에 획득되고 고정 창 허용량은 거절돼도 돌려주지 않으므로 둘 다 여기 둔다(PR #40 리뷰)
+            options.GlobalLimiter = PartitionedRateLimiter.CreateChained(
+                PartitionedRateLimiter.Create<HttpContext, string>(context =>
+                    context.GetEndpoint()?.Metadata.GetMetadata<ChildPickupLimitAttribute>() is { } limit
+                    && ChildPickupPartitionKey(context) is { } key
+                        ? RateLimitPartition.GetFixedWindowLimiter($"{limit.Group}:{key}", _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = limit.PermitLimit,
+                            Window = TimeSpan.FromMinutes(1),
+                            QueueLimit = 0
+                        })
+                        : RateLimitPartition.GetNoLimiter(string.Empty)),
+                PartitionedRateLimiter.Create<HttpContext, string>(context =>
+                    context.GetEndpoint()?.Metadata.GetMetadata<ChildPickupLimitAttribute>() is not null
+                    && ChildPickupPartitionKey(context) is not null
+                        ? RateLimitPartition.GetFixedWindowLimiter("child-pickup", _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = ChildPickupRateLimit.GlobalPermitLimit,
+                            Window = TimeSpan.FromMinutes(1),
+                            QueueLimit = 0
+                        })
+                        : RateLimitPartition.GetNoLimiter(string.Empty)));
         });
         return services;
+    }
+
+    // 토큰 해시를 TokenBucketCount칸으로 나눈 칸 번호를 키로 쓴다. 토큰 원문을 메모리 키로 두지 않고,
+    // 가짜 토큰을 바꿔 가며 보내도 제한기 상태가 칸 수를 넘지 않게 한다(PR #40 2차 리뷰). 형식이 틀린 토큰은 DB 조회 전에 404로 끝나므로 세지 않는다
+    private static string? ChildPickupPartitionKey(HttpContext context)
+    {
+        var token = context.Request.Headers["X-Pickup-Token"].FirstOrDefault();
+        if (!PickupLinkToken.IsWellFormed(token))
+            return null;
+
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(token!));
+        return (((hash[0] << 8) | hash[1]) % ChildPickupRateLimit.TokenBucketCount).ToString();
     }
 
     /// <summary>
@@ -155,8 +224,8 @@ public static class InfrastructureExtensions
     }
 
     /// <summary>
-    /// 인증 설정(Jwt·Crypto·QrLogin)을 검증하고 해시·전화번호 암호화·토큰 서비스를 Singleton으로 등록한다.
-    /// 설정이 비었거나 URI·키 형식과 길이가 맞지 않거나 두 키가 같으면 기동할 때 InvalidOperationException을 던진다.
+    /// 인증 설정(Jwt·Crypto·QrLogin·PhoneVerification)을 검증하고 해시·전화번호 암호화·토큰 서비스를 Singleton으로 등록한다.
+    /// 설정이 비었거나 URI·키 형식과 길이가 맞지 않거나 두 키가 같거나 PhoneVerification:CleanupIntervalMin이 1보다 작으면 기동할 때 InvalidOperationException을 던진다.
     /// </summary>
     public static IServiceCollection AddAuthInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
@@ -181,6 +250,11 @@ public static class InfrastructureExtensions
         services.Configure<JwtOptions>(jwt);
         services.Configure<CryptoOptions>(crypto);
         services.Configure<QrLoginOptions>(qrLogin);
+        var phoneVerification = configuration.GetSection("PhoneVerification");
+        var phoneVerificationOptions = phoneVerification.Get<PhoneVerificationOptions>() ?? new PhoneVerificationOptions();
+        if (phoneVerificationOptions.CleanupIntervalMin < 1)
+            throw new InvalidOperationException("PhoneVerification:CleanupIntervalMin 설정은 1 이상이어야 합니다.");
+        services.Configure<PhoneVerificationOptions>(phoneVerification);
         services.AddSingleton<IHashService, HashService>();
         services.AddSingleton<IPhoneCryptoService, PhoneCryptoService>();
         services.AddSingleton<ITokenService, TokenService>();
@@ -188,11 +262,12 @@ public static class InfrastructureExtensions
     }
 
     /// <summary>
-    /// 카카오 설정(Kakao), 공공데이터 설정(PublicData), 출발 안내 설정(DepartureGuide), 대기 장소 설정(WaitingPlace), 픽업 링크 설정(PickupLink), 픽업 계획 설정(PickupPlan)을 등록하고,
+    /// 카카오 설정(Kakao), 공공데이터 설정(PublicData), 출발 안내 설정(DepartureGuide), 대기 장소 설정(WaitingPlace), 픽업 링크 설정(PickupLink), 픽업 계획 설정(PickupPlan), 실시간 픽업 설정(PickupLive)을 등록하고,
     /// 도보 경로·좌표→주소 변환 클라이언트(타임아웃 3초)와 주차장 실시간 클라이언트를 typed HttpClient로 등록한다.
     /// Kakao:RestApiKey와 PublicData:ServiceKey가 비어 있어도 기동은 하며, 이때 해당 클라이언트는 외부 API를 부르지 않고 null을 돌려준다.
     /// PickupLink:BaseUrl이 http(s) 절대 URI가 아니거나 PickupLink:MaxAttempts·InFlightTimeoutSec·LeaveSoonMin·LeaveMaxAheadMin이 1보다 작으면 기동할 때 InvalidOperationException을 던진다.
     /// PickupPlan:CreateLeadHours·ExpireAfterHours·ExpireIntervalSec·StopRadiusM이 1보다 작거나 SlotWindowMin·SlotShiftMaxMin이 0보다 작거나 ExpireAfterHours가 DepartureGuide:PickupWindowHours보다 작아도 같다.
+    /// PickupLive:VehicleStaleSec·PositionMinIntervalSec·HeartbeatSec·StreamMaxLifetimeMin·MaxStreamsPerPlan이 1보다 작아도 같다.
     /// </summary>
     public static IServiceCollection AddMapInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
@@ -235,6 +310,20 @@ public static class InfrastructureExtensions
         if (pickupPlanOptions.ExpireAfterHours < departureGuideOptions.PickupWindowHours)
             throw new InvalidOperationException("PickupPlan:ExpireAfterHours 설정은 DepartureGuide:PickupWindowHours 이상이어야 합니다.");
         services.Configure<PickupPlanOptions>(pickupPlan);
+
+        var pickupLive = configuration.GetSection("PickupLive");
+        var pickupLiveOptions = pickupLive.Get<PickupLiveOptions>() ?? new PickupLiveOptions();
+        if (pickupLiveOptions.VehicleStaleSec < 1)
+            throw new InvalidOperationException("PickupLive:VehicleStaleSec 설정은 1 이상이어야 합니다.");
+        if (pickupLiveOptions.PositionMinIntervalSec < 1)
+            throw new InvalidOperationException("PickupLive:PositionMinIntervalSec 설정은 1 이상이어야 합니다.");
+        if (pickupLiveOptions.HeartbeatSec < 1)
+            throw new InvalidOperationException("PickupLive:HeartbeatSec 설정은 1 이상이어야 합니다.");
+        if (pickupLiveOptions.StreamMaxLifetimeMin < 1)
+            throw new InvalidOperationException("PickupLive:StreamMaxLifetimeMin 설정은 1 이상이어야 합니다.");
+        if (pickupLiveOptions.MaxStreamsPerPlan < 1)
+            throw new InvalidOperationException("PickupLive:MaxStreamsPerPlan 설정은 1 이상이어야 합니다.");
+        services.Configure<PickupLiveOptions>(pickupLive);
 
         services.AddHttpClient<IWalkRouteClient, KakaoWalkRouteClient>(client =>
         {

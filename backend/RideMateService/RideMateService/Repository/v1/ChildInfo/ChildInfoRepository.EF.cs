@@ -50,6 +50,47 @@ public partial class ChildInfoRepository
         }
     }
 
+    /// <summary>
+    /// 살아 있는 아이의 바뀐 칸만 쓴다. null인 인자는 그 칸을 그대로 둔다(phoneEnc·phoneHash는 번호를 바꿀 때 함께 준다). 같은 번호의 다른 살아 있는 아이가 있으면 MySQL 중복 키 예외(1062)를 로그 없이 올려보낸다. 바뀐 행이 없으면 false다.
+    /// </summary>
+    public async Task<bool> UpdateChildAsync(int childId, string? childName, byte[]? phoneEnc, string? phoneHash,
+        string? sendChannel, DateTime updateDt, string updateUser, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var affected = await _context.Children
+                .Where(x => x.ChildId == childId
+                            && x.DeleteYn == false)
+                .ExecuteUpdateAsync(setters =>
+                {
+                    // 보낸(바뀐) 칸만 쓴다
+                    if (childName is not null)
+                        setters.SetProperty(x => x.ChildName, childName);
+                    if (phoneEnc is not null)
+                    {
+                        setters.SetProperty(x => x.PhoneEnc, phoneEnc);
+                        setters.SetProperty(x => x.PhoneHash, phoneHash);
+                    }
+                    if (sendChannel is not null)
+                        setters.SetProperty(x => x.SendChannel, sendChannel);
+                    setters.SetProperty(x => x.UpdateDt, updateDt);
+                    setters.SetProperty(x => x.UpdateUser, updateUser);
+                }, cancellationToken)
+                .ConfigureAwait(false);
+
+            return affected > 0;
+        }
+        // 요청 취소는 로그 없이 올려보낸다. 중복 키(1062)는 정상 업무 결과(103)라 에러로 기록하지 않고 Service에 맡긴다
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && !IsDuplicateKey(ex))
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw; // Service가 500으로 바꾼다
+        }
+    }
+
     private static bool IsDuplicateKey(Exception? ex)
     {
         for (; ex is not null; ex = ex.InnerException)

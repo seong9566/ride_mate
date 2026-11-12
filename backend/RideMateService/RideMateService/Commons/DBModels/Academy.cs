@@ -94,5 +94,7 @@ public partial class Academy
 
     public virtual ICollection<PickupPlan> PickupPlans { get; set; } = new List<PickupPlan>();
 
+    public virtual ICollection<PickupSpotRequest> PickupSpotRequests { get; set; } = new List<PickupSpotRequest>();
+
     public virtual ICollection<Timetable> Timetables { get; set; } = new List<Timetable>();
 }

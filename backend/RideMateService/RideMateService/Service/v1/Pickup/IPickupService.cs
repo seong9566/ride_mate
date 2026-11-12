@@ -25,9 +25,21 @@ public interface IPickupService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 픽업 장소 후보 목록
+    /// </summary>
+    Task<ResponseModel<PickupSpotListDto>> GetPickupSpotListService(PickupSpotListQueryDto dto,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 픽업 링크 문자 발송(최초 발송과 실패 후 다시 보내기)
     /// </summary>
     Task<ResponseModel<PickupLinkSendDto>> AddPickupLinkService(AddPickupLinkDto dto,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 정차 전 픽업 링크 다시 보내기(같은 링크를 한 번 더 문자로 보낸다)
+    /// </summary>
+    Task<ResponseModel<PickupLinkSendDto>> AddPickupLinkResendService(AddPickupLinkResendDto dto,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -100,4 +112,47 @@ public interface IPickupService
     /// 끝낸 계획 수를 돌려준다. 한 계획의 오류는 로그만 남기고 다음 계획으로 간다. HTTP 요청 밖(주기 작업)에서 부른다
     /// </summary>
     Task<int> ExpirePickupPlansService(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 아이 픽업 안내 조회
+    /// </summary>
+    Task<ResponseModel<ChildPickupDto>> DetailChildPickupService(string? token,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 아이 픽업 링크 열람을 한 번만 기록하고 첫 열람 시각을 돌려준다
+    /// </summary>
+    Task<ResponseModel<ChildPickupOpenDto>> AddPickupLinkOpenService(string? token,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 차 위치·내비 남은 시간을 보고한다. 위치는 DB에 쓰지 않고 서버 메모리에만 둔다
+    /// </summary>
+    Task<ResponseModel<PickupPlanPositionDto>> UpdatePickupPlanPositionService(UpdatePickupPlanPositionDto dto,
+        CancellationToken cancellationToken = default);
+    /// <summary>아이 픽업 실시간 연결을 판정한다</summary>
+    Task<ResponseModel<ChildPickupStreamTicket>> OpenChildPickupStreamService(string? token,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>아이 픽업 실시간 이벤트를 읽는다. 요청 취소 외 오류는 기록하고 연결을 끝낸다</summary>
+    IAsyncEnumerable<SseEvent> ReadChildPickupStreamAsync(ChildPickupStreamTicket ticket,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 차량 픽업 링크 전달 상태 실시간 연결을 판정한다. 401·400·404는 DetailPickupLinkStatus와 같다
+    /// </summary>
+    Task<ResponseModel<PickupLinkStreamTicket>> OpenPickupLinkStreamService(PickupLinkStatusQueryDto dto,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 차량 픽업 링크 전달 상태 실시간 이벤트를 읽는다. Service가 ResponseModel을 돌려준다는 규칙의 예외다(service.md)
+    /// </summary>
+    IAsyncEnumerable<SseEvent> ReadPickupLinkStreamAsync(PickupLinkStreamTicket ticket,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 픽업 장소 추가 요청. 계정·아이·시간표를 가리키는 값은 저장하지 않는다
+    /// </summary>
+    Task<ResponseModel<AddPickupSpotRequestResultDto>> AddPickupSpotRequestService(AddPickupSpotRequestDto dto,
+        CancellationToken cancellationToken = default);
 }

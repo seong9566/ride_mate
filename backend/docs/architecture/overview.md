@@ -66,11 +66,11 @@ Controller ──▶ Service ──▶ Repository ──▶ DbContext / IDbConne
 4. Redis (`IConnectionMultiplexer` Singleton)
 5. Swagger (Bearer 보안 정의 포함, `SignRouteOperationFilter`)
 6. 도메인 DI (`AddDomainModules()`)
-7. 백그라운드 워커 (HostedService — `PickupPlanExpiryWorker`: 끝나지 않은 픽업 계획의 만료 주기 작업. 기동 로그 `Pickup plan expiry worker: ON`)
+7. 백그라운드 워커 (HostedService — `PickupPlanExpiryWorker`: 끝나지 않은 픽업 계획의 만료 주기 작업. 기동 로그 `Pickup plan expiry worker: ON`. `PhoneVerificationCleanupWorker`: 인증번호 행 정리 주기 작업. 기동 로그 `Phone verification cleanup worker: ON`)
 8. 공용 서비스 (`AddCommonInfrastructure()` — `ILogService`, HttpContextAccessor)
 9. 지도·문자 (`AddMapInfrastructure()` — 카카오 typed HttpClient(도보 경로·좌표→주소 변환), Kakao·DepartureGuide·PickupLink·PickupPlan 설정. `Kakao:RestApiKey`가 비어도 기동은 한다. `PickupPlan:CreateLeadHours`·`ExpireAfterHours`·`ExpireIntervalSec`가 1보다 작거나 `SlotWindowMin`·`SlotShiftMaxMin`이 0보다 작거나 `ExpireAfterHours`가 `DepartureGuide:PickupWindowHours`보다 작으면 기동 실패. `PickupLink:BaseUrl`이 http(s) 절대 URI가 아니거나 `PickupLink:MaxAttempts`·`InFlightTimeoutSec`가 1보다 작으면 기동 실패. `AddSmsInfrastructure()` — `Sms:Provider`가 `Solapi`이면 SolapiSmsSender, 비었거나 `Dev`이면 DevSmsSender. `Dev`인데 Development 환경이 아니거나, `Solapi`인데 `Sms:Solapi`의 `ApiKey`·`ApiSecret`·`Sender`가 비었거나 `Provider`가 그 밖의 값이면 기동 실패)
 10. Dapper 타입 핸들러
-11. 인증 (`AddAuthInfrastructure()` — 키 설정 검증과 Singleton 등록, JwtBearer)
+11. 인증 (`AddAuthInfrastructure()` — 키 설정 검증과 Singleton 등록, `PhoneVerification` 설정 등록(`CleanupIntervalMin`이 1보다 작으면 기동 실패), JwtBearer)
 12. DbContext + Dapper `IDbConnection` (연결 문자열이 없으면 기동 실패)
 13. CORS (허용 오리진이 없으면 기동 실패)
 14. `AddControllers` + `RunActionFilter` + `AddNewtonsoftJson`
@@ -96,12 +96,12 @@ Controller ──▶ Service ──▶ Repository ──▶ DbContext / IDbConne
 
 | 수명 | 대상 |
 |---|---|
-| Singleton | `IConnectionMultiplexer`, 서명·암호 키를 들고 있는 서비스 |
+| Singleton | `IConnectionMultiplexer`, 서명·암호 키를 들고 있는 서비스, 실시간 픽업 허브 `IPickupLiveHub`(계획별 차 마지막 위치와 SSE 구독. 서버 한 대 기준) [ADR-0024] |
 | Transient | Repository, Service, `ILogService`, `IDbConnection` |
 | Scoped | `DbContext` (`AddDbContext` 기본값) |
 
 - Singleton에 Scoped를 주입하지 않는다. 필요하면 `IServiceScopeFactory`로 스코프를 열어 쓴다.
-- 백그라운드 워커(`BackgroundService`)는 `AddHostedService<T>()`로 등록하며 Singleton이다. 회차마다 `IServiceScopeFactory.CreateAsyncScope()`로 스코프를 열어 Service를 꺼내 쓰고(Scoped `RideMateContext`), 한 회차의 오류는 로그만 남기고 다음 회차로 간다. 예: `Service/v1/Pickup/PickupPlanExpiryWorker.cs`.
+- 백그라운드 워커(`BackgroundService`)는 `AddHostedService<T>()`로 등록하며 Singleton이다. 회차마다 `IServiceScopeFactory.CreateAsyncScope()`로 스코프를 열어 Service를 꺼내 쓰고(Scoped `RideMateContext`), 한 회차의 오류는 로그만 남기고 다음 회차로 간다. 예: `Service/v1/Pickup/PickupPlanExpiryWorker.cs`, `Service/v1/Auth/PhoneVerificationCleanupWorker.cs`.
 - 도메인 등록은 `Extensions/ServiceCollectionExtensions.cs`의 확장 메서드로 모은다. `Program.cs`는 `builder.Services.AddDomainModules();` 한 줄만 갖는다. 템플릿: `.agents/skills/add-domain/templates/ServiceCollectionExtensions.cs`.
 - 공용 서비스(`ILogService` 등)는 같은 폴더의 `AddCommonInfrastructure()`로 모은다. 첫 도메인을 추가할 때 `Extensions/`를 만들고 `Program.cs`에 있는 `ILogService` 등록도 이쪽으로 옮긴다.
 - 어셈블리 스캔(Scrutor 등)으로 자동 등록하지 않는다. 등록은 모두 코드에 명시한다.

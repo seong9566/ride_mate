@@ -42,6 +42,8 @@ public partial class RideMateContext : DbContext
 
     public virtual DbSet<PickupSpotBlock> PickupSpotBlocks { get; set; }
 
+    public virtual DbSet<PickupSpotRequest> PickupSpotRequests { get; set; }
+
     public virtual DbSet<QrLogin> QrLogins { get; set; }
 
     public virtual DbSet<RestrictedZone> RestrictedZones { get; set; }
@@ -176,6 +178,10 @@ public partial class RideMateContext : DbContext
             entity.Property(e => e.DeleteYn)
                 .HasComment("삭제 여부")
                 .HasColumnName("DELETE_YN");
+            entity.Property(e => e.Note)
+                .HasMaxLength(100)
+                .HasComment("학원 기준 지점 한 줄 안내")
+                .HasColumnName("NOTE");
             entity.Property(e => e.PickupSpotId)
                 .HasComment("픽업 지점 ID")
                 .HasColumnName("PICKUP_SPOT_ID");
@@ -770,7 +776,7 @@ public partial class RideMateContext : DbContext
                 .HasColumnName("EVENT_DT");
             entity.Property(e => e.EventType)
                 .HasMaxLength(20)
-                .HasComment("이벤트 유형 (PLANNED, STARTED, WAIT_STARTED, END_TIME_CHANGED, REASSIGNED, LINK_SENT, LINK_OPENED, CHILD_LEAVING, LEAVE_SCHEDULED, LEAVE_CANCELED, STOPPED, WRONG_STOP, REMIND_SENT, LOOP_STARTED, BOARDED, EXPIRED, CANCELED)")
+                .HasComment("이벤트 유형 (PLANNED, STARTED, WAIT_STARTED, END_TIME_CHANGED, REASSIGNED, LINK_SENT, LINK_RESENT, LINK_OPENED, CHILD_LEAVING, LEAVE_SCHEDULED, LEAVE_CANCELED, STOPPED, WRONG_STOP, REMIND_SENT, LOOP_STARTED, BOARDED, EXPIRED, CANCELED)")
                 .HasColumnName("EVENT_TYPE");
             entity.Property(e => e.PickupPlanId)
                 .HasComment("오늘 계획 ID")
@@ -1125,6 +1131,75 @@ public partial class RideMateContext : DbContext
                 .HasConstraintName("FK_PICKUP_SPOT_BLOCK_01");
         });
 
+        modelBuilder.Entity<PickupSpotRequest>(entity =>
+        {
+            entity.HasKey(e => e.PickupSpotRequestId).HasName("PRIMARY");
+
+            entity.ToTable("PICKUP_SPOT_REQUEST", tb => tb.HasComment("픽업 장소 추가 요청"));
+
+            entity.HasIndex(e => e.AcademyId, "IX_PICKUP_SPOT_REQUEST_01");
+
+            entity.HasIndex(e => e.AreaId, "IX_PICKUP_SPOT_REQUEST_02");
+
+            entity.Property(e => e.PickupSpotRequestId)
+                .HasComment("픽업 장소 추가 요청 ID")
+                .HasColumnName("PICKUP_SPOT_REQUEST_ID");
+            entity.Property(e => e.AcademyId)
+                .HasComment("학원 ID")
+                .HasColumnName("ACADEMY_ID");
+            entity.Property(e => e.AreaId)
+                .HasComment("학원가 ID. 학원에 좌표가 없으면 NULL")
+                .HasColumnName("AREA_ID");
+            entity.Property(e => e.CreateDt)
+                .HasComment("생성 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("CREATE_DT");
+            entity.Property(e => e.CreateUser)
+                .HasMaxLength(50)
+                .HasComment("생성자")
+                .HasColumnName("CREATE_USER");
+            entity.Property(e => e.DeleteYn)
+                .HasComment("삭제 여부")
+                .HasColumnName("DELETE_YN");
+            entity.Property(e => e.Lat)
+                .HasPrecision(10, 7)
+                .HasComment("원하는 위치 위도")
+                .HasColumnName("LAT");
+            entity.Property(e => e.Lng)
+                .HasPrecision(10, 7)
+                .HasComment("원하는 위치 경도")
+                .HasColumnName("LNG");
+            entity.Property(e => e.Memo)
+                .HasMaxLength(200)
+                .HasComment("요청 메모")
+                .HasColumnName("MEMO");
+            entity.Property(e => e.PlaceName)
+                .HasMaxLength(100)
+                .HasComment("원하는 장소 이름")
+                .HasColumnName("PLACE_NAME");
+            entity.Property(e => e.Status)
+                .HasMaxLength(20)
+                .HasComment("처리 상태 (REQUESTED, ACCEPTED, REJECTED)")
+                .HasColumnName("STATUS");
+            entity.Property(e => e.UpdateDt)
+                .HasComment("수정 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("UPDATE_DT");
+            entity.Property(e => e.UpdateUser)
+                .HasMaxLength(50)
+                .HasComment("수정자")
+                .HasColumnName("UPDATE_USER");
+
+            entity.HasOne(d => d.Academy).WithMany(p => p.PickupSpotRequests)
+                .HasForeignKey(d => d.AcademyId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_PICKUP_SPOT_REQUEST_01");
+
+            entity.HasOne(d => d.Area).WithMany(p => p.PickupSpotRequests)
+                .HasForeignKey(d => d.AreaId)
+                .HasConstraintName("FK_PICKUP_SPOT_REQUEST_02");
+        });
+
         modelBuilder.Entity<QrLogin>(entity =>
         {
             entity.HasKey(e => e.QrLoginId).HasName("PRIMARY");
@@ -1290,6 +1365,8 @@ public partial class RideMateContext : DbContext
 
             entity.HasIndex(e => e.AcademyId, "IX_TIMETABLE_02");
 
+            entity.HasIndex(e => e.PickupSpotId, "IX_TIMETABLE_03");
+
             entity.Property(e => e.TimetableId)
                 .HasComment("시간표 ID")
                 .HasColumnName("TIMETABLE_ID");
@@ -1318,6 +1395,9 @@ public partial class RideMateContext : DbContext
                 .HasComment("하원 시각")
                 .HasColumnType("time")
                 .HasColumnName("END_TIME");
+            entity.Property(e => e.PickupSpotId)
+                .HasComment("우리 픽업 장소(부모가 고른 기본 픽업 지점 ID)")
+                .HasColumnName("PICKUP_SPOT_ID");
             entity.Property(e => e.UpdateDt)
                 .HasComment("수정 일시")
                 .HasColumnType("datetime")
@@ -1336,6 +1416,10 @@ public partial class RideMateContext : DbContext
                 .HasForeignKey(d => d.ChildId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_TIMETABLE_01");
+
+            entity.HasOne(d => d.PickupSpot).WithMany(p => p.Timetables)
+                .HasForeignKey(d => d.PickupSpotId)
+                .HasConstraintName("FK_TIMETABLE_03");
         });
 
         modelBuilder.Entity<TimetableDay>(entity =>

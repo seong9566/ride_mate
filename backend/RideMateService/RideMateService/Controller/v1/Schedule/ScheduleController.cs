@@ -115,6 +115,42 @@ public class ScheduleController : ApiControllerBase
     }
 
     /// <summary>
+    /// 우리 픽업 장소 저장
+    /// </summary>
+    /// <remarks>
+    /// 응답 code: 200 정상, 400 잘못된 입력, 401 인증 실패, 404 시간표 없음, 409 후보가 아닌 지점(INVALID_PICKUP_SPOT), 500 서버 처리 실패
+    /// </remarks>
+    [Produces("application/json")]
+    [HttpPatch]
+    [Consumes("application/json")]
+    [Route("v1/Schedule/M/sign/UpdateSchedulePickupSpot")]
+    [SwaggerOperation(Summary = "우리 픽업 장소 저장")]
+    [ProducesResponseType(typeof(ResponseModel<UpdateSchedulePickupSpotResultDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ResponseModel<UpdateSchedulePickupSpotResultDto>), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> UpdateSchedulePickupSpot([FromBody] UpdateSchedulePickupSpotDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _scheduleService.UpdateSchedulePickupSpotService(dto, cancellationToken).ConfigureAwait(false);
+            return ToActionResult(model);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // 앱이 요청을 끊었다. 오류로 기록하지 않는다
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
+
+    /// <summary>
     /// 시간표 편집
     /// </summary>
     [Produces("application/json")]

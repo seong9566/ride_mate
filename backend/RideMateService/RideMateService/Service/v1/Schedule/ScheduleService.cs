@@ -24,6 +24,7 @@ public class ScheduleService : IScheduleService
     private const int MaxScheduleCount = 10;
     private const int OverlapMaxMinutes = 40; // 이 값 이하로 가까우면 겹침으로 본다
     private const int DeadlockMaxAttempts = 3;
+    private const string ReasonInvalidPickupSpot = "INVALID_PICKUP_SPOT";
 
     private static readonly TimeSpan EndTimeMin = new(14, 0, 0);
     private static readonly TimeSpan EndTimeMax = new(23, 30, 0);
@@ -316,6 +317,106 @@ public class ScheduleService : IScheduleService
     }
 
     /// <summary>
+    /// 우리 픽업 장소 저장
+    /// </summary>
+    public Task<ResponseModel<UpdateSchedulePickupSpotResultDto>> UpdateSchedulePickupSpotService(
+        UpdateSchedulePickupSpotDto dto, CancellationToken cancellationToken = default)
+    {
+        return RetryOnDeadlockAsync(() => UpdateSchedulePickupSpotCoreAsync(dto, cancellationToken), cancellationToken);
+    }
+
+    // 교착은 RetryOnDeadlockAsync가 다시 실행하므로 여기서는 500으로 바꾸지 않고 올려보낸다
+    private async Task<ResponseModel<UpdateSchedulePickupSpotResultDto>> UpdateSchedulePickupSpotCoreAsync(
+        UpdateSchedulePickupSpotDto dto, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // 1) 입력 검증 — API 모델 검증을 거치지 않은 호출도 같은 규칙으로 거절한다. pickupSpotSeq가 없으면 지우기다
+            if (dto is not { scheduleSeq: >= 1 } || dto.pickupSpotSeq is < 1)
+                return Fail<UpdateSchedulePickupSpotResultDto>(400, "잘못된 요청입니다.");
+
+            // 2) 인증 확인 — sub 클레임이 없으면 거절하고, 계정이 있는지는 아래 잠금 조회가 확인한다
+            var loginUserId = GetLoginUserId();
+            if (loginUserId is null)
+                return Fail<UpdateSchedulePickupSpotResultDto>(401, "잘못된 요청입니다.");
+
+            DateTime thisTime = NowToSecond();
+            var transaction = await _context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            await using var transactionScope = transaction.ConfigureAwait(false);
+            var dbTransaction = transaction.GetDbTransaction();
+
+            // 3) 다른 조회보다 먼저 계정을 잠가 같은 계정의 동시 요청을 직렬화한다 — 요일별 픽업 스위치 변경과 같은 순서다
+            var lockedUserId = await _scheduleRepository.LockUserInfoAsync(loginUserId.Value, dbTransaction,
+                cancellationToken).ConfigureAwait(false);
+            if (lockedUserId is null) // 계정이 없거나 지워졌다
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return Fail<UpdateSchedulePickupSpotResultDto>(401, "잘못된 요청입니다.");
+            }
+
+            // 4) 이 계정 아이의 살아 있는 시간표인지 확인한다. 아이가 없거나 남의 것이면 찾을 수 없다
+            var childId = await _scheduleRepository.GetLiveChildIdAsync(lockedUserId.Value, dbTransaction,
+                cancellationToken).ConfigureAwait(false);
+            var schedule = childId is null
+                ? null
+                : await _scheduleRepository.GetLiveScheduleAsync(childId.Value, dto.scheduleSeq.Value, dbTransaction,
+                    cancellationToken).ConfigureAwait(false);
+            if (schedule is null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return Fail<UpdateSchedulePickupSpotResultDto>(404, "잘못된 요청입니다.");
+            }
+
+            // 5) 지점이 있으면 그 시간표 학원의 살아 있는 후보여야 한다
+            if (dto.pickupSpotSeq is { } pickupSpotSeq
+                && !await _scheduleRepository.IsAcademyPickupSpotAsync(schedule.AcademyId, pickupSpotSeq, dbTransaction,
+                    cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<UpdateSchedulePickupSpotResultDto>
+                {
+                    message = "잘못된 요청입니다.",
+                    data = new UpdateSchedulePickupSpotResultDto { reason = ReasonInvalidPickupSpot },
+                    code = 409
+                };
+            }
+
+            // 6) 값이 지금과 같으면 쓰지 않는다. 다르면 우리 픽업 장소만 바꾼다 — 감사 컬럼은 Service가 채운다.
+            //    오늘 이미 진행 중인 계획은 바꾸지 않는다 [ADR-0025]
+            if (schedule.PickupSpotId != dto.pickupSpotSeq
+                && !await _scheduleRepository.UpdateSchedulePickupSpotAsync(dto.scheduleSeq.Value, dto.pickupSpotSeq,
+                    thisTime, AuditUser, cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return Fail<UpdateSchedulePickupSpotResultDto>(500, "서버에서 요청을 처리하지 못하였습니다.");
+            }
+
+            // 7) 응답 — 저장한 뒤의 값을 커밋 전에 읽는다
+            var pickupSpot = await _scheduleRepository.GetSchedulePickupSpotAsync(dto.scheduleSeq.Value, dbTransaction,
+                cancellationToken).ConfigureAwait(false);
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+            return new ResponseModel<UpdateSchedulePickupSpotResultDto>
+            {
+                message = "요청이 정상 처리되었습니다.",
+                data = new UpdateSchedulePickupSpotResultDto
+                {
+                    reason = null,
+                    scheduleSeq = dto.scheduleSeq.Value,
+                    pickupSpot = pickupSpot
+                },
+                code = 200
+            };
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && !IsDeadlock(ex)) // 요청 취소·교착은 그대로 올려보낸다
+        {
+            LogServiceException(ex);
+            return Fail<UpdateSchedulePickupSpotResultDto>(500, "서버에서 요청을 처리하지 못하였습니다.");
+        }
+    }
+
+    /// <summary>
     /// 시간표 삭제
     /// </summary>
     public Task<ResponseModel<DeleteScheduleResultDto>> DeleteScheduleService(DeleteScheduleDto dto,
@@ -598,7 +699,7 @@ public class ScheduleService : IScheduleService
             }
 
             // 13) 요일과 시간표를 바꾼다 — 감사 컬럼은 Service가 채운다
-            if (!await _scheduleRepository.UpdateScheduleAsync(scheduleSeq, academyId.Value, input.DisplayName,
+            if (!await _scheduleRepository.UpdateScheduleAsync(scheduleSeq, academyId.Value, academyChanged, input.DisplayName,
                     input.EndTime, deleteDayIds, reviveDayIds, newDays, thisTime, AuditUser, cancellationToken)
                     .ConfigureAwait(false))
             {

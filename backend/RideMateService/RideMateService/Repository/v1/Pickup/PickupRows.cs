@@ -5,6 +5,8 @@ namespace RideMateService.Repository.v1.Pickup;
 /// </summary>
 public class TodayPickupRow
 {
+    public string? AreaName { get; set; }
+
     public int TimetableDayId { get; set; }
     public int AcademyId { get; set; }
     public int? AreaId { get; set; }
@@ -12,6 +14,7 @@ public class TodayPickupRow
     public TimeSpan EndTime { get; set; }
     public decimal? AcademyLat { get; set; }
     public decimal? AcademyLng { get; set; }
+    public int? PreferredSpotId { get; set; } // 시간표의 우리 픽업 장소(TIMETABLE.PICKUP_SPOT_ID)
 }
 
 /// <summary>
@@ -64,6 +67,9 @@ public class PickupSpotRow
     public byte WalkMin { get; set; }
     public string? WalkPathWkt { get; set; }
     public byte Capacity { get; set; }
+    public string? GuideText { get; set; }
+    public string? PhotoUrl { get; set; }
+    public string? Note { get; set; }
 }
 
 /// <summary>
@@ -154,7 +160,7 @@ public class LinkTargetRow
 }
 
 /// <summary>
-/// 링크 관련 이벤트(LINK_SENT·REMIND_SENT·LINK_OPENED·CHILD_LEAVING) 한 건
+/// 링크 관련 이벤트(LINK_SENT·LINK_RESENT·REMIND_SENT·LINK_OPENED·CHILD_LEAVING) 한 건
 /// </summary>
 public class LinkEventRow
 {
@@ -183,6 +189,8 @@ public class LeaveSessionRow
 /// </summary>
 public class LivePlanRow
 {
+    public string? AreaName { get; set; }
+
     public int PickupPlanId { get; set; }
     public int? UserId { get; set; }
     public int? TimetableDayId { get; set; }
@@ -208,6 +216,7 @@ public class LivePlanRow
     public decimal? AcademyLat { get; set; }
     public decimal? AcademyLng { get; set; }
     public int? ParkingLotId { get; set; }
+    public int? PreferredSpotId { get; set; } // 계획 시간표의 우리 픽업 장소(TIMETABLE.PICKUP_SPOT_ID)
 }
 
 /// <summary>
@@ -228,6 +237,25 @@ public class TimetableDayLockRow
     public TimeSpan EndTime { get; set; }
     public bool Skipped { get; set; }
     public bool Alive { get; set; }
+    public int? PreferredSpotId { get; set; } // 시간표의 우리 픽업 장소(TIMETABLE.PICKUP_SPOT_ID)
+}
+
+/// <summary>
+/// 픽업 장소 후보 목록 대상 시간표 한 건. EndTime은 그 날짜 요일의 TIME_CHANGE 예외를 반영한 하원 시각이고,
+/// TimetableDayId는 그 날짜 요일의 살아 있는 요일 행이다(없으면 null). AreaId·AreaName·AcademyLat·AcademyLng는 학원의 현재 값이다
+/// </summary>
+public class PickupSpotTargetRow
+{
+    public int TimetableId { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+    public int AcademyId { get; set; }
+    public int? AreaId { get; set; }
+    public string? AreaName { get; set; }
+    public decimal? AcademyLat { get; set; }
+    public decimal? AcademyLng { get; set; }
+    public int? PreferredSpotId { get; set; }
+    public TimeSpan EndTime { get; set; }
+    public int? TimetableDayId { get; set; }
 }
 
 /// <summary>
@@ -275,4 +303,67 @@ public class PlanEventRow
 {
     public string EventType { get; set; } = string.Empty;
     public string? Detail { get; set; }
+}
+
+/// <summary>
+/// 아이 픽업 안내에 쓰는 운전자와 차량 정보
+/// </summary>
+public class ChildPickupDriverRow
+{
+    /// <summary>
+    /// 운전자 이름
+    /// </summary>
+    public string UserName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 차종
+    /// </summary>
+    public string? CarModel { get; set; }
+
+    /// <summary>
+    /// 차 색
+    /// </summary>
+    public string? CarColor { get; set; }
+
+    /// <summary>
+    /// 차량 번호 뒷자리 4자리
+    /// </summary>
+    public string? CarNoLast4 { get; set; }
+}
+
+/// <summary>
+/// 위치 보고 대상 계획
+/// </summary>
+public class PositionPlanRow
+{
+    /// <summary>
+    /// 소유 사용자 ID. 익명화되었으면 null
+    /// </summary>
+    public int? UserId { get; set; }
+
+    /// <summary>
+    /// 계획 상태
+    /// </summary>
+    public string Status { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 계획 만료 시각
+    /// </summary>
+    public DateTime ExpireDt { get; set; }
+}
+
+/// <summary>
+/// 픽업 장소 추가 요청 대상 시간표의 학원
+/// </summary>
+public class SpotRequestScheduleRow
+{
+    /// <summary>
+    /// 학원 ID
+    /// </summary>
+    public int AcademyId { get; set; }
+
+    /// <summary>
+    /// 학원가 ID. 학원에 좌표가 없으면 null
+    /// </summary>
+    public int? AreaId { get; set; }
 }

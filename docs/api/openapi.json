@@ -590,6 +590,50 @@
         ]
       }
     },
+    "/api/v1/ChildInfo/M/sign/UpdateChild": {
+      "patch": {
+        "tags": [
+          "ChildInfo"
+        ],
+        "summary": "아이 정보 수정",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_ChildInfo_Request_UpdateChildDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_ChildInfo_Response_AddChildResultDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_ChildInfo_Response_AddChildResultDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/api/v1/Pickup/M/sign/DetailDepartureGuide": {
       "get": {
         "tags": [
@@ -597,6 +641,16 @@
         ],
         "summary": "출발 안내 계산",
         "parameters": [
+          {
+            "name": "pickupSpotSeq",
+            "in": "query",
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
           {
             "name": "currentDt",
             "in": "query",
@@ -685,6 +739,16 @@
         ],
         "summary": "대기 장소 추천 목록",
         "parameters": [
+          {
+            "name": "pickupSpotSeq",
+            "in": "query",
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
           {
             "name": "currentDt",
             "in": "query",
@@ -789,6 +853,86 @@
         ]
       }
     },
+    "/api/v1/Pickup/M/sign/GetPickupSpotList": {
+      "get": {
+        "tags": [
+          "Pickup"
+        ],
+        "summary": "픽업 장소 후보 목록",
+        "parameters": [
+          {
+            "name": "scheduleSeq",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "currentDt",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_PickupSpotListDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_PickupSpotListDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_PickupSpotListDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_PickupSpotListDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/api/v1/Pickup/M/sign/GetRestrictedZoneList": {
       "get": {
         "tags": [
@@ -851,6 +995,55 @@
             "application/*+json": {
               "schema": {
                 "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupLinkDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_PickupLinkSendDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/Pickup/M/sign/AddPickupLinkResend": {
+      "post": {
+        "tags": [
+          "Pickup"
+        ],
+        "summary": "정차 전 픽업 링크 다시 보내기",
+        "requestBody": {
+          "content": {
+            "application/json-patch+json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupLinkResendDto"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupLinkResendDto"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupLinkResendDto"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupLinkResendDto"
               }
             }
           }
@@ -950,6 +1143,61 @@
                 }
               }
             }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/Pickup/M/sign/DetailPickupLinkStream": {
+      "get": {
+        "tags": [
+          "Pickup"
+        ],
+        "summary": "픽업 링크 전달 상태 실시간 연결(SSE)",
+        "parameters": [
+          {
+            "name": "pickupPlanSeq",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_System_Object"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_System_Object"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_System_Object"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "description": "Internal Server Error"
           }
         },
         "security": [
@@ -1106,6 +1354,66 @@
         ]
       }
     },
+    "/api/v1/Pickup/M/sign/UpdatePickupPlanPosition": {
+      "patch": {
+        "tags": [
+          "Pickup"
+        ],
+        "summary": "차 위치·내비 남은 시간 보고",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_UpdatePickupPlanPositionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_PickupPlanPositionDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_PickupPlanPositionDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_PickupPlanPositionDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/api/v1/Pickup/M/sign/UpdatePickupPlanBoard": {
       "patch": {
         "tags": [
@@ -1236,6 +1544,224 @@
             "Bearer": [ ]
           }
         ]
+      }
+    },
+    "/api/v1/Pickup/M/sign/AddPickupSpotRequest": {
+      "post": {
+        "tags": [
+          "Pickup"
+        ],
+        "summary": "픽업 장소 추가 요청",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupSpotRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_AddPickupSpotRequestResultDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_AddPickupSpotRequestResultDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_AddPickupSpotRequestResultDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_AddPickupSpotRequestResultDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/Pickup/W/DetailChildPickup": {
+      "get": {
+        "tags": [
+          "PickupWeb"
+        ],
+        "summary": "아이 픽업 안내 조회(휴대폰 웹)",
+        "parameters": [
+          {
+            "name": "X-Pickup-Token",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_ChildPickupDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_ChildPickupDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/v1/Pickup/W/AddPickupLinkOpen": {
+      "post": {
+        "tags": [
+          "PickupWeb"
+        ],
+        "summary": "아이 픽업 링크 열람 기록(휴대폰 웹)",
+        "parameters": [
+          {
+            "name": "X-Pickup-Token",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_ChildPickupOpenDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_ChildPickupOpenDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_ChildPickupOpenDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/v1/Pickup/W/DetailChildPickupStream": {
+      "get": {
+        "tags": [
+          "PickupWeb"
+        ],
+        "summary": "아이 픽업 안내 실시간 연결(휴대폰 웹, SSE)",
+        "parameters": [
+          {
+            "name": "X-Pickup-Token",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_System_Object"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_System_Object"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_System_Object"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
       }
     },
     "/api/v1/Pickup/W/AddChildLeave": {
@@ -1460,6 +1986,50 @@
         ]
       }
     },
+    "/api/v1/Schedule/M/sign/UpdateSchedulePickupSpot": {
+      "patch": {
+        "tags": [
+          "Schedule"
+        ],
+        "summary": "우리 픽업 장소 저장",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Schedule_Request_UpdateSchedulePickupSpotDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Schedule_Response_UpdateSchedulePickupSpotResultDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Schedule_Response_UpdateSchedulePickupSpotResultDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/api/v1/Schedule/M/sign/UpdateSchedule": {
       "patch": {
         "tags": [
@@ -1609,6 +2179,65 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_User_Response_SetupCompleteDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/User/M/sign/UpdateSetting": {
+      "patch": {
+        "tags": [
+          "User"
+        ],
+        "summary": "설정 저장",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_User_Request_UpdateSettingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_User_Response_SettingDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
+    "/api/v1/User/M/sign/DetailUser": {
+      "get": {
+        "tags": [
+          "User"
+        ],
+        "summary": "계정 정보 조회",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_User_Response_DetailUserDto"
                 }
               }
             }
@@ -2052,6 +2681,33 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_Dto_v1_ChildInfo_Request_UpdateChildDto": {
+        "required": [
+          "childSeq"
+        ],
+        "type": "object",
+        "properties": {
+          "childSeq": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "childName": {
+            "type": "string",
+            "nullable": true
+          },
+          "phone": {
+            "pattern": "^01[016789][0-9]{7,8}$",
+            "type": "string",
+            "nullable": true
+          },
+          "sendChannel": {
+            "pattern": "^(SMS|ALIMTALK)$",
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_Dto_v1_ChildInfo_Response_AddChildResultDto": {
         "type": "object",
         "properties": {
@@ -2112,6 +2768,29 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupLinkResendDto": {
+        "required": [
+          "clientEventId",
+          "etaDt",
+          "pickupPlanSeq"
+        ],
+        "type": "object",
+        "properties": {
+          "pickupPlanSeq": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "etaDt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "clientEventId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupRemindDto": {
         "required": [
           "clientEventId",
@@ -2126,6 +2805,43 @@
           "clientEventId": {
             "type": "string",
             "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupSpotRequestDto": {
+        "required": [
+          "scheduleSeq"
+        ],
+        "type": "object",
+        "properties": {
+          "scheduleSeq": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32"
+          },
+          "lat": {
+            "maximum": 90,
+            "minimum": -90,
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "lng": {
+            "maximum": 180,
+            "minimum": -180,
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "placeName": {
+            "type": "string",
+            "nullable": true
+          },
+          "memo": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -2178,6 +2894,13 @@
         ],
         "type": "object",
         "properties": {
+          "pickupSpotSeq": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
           "pickupPlanSeq": {
             "type": "integer",
             "format": "int32"
@@ -2203,6 +2926,40 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_Dto_v1_Pickup_Request_UpdatePickupPlanPositionDto": {
+        "required": [
+          "lat",
+          "lng",
+          "pickupPlanSeq"
+        ],
+        "type": "object",
+        "properties": {
+          "pickupPlanSeq": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "lat": {
+            "maximum": 90,
+            "minimum": -90,
+            "type": "number",
+            "format": "double"
+          },
+          "lng": {
+            "maximum": 180,
+            "minimum": -180,
+            "type": "number",
+            "format": "double"
+          },
+          "etaSec": {
+            "maximum": 10800,
+            "minimum": 0,
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_Dto_v1_Pickup_Request_UpdatePickupPlanStartDto": {
         "required": [
           "clientEventId",
@@ -2211,6 +2968,13 @@
         ],
         "type": "object",
         "properties": {
+          "pickupSpotSeq": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
           "clientEventId": {
             "type": "string",
             "format": "uuid"
@@ -2309,6 +3073,16 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_Dto_v1_Pickup_Response_AddPickupSpotRequestResultDto": {
+        "type": "object",
+        "properties": {
+          "pickupSpotRequestSeq": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_Dto_v1_Pickup_Response_ChildLeaveDto": {
         "type": "object",
         "properties": {
@@ -2329,6 +3103,139 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Pickup_Response_ChildPickupCarDto": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "nullable": true
+          },
+          "color": {
+            "type": "string",
+            "nullable": true
+          },
+          "noLast4": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Pickup_Response_ChildPickupDto": {
+        "type": "object",
+        "properties": {
+          "linkStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "serverDt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "driverName": {
+            "type": "string",
+            "nullable": true
+          },
+          "car": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_ChildPickupCarDto"
+          },
+          "academy": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_GeoPointDto"
+          },
+          "pickup": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_PickupPlanLocationDto"
+          },
+          "walkPath": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_GeoPointDto"
+            },
+            "nullable": true
+          },
+          "planStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "stopAtSpot": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "slotDt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "arrivalDt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "arrivalSource": {
+            "type": "string",
+            "nullable": true
+          },
+          "vehicle": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_ChildPickupVehicleDto"
+          },
+          "leave": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_ChildPickupLeaveDto"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Pickup_Response_ChildPickupLeaveDto": {
+        "type": "object",
+        "properties": {
+          "leaveStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "plannedLeaveDt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "leavingDt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Pickup_Response_ChildPickupOpenDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "openedDt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Pickup_Response_ChildPickupVehicleDto": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number",
+            "format": "double"
+          },
+          "lng": {
+            "type": "number",
+            "format": "double"
+          },
+          "reportedDt": {
+            "type": "string",
+            "format": "date-time"
           }
         },
         "additionalProperties": false
@@ -2443,6 +3350,10 @@
       "RideMateService_Comm_Dto_v1_Pickup_Response_DetailDepartureGuideDto": {
         "type": "object",
         "properties": {
+          "areaName": {
+            "type": "string",
+            "nullable": true
+          },
           "academyName": {
             "type": "string",
             "nullable": true
@@ -2548,6 +3459,15 @@
           },
           "remindStatus": {
             "type": "string",
+            "nullable": true
+          },
+          "resendStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "resentDt": {
+            "type": "string",
+            "format": "date-time",
             "nullable": true
           }
         },
@@ -2698,6 +3618,130 @@
           },
           "photoUrl": {
             "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Pickup_Response_PickupPlanPositionDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Pickup_Response_PickupSpotItemDto": {
+        "type": "object",
+        "properties": {
+          "pickupSpotSeq": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "spotName": {
+            "type": "string",
+            "nullable": true
+          },
+          "lat": {
+            "type": "number",
+            "format": "double"
+          },
+          "lng": {
+            "type": "number",
+            "format": "double"
+          },
+          "guideText": {
+            "type": "string",
+            "nullable": true
+          },
+          "photoUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "walkMin": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "walkPath": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_GeoPointDto"
+            },
+            "nullable": true
+          },
+          "distanceM": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "recommended": {
+            "type": "boolean"
+          },
+          "preferred": {
+            "type": "boolean"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "unavailableReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "blockReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "blockStartTime": {
+            "type": "string",
+            "nullable": true
+          },
+          "blockEndTime": {
+            "type": "string",
+            "nullable": true
+          },
+          "busy": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Pickup_Response_PickupSpotListDto": {
+        "type": "object",
+        "properties": {
+          "scheduleSeq": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "academyName": {
+            "type": "string",
+            "nullable": true
+          },
+          "endTime": {
+            "type": "string",
+            "nullable": true
+          },
+          "areaName": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "academyFrontRestricted": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "spots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_PickupSpotItemDto"
+            },
             "nullable": true
           }
         },
@@ -3037,6 +4081,28 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_Dto_v1_Schedule_Request_UpdateSchedulePickupSpotDto": {
+        "required": [
+          "scheduleSeq"
+        ],
+        "type": "object",
+        "properties": {
+          "scheduleSeq": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32"
+          },
+          "pickupSpotSeq": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_Dto_v1_Schedule_Response_AddScheduleResultDto": {
         "type": "object",
         "properties": {
@@ -3119,6 +4185,9 @@
               "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Schedule_Response_ScheduleDayDto"
             },
             "nullable": true
+          },
+          "pickupSpot": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Schedule_Response_SchedulePickupSpotDto"
           }
         },
         "additionalProperties": false
@@ -3141,6 +4210,45 @@
           "endTime": {
             "type": "string",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Schedule_Response_SchedulePickupSpotDto": {
+        "type": "object",
+        "properties": {
+          "pickupSpotSeq": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "spotName": {
+            "type": "string",
+            "nullable": true
+          },
+          "walkMin": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "preferred": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Schedule_Response_UpdateSchedulePickupSpotResultDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "scheduleSeq": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "pickupSpot": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Schedule_Response_SchedulePickupSpotDto"
           }
         },
         "additionalProperties": false
@@ -3172,6 +4280,18 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_Dto_v1_User_Request_UpdateSettingDto": {
+        "required": [
+          "autoSendYn"
+        ],
+        "type": "object",
+        "properties": {
+          "autoSendYn": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_Dto_v1_User_Request_UpdateVehicleDto": {
         "type": "object",
         "properties": {
@@ -3192,6 +4312,43 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_Dto_v1_User_Response_DetailUserChildDto": {
+        "type": "object",
+        "properties": {
+          "childSeq": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "childName": {
+            "type": "string",
+            "nullable": true
+          },
+          "phoneMasked": {
+            "type": "string",
+            "nullable": true
+          },
+          "sendChannel": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_User_Response_DetailUserDto": {
+        "type": "object",
+        "properties": {
+          "child": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_User_Response_DetailUserChildDto"
+          },
+          "home": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_User_Response_HomeDto"
+          },
+          "autoSendYn": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_Dto_v1_User_Response_HomeDto": {
         "type": "object",
         "properties": {
@@ -3208,6 +4365,15 @@
             "type": "number",
             "format": "double",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_User_Response_SettingDto": {
+        "type": "object",
+        "properties": {
+          "autoSendYn": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -3330,6 +4496,24 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_AddPickupSpotRequestResultDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_AddPickupSpotRequestResultDto"
+          },
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_ChildLeaveDto": {
         "type": "object",
         "properties": {
@@ -3339,6 +4523,42 @@
           },
           "data": {
             "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_ChildLeaveDto"
+          },
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_ChildPickupDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_ChildPickupDto"
+          },
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_ChildPickupOpenDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_ChildPickupOpenDto"
           },
           "code": {
             "type": "integer",
@@ -3438,6 +4658,42 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_PickupPlanPositionDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_PickupPlanPositionDto"
+          },
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_PickupSpotListDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_PickupSpotListDto"
+          },
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_WaitingPlaceListDto": {
         "type": "object",
         "properties": {
@@ -3510,6 +4766,42 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Schedule_Response_UpdateSchedulePickupSpotResultDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Schedule_Response_UpdateSchedulePickupSpotResultDto"
+          },
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_User_Response_DetailUserDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_User_Response_DetailUserDto"
+          },
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_User_Response_HomeDto": {
         "type": "object",
         "properties": {
@@ -3519,6 +4811,24 @@
           },
           "data": {
             "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_User_Response_HomeDto"
+          },
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_User_Response_SettingDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_User_Response_SettingDto"
           },
           "code": {
             "type": "integer",
@@ -3618,6 +4928,22 @@
             },
             "nullable": true
           },
+          "code": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_ResponseModel_System_Object": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "data": { },
           "code": {
             "type": "integer",
             "format": "int32",

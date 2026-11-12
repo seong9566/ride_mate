@@ -1,4 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Options;
+using Newtonsoft.Json;
 using RideMateService.Comm;
 using RideMateService.Comm.Dto.v1.Pickup.Request;
 using RideMateService.Comm.Dto.v1.Pickup.Response;
@@ -14,11 +17,14 @@ public class PickupController : ApiControllerBase
 {
     private readonly ILogService _logService;
     private readonly IPickupService _pickupService;
+    private readonly JsonSerializerSettings _jsonSettings;
 
-    public PickupController(ILogService logService, IPickupService pickupService)
+    public PickupController(ILogService logService, IPickupService pickupService,
+        IOptions<MvcNewtonsoftJsonOptions> jsonOptions)
     {
         this._logService = logService;
         this._pickupService = pickupService;
+        this._jsonSettings = jsonOptions.Value.SerializerSettings;
     }
 
     /// <summary>
@@ -72,6 +78,44 @@ public class PickupController : ApiControllerBase
         try
         {
             var model = await _pickupService.GetWaitingPlaceListService(dto, cancellationToken).ConfigureAwait(false);
+            return ToActionResult(model);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // 앱이 요청을 끊었다. 오류로 기록하지 않는다
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
+
+    /// <summary>
+    /// 픽업 장소 후보 목록
+    /// </summary>
+    /// <remarks>
+    /// 응답 code: 200 정상(후보가 없으면 reason과 빈 목록), 400 잘못된 입력, 401 인증 실패, 404 시간표 없음, 500 서버 처리 실패
+    /// </remarks>
+    [Produces("application/json")]
+    [HttpGet]
+    [Route("v1/Pickup/M/sign/GetPickupSpotList")]
+    [SwaggerOperation(Summary = "픽업 장소 후보 목록")]
+    [ProducesResponseType(typeof(ResponseModel<PickupSpotListDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ResponseModel<PickupSpotListDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ResponseModel<PickupSpotListDto>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ResponseModel<PickupSpotListDto>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetPickupSpotList([FromQuery] PickupSpotListQueryDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _pickupService.GetPickupSpotListService(dto, cancellationToken).ConfigureAwait(false);
             return ToActionResult(model);
         }
         catch (Exception) when (cancellationToken.IsCancellationRequested)
@@ -151,6 +195,36 @@ public class PickupController : ApiControllerBase
     }
 
     /// <summary>
+    /// 정차 전 픽업 링크 다시 보내기
+    /// </summary>
+    [Produces("application/json")]
+    [HttpPost]
+    [Route("v1/Pickup/M/sign/AddPickupLinkResend")]
+    [SwaggerOperation(Summary = "정차 전 픽업 링크 다시 보내기")]
+    [ProducesResponseType(typeof(ResponseModel<PickupLinkSendDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> AddPickupLinkResend([FromBody] AddPickupLinkResendDto dto, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _pickupService.AddPickupLinkResendService(dto, cancellationToken).ConfigureAwait(false);
+            return ToActionResult(model);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // 앱이 요청을 끊었다. 오류로 기록하지 않는다
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
+
+    /// <summary>
     /// 정차 후 다시 알림 문자 발송
     /// </summary>
     [Produces("application/json")]
@@ -207,6 +281,54 @@ public class PickupController : ApiControllerBase
 #if DEBUG
             _logService.ConsoleWarning(ex.ToString());
 #endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
+
+    /// <summary>
+    /// 픽업 링크 전달 상태 실시간 연결(SSE)
+    /// </summary>
+    /// <remarks>
+    /// 판정 실패는 SSE가 아니라 JSON이다: 400 pickupPlanSeq 없음, 401 인증 실패, 404 계획 없음·남의 계획·끝난 계획, 429 요청 초과(사용자마다 1분 20회), 500.
+    /// 성공하면 text/event-stream으로 연결 직후 `linkStatus`(DetailPickupLinkStatus의 data와 같은 모양) 하나를 보내고, 아이 열람·출발 알림·"곧 나와요" 전환·문자 발송 결과로 값이 바뀔 때만 다시 보낸다. 15초마다 `: ping` 주석 줄.
+    /// 계획이 끝나면(만료 시각 포함) `closed`를 보내고 닫는다. 접근 토큰 만료 시각, 30분, 같은 계획의 차량 연결 5개 초과(가장 오래된 것)에도 서버가 닫는다. 기존 DetailPickupLinkStatus 조회는 그대로 쓸 수 있다.
+    /// </remarks>
+    [HttpGet]
+    [Route("v1/Pickup/M/sign/DetailPickupLinkStream")]
+    [EnableRateLimiting(PickupLinkStreamRateLimit.PolicyName)]
+    [SwaggerOperation(Summary = "픽업 링크 전달 상태 실시간 연결(SSE)")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ResponseModel<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(void), StatusCodes.Status429TooManyRequests)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> DetailPickupLinkStream([FromQuery] PickupLinkStatusQueryDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _pickupService.OpenPickupLinkStreamService(dto, cancellationToken).ConfigureAwait(false);
+            if (model.code != 200)
+                return ToActionResult(model);
+
+            await SseWriter.WriteAsync(Response, _pickupService.ReadPickupLinkStreamAsync(model.data!, cancellationToken),
+                _jsonSettings, cancellationToken).ConfigureAwait(false);
+            return new EmptyResult();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return new EmptyResult();
+        }
+        catch (Exception ex)
+        {
+            var message = $"vehicle link stream failed: plan={dto?.pickupPlanSeq?.ToString() ?? "unknown"}\n{ex}";
+            _logService.LogMessage(message);
+#if DEBUG
+            _logService.ConsoleWarning(message);
+#endif
+            if (Response.HasStarted)
+                return new EmptyResult();
+
+            Response.ContentType = null;
             return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
         }
     }
@@ -304,6 +426,43 @@ public class PickupController : ApiControllerBase
         }
     }
 
+    /// <summary>차 위치·내비 남은 시간 보고</summary>
+    /// <remarks>경로 시작부터 탑승 전까지 3초마다 부른다. etaSec는 내비 목적지가 이 계획의 픽업 장소일 때만 보낸다. 위치는 서버 메모리에 계획마다 마지막 하나만 두고 DB에 쓰지 않는다. 오프라인 대기열에 쌓아 다시 보내지 않는다. 1초 안에 다시 온 보고는 200으로 받고 버린다.
+    /// 응답 code: 200 정상(data null), 400 검증 실패, 401 인증 실패, 404 계획 없음·남의 계획·끝난 계획, 409 PLAN_CLOSED·NOT_STARTED, 429 요청 초과(사용자마다 1분 120회), 500 서버 처리 실패</remarks>
+    [Produces("application/json")]
+    [HttpPatch]
+    [Route("v1/Pickup/M/sign/UpdatePickupPlanPosition")]
+    [Consumes("application/json")]
+    [EnableRateLimiting(PickupPositionRateLimit.PolicyName)]
+    [SwaggerOperation(Summary = "차 위치·내비 남은 시간 보고")]
+    [ProducesResponseType(typeof(ResponseModel<PickupPlanPositionDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ResponseModel<PickupPlanPositionDto>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ResponseModel<PickupPlanPositionDto>), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(void), StatusCodes.Status429TooManyRequests)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> UpdatePickupPlanPosition([FromBody] UpdatePickupPlanPositionDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _pickupService.UpdatePickupPlanPositionService(dto, cancellationToken).ConfigureAwait(false);
+            return ToActionResult(model);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // 앱이 요청을 끊었다. 오류로 기록하지 않는다
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
+
     /// <summary>
     /// 탑승 기록(오늘 계획을 BOARDED로 끝낸다)
     /// </summary>
@@ -381,6 +540,48 @@ public class PickupController : ApiControllerBase
         try
         {
             var model = await _pickupService.DeletePickupPlanService(dto, cancellationToken).ConfigureAwait(false);
+            return ToActionResult(model);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // 앱이 요청을 끊었다. 오류로 기록하지 않는다
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
+
+    /// <summary>
+    /// 픽업 장소 추가 요청
+    /// </summary>
+    /// <remarks>
+    /// 후보 지점에 원하는 곳이 없을 때 운영팀에 남기는 요청이다. 계정·아이·시간표를 가리키는 값은 저장하지 않는다.
+    /// 응답 code: 200 정상, 400 잘못된 입력(좌표는 둘 다 있거나 둘 다 없어야 한다), 401 인증 실패, 404 내 시간표가 아님, 429 요청 초과(사용자마다 1시간 5건), 500 서버 처리 실패
+    /// </remarks>
+    [Produces("application/json")]
+    [HttpPost]
+    [Route("v1/Pickup/M/sign/AddPickupSpotRequest")]
+    [Consumes("application/json")]
+    [EnableRateLimiting(PickupSpotRequestRateLimit.PolicyName)]
+    [SwaggerOperation(Summary = "픽업 장소 추가 요청")]
+    [ProducesResponseType(typeof(ResponseModel<AddPickupSpotRequestResultDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ResponseModel<AddPickupSpotRequestResultDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ResponseModel<AddPickupSpotRequestResultDto>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ResponseModel<AddPickupSpotRequestResultDto>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(void), StatusCodes.Status429TooManyRequests)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> AddPickupSpotRequest([FromBody] AddPickupSpotRequestDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _pickupService.AddPickupSpotRequestService(dto, cancellationToken).ConfigureAwait(false);
             return ToActionResult(model);
         }
         catch (Exception) when (cancellationToken.IsCancellationRequested)

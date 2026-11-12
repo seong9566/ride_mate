@@ -19,6 +19,7 @@ public class LiveScheduleRow
     public int TimetableId { get; set; }
     public int AcademyId { get; set; }
     public TimeSpan EndTime { get; set; }
+    public int? PickupSpotId { get; set; } // 우리 픽업 장소(TIMETABLE.PICKUP_SPOT_ID)
 }
 
 /// <summary>
