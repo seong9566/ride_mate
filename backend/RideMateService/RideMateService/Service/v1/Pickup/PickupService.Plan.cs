@@ -20,6 +20,10 @@ public partial class PickupService
     private const string EventPlanned = "PLANNED";
     private const string EventReassigned = "REASSIGNED";
     private const string ReassignReasonLocationChanged = "LOCATION_CHANGED";
+    private const string ReassignReasonLateStart = "LATE_START";
+    private const string EventStarted = "STARTED";
+    private const int StartEventPastLimitMin = 10;
+    private const int StartEventFutureLimitMin = 1;
     private const string LocationTypeSpot = "SPOT";
     private const string LocationTypeCustom = "CUSTOM";
     private const string ReasonTooEarly = "TOO_EARLY";
@@ -329,11 +333,16 @@ public partial class PickupService
                 return rejected;
             }
 
-            // 5-3) 같은 clientEventId의 재배정이 이미 있으면 같은 요청을 다시 부른 것이다. 지금 계획을 돌려준다
-            if (await _pickupRepository.HasPlanEventAsync(pickupPlanId, EventReassigned, clientEventId, dbTransaction,
-                    cancellationToken).ConfigureAwait(false))
+            // 5-3) 같은 clientEventId의 재배정이 이미 있으면 같은 요청을 다시 부른 것이다. 지금 계획을 돌려준다.
+            //      다른 유형의 이벤트가 그 번호를 쓰고 있으면 잘못된 요청이다(링크 발송과 같다)
+            var sameEventType = await _pickupRepository.GetPlanEventTypeAsync(pickupPlanId, clientEventId, dbTransaction,
+                cancellationToken).ConfigureAwait(false);
+            if (sameEventType is not null)
             {
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                if (sameEventType != EventReassigned)
+                    return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
+
                 return PlanOk(await BuildPlanDtoAsync(pickupPlanId, false, null, cancellationToken).ConfigureAwait(false));
             }
 
@@ -421,7 +430,219 @@ public partial class PickupService
         }
     }
 
-    // 장소를 바꿀 수 있는지(설계 6.2). 남의 계획·끝난 계획(USER_ID NULL)은 404, 정차·한 바퀴 중이면 409 ALREADY_STOPPED,
+    /// <summary>
+    /// 경로 시작. 계획을 STARTED로 바꾸고, 차 도착 예상이 배정 시각보다 늦으면 같은 장소에서 배정 시각을 미룬다(설계 6.3)
+    /// </summary>
+    public async Task<ResponseModel<PickupPlanDto>> UpdatePickupPlanStartService(UpdatePickupPlanStartDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // 1) 인증 확인 — 로그인 사용자(USER_ID)는 HttpContext의 클레임 sub에서 꺼낸다
+            if (!int.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("sub"), out var userId))
+                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 401 };
+
+            // 2) 입력 검증 — 필수값, eventDt는 서버 현재 시각 기준 -10분 ~ +1분 안이어야 한다
+            if (dto?.pickupPlanSeq is null || dto.clientEventId is null || dto.eventDt is null || dto.driveMin is null)
+                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
+
+            var now = DateTime.Now;
+            var eventDt = dto.eventDt.Value;
+            if (eventDt < now.AddMinutes(-StartEventPastLimitMin) || eventDt > now.AddMinutes(StartEventFutureLimitMin))
+                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
+
+            var pickupPlanId = dto.pickupPlanSeq.Value;
+            var clientEventId = dto.clientEventId.Value;
+
+            // 3) 잠금 없이 소유·상태·만료를 먼저 본다. 이미 시작했으면 잠그지 않고 지금 계획을 돌려준다(두 번 눌러도 한 번)
+            var plan = await _pickupRepository.GetPlanByIdAsync(pickupPlanId, null, cancellationToken).ConfigureAwait(false);
+            if (plan is null)
+                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 404 };
+
+            var rejected = CheckPlanLocationChangeable(plan.UserId, plan.Status, plan.ExpireDt, userId, now);
+            if (rejected is not null)
+                return rejected;
+
+            if (plan.Status == PlanStatusStarted)
+                return PlanOk(await BuildPlanDtoAsync(pickupPlanId, false, null, cancellationToken).ConfigureAwait(false));
+
+            // 4) 트랜잭션 — 예외로 빠져나가면 await using이 트랜잭션을 롤백한다
+            var transaction = await _context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            await using var transactionScope = transaction.ConfigureAwait(false);
+            var dbTransaction = transaction.GetDbTransaction();
+
+            // 4-1) 재배정이 있을 수 있으므로 학원가 행 잠금이 첫 문장이다(재배정은 AREA 먼저). 계획의 AREA_ID는 바뀌지 않는다
+            if (!await _pickupRepository.LockAreaAsync(plan.AreaId, dbTransaction, cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                _logService.LogMessage($"pickup plan start area not found: plan={pickupPlanId}");
+                return new ResponseModel<PickupPlanDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+            }
+
+            // 4-2) 계획 행을 PK로 잠그고 잠근 값으로 다시 판정한다
+            var locked = await _pickupRepository.LockPickupPlanByIdAsync(pickupPlanId, dbTransaction, cancellationToken)
+                .ConfigureAwait(false);
+            // 기준 시각은 잠금을 얻은 뒤에 잡는다
+            var thisTime = DateTime.Now;
+            if (locked is null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 404 };
+            }
+
+            rejected = CheckPlanLocationChangeable(locked.UserId, locked.Status, locked.ExpireDt, userId, thisTime);
+            if (rejected is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return rejected;
+            }
+
+            // 그사이 다른 요청이 시작했으면 지금 계획을 돌려준다
+            if (locked.Status == PlanStatusStarted)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return PlanOk(await BuildPlanDtoAsync(pickupPlanId, false, null, cancellationToken).ConfigureAwait(false));
+            }
+
+            // 4-3) 같은 clientEventId의 시작 이벤트가 이미 있으면 같은 요청을 다시 부른 것이다. 지금 계획을 돌려준다.
+            //      다른 유형의 이벤트가 그 번호를 쓰고 있으면 잘못된 요청이다(링크 발송과 같다)
+            var sameEventType = await _pickupRepository.GetPlanEventTypeAsync(pickupPlanId, clientEventId, dbTransaction,
+                cancellationToken).ConfigureAwait(false);
+            if (sameEventType is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                if (sameEventType != EventStarted)
+                    return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
+
+                return PlanOk(await BuildPlanDtoAsync(pickupPlanId, false, null, cancellationToken).ConfigureAwait(false));
+            }
+
+            var entity = await _pickupRepository.GetPickupPlanEntityAsync(pickupPlanId, cancellationToken).ConfigureAwait(false);
+            if (entity is null || locked.EndTime is not { } endTime)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 404 };
+            }
+
+            entity.Status = PlanStatusStarted;
+            entity.StartDt = eventDt;
+
+            // 4-4) 늦은 출발 — 차 도착 예상(eventDt + driveMin, 분 단위 올림)이 배정 시각보다 늦으면 같은 장소에서 미룬다.
+            //      배정 장소가 없는 계획(SLOT_DT 없음)은 재배정하지 않는다
+            var carArrival = CeilToMinute(eventDt.AddMinutes(dto.driveMin.Value));
+            var reassigned = locked.SlotDt is { } currentSlot && carArrival > currentSlot;
+            if (reassigned)
+            {
+                if (locked.CustomLat is not null || locked.PickupSpotId is not { } spotId)
+                {
+                    // 임의 좌표는 정원이 없다
+                    entity.SlotDt = carArrival;
+                }
+                else
+                {
+                    // 기본 지점 — 차 도착 예상부터 SlotShiftMaxMin까지 1분씩 늦춰 정원이 남은 첫 시각. 자기 자리는 빼고 센다.
+                    // 자리가 없어도 다른 지점으로 옮기지 않고 차 도착 예상 시각으로 배정한다(정원 초과 허용, 설계 6.3)
+                    var capacity = await _pickupRepository.GetPickupSpotCapacityAsync(spotId, dbTransaction,
+                        cancellationToken).ConfigureAwait(false) ?? 0;
+                    DateTime? freeSlot = null;
+                    for (var shift = 0; shift <= _planOptions.SlotShiftMaxMin; shift++)
+                    {
+                        var slot = carArrival.AddMinutes(shift);
+                        var count = await _pickupRepository.CountSlotPlansAsync(spotId, slot, _planOptions.SlotWindowMin,
+                            thisTime, pickupPlanId, dbTransaction, cancellationToken).ConfigureAwait(false);
+                        if (count < capacity)
+                        {
+                            freeSlot = slot;
+                            break;
+                        }
+                    }
+
+                    if (freeSlot is null)
+                        _logService.LogMessage($"late start over capacity: plan={pickupPlanId}");
+
+                    entity.SlotDt = freeSlot ?? carArrival;
+                }
+
+                entity.ExpireDt = entity.SlotDt.Value.AddHours(_planOptions.ExpireAfterHours);
+            }
+
+            entity.UpdateDt = thisTime;
+            entity.UpdateUser = AuditUser;
+
+            if (!await _pickupRepository.UpdatePickupPlanAsync(entity, cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<PickupPlanDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+            }
+
+            // 4-5) STARTED 이벤트(EVENT_DT = 차량 출발 시각), 재배정했으면 그다음에 REASSIGNED 이벤트
+            var startedEvent = new PickupEvent
+            {
+                PickupPlanId = pickupPlanId,
+                EventType = EventStarted,
+                EventDt = eventDt,
+                ClientEventId = clientEventId,
+                Detail = null,
+                CreateDt = thisTime,
+                CreateUser = AuditUser,
+                UpdateDt = thisTime,
+                UpdateUser = AuditUser,
+                DeleteYn = false
+            };
+            if (!await _pickupRepository.AddPickupEventAsync(startedEvent, cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<PickupPlanDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+            }
+
+            if (reassigned)
+            {
+                // 늦은 출발 재배정은 출발이 낳은 것이라 EVENT_DT를 출발 시각에 맞춘다. 차량 이벤트 번호는 STARTED가 쓴다
+                var custom = locked.CustomLat is not null;
+                var reassignedEvent = new PickupEvent
+                {
+                    PickupPlanId = pickupPlanId,
+                    EventType = EventReassigned,
+                    EventDt = eventDt,
+                    ClientEventId = null,
+                    Detail = JsonSerializer.Serialize(new ReassignedDetail(ReassignReasonLateStart,
+                        locked.PickupSpotId, entity.PickupSpotId, custom, custom,
+                        FormatEventDt(locked.SlotDt), FormatEventDt(entity.SlotDt))),
+                    CreateDt = thisTime,
+                    CreateUser = AuditUser,
+                    UpdateDt = thisTime,
+                    UpdateUser = AuditUser,
+                    DeleteYn = false
+                };
+                if (!await _pickupRepository.AddPickupEventAsync(reassignedEvent, cancellationToken).ConfigureAwait(false))
+                {
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return new ResponseModel<PickupPlanDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+                }
+            }
+
+            await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+
+            return PlanOk(await BuildPlanDtoAsync(pickupPlanId, reassigned, null, cancellationToken).ConfigureAwait(false));
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 그대로 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return new ResponseModel<PickupPlanDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+        }
+    }
+
+    // 분 단위 올림. 초 이하가 0이 아니면 다음 분이다
+    private static DateTime CeilToMinute(DateTime value)
+    {
+        var remainder = value.Ticks % TimeSpan.TicksPerMinute;
+        return remainder == 0 ? value : value.AddTicks(TimeSpan.TicksPerMinute - remainder);
+    }
+
+    // 장소를 바꾸거나 경로를 시작할 수 있는지(설계 6.2·6.3). 남의 계획·끝난 계획(USER_ID NULL)은 404, 정차·한 바퀴 중이면 409 ALREADY_STOPPED,
     // PLANNED·STARTED·WAITING이 아니면 404, 만료 시각이 지났으면 409 PLAN_CLOSED. 바꿀 수 있으면 null
     private static ResponseModel<PickupPlanDto>? CheckPlanLocationChangeable(int? ownerId, string status, DateTime expireDt,
         int userId, DateTime now)

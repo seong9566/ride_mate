@@ -47,4 +47,10 @@ public interface IPickupService
     /// </summary>
     Task<ResponseModel<PickupPlanDto>> UpdatePickupPlanLocationService(UpdatePickupPlanLocationDto dto,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 경로 시작. 늦게 출발했으면 같은 장소에서 배정 시각을 차 도착 예상 시각으로 미룬다. 이미 시작했으면 지금 계획을 돌려준다
+    /// </summary>
+    Task<ResponseModel<PickupPlanDto>> UpdatePickupPlanStartService(UpdatePickupPlanStartDto dto,
+        CancellationToken cancellationToken = default);
 }
