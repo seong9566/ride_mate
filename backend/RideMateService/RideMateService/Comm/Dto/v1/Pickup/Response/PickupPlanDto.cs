@@ -6,7 +6,7 @@ namespace RideMateService.Comm.Dto.v1.Pickup.Response;
 public class PickupPlanDto
 {
     /// <summary>
-    /// 409일 때만 사유 코드 (TOO_EARLY, NO_ACADEMY_LOCATION). 200이면 null
+    /// 409일 때만 사유 코드 (TOO_EARLY, NO_ACADEMY_LOCATION, PLAN_CLOSED, ALREADY_STOPPED). 200이면 null
     /// </summary>
     public string? reason { get; set; }
 

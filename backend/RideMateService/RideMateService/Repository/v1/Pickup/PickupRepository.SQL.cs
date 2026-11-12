@@ -575,6 +575,7 @@ public partial class PickupRepository
     // LivePlanRow 조회의 SELECT·FROM 부분. 픽업 계열 테이블(PICKUP_PLAN)에는 DELETE_YN 조건을 붙이지 않는다(schema.md)
     private const string LivePlanSelectSql = @"
                 SELECT p.PICKUP_PLAN_ID AS PickupPlanId,
+                       p.USER_ID AS UserId,
                        p.TIMETABLE_DAY_ID AS TimetableDayId,
                        p.AREA_ID AS AreaId,
                        p.PICKUP_DATE AS PickupDate,
@@ -594,7 +595,9 @@ public partial class PickupRepository
                        s.GUIDE_TEXT AS GuideText,
                        s.PHOTO_URL AS PhotoUrl,
                        t.DISPLAY_NAME AS AcademyName,
-                       p.ACADEMY_ID AS AcademyId
+                       p.ACADEMY_ID AS AcademyId,
+                       a.LAT AS AcademyLat,
+                       a.LNG AS AcademyLng
                 FROM PICKUP_PLAN AS p
                 LEFT JOIN PICKUP_SPOT AS s
                        ON s.PICKUP_SPOT_ID = p.PICKUP_SPOT_ID
@@ -604,7 +607,9 @@ public partial class PickupRepository
                       AND td.DELETE_YN = FALSE
                 LEFT JOIN TIMETABLE AS t
                        ON t.TIMETABLE_ID = td.TIMETABLE_ID
-                      AND t.DELETE_YN = FALSE";
+                      AND t.DELETE_YN = FALSE
+                LEFT JOIN ACADEMY AS a
+                       ON a.ACADEMY_ID = p.ACADEMY_ID";
 
     /// <summary>
     /// 로그인한 부모의 진행 중 계획(그날 PICKUP_DATE, 끝나지 않은 STATUS, EXPIRE_DT > now) 중
@@ -814,6 +819,116 @@ public partial class PickupRepository
                   AND (@excludePlanId IS NULL OR p.PICKUP_PLAN_ID <> @excludePlanId)";
 
             return await _dapper.ExecuteScalarAsync<int>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 오늘 계획 행을 PK 인덱스로 FOR UPDATE 잠그고 읽는다. 재배정 트랜잭션에서 AREA 잠금 다음에 부른다.
+    /// DELETE_YN 조건을 붙이지 않으므로 끝난 계획도 돌려준다(UserId가 NULL). 행이 없으면 null
+    /// </summary>
+    public async Task<PlanLockRow?> LockPickupPlanByIdAsync(int pickupPlanId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("pickupPlanId", pickupPlanId);
+
+            // FORCE INDEX (PRIMARY) — 보조 인덱스로 잠그면 계획 끝내기(PK 먼저)와 교착한다(schema.md)
+            var sql = @"
+                SELECT p.PICKUP_PLAN_ID AS PickupPlanId,
+                       p.USER_ID AS UserId,
+                       p.ACADEMY_ID AS AcademyId,
+                       p.AREA_ID AS AreaId,
+                       p.PICKUP_DATE AS PickupDate,
+                       p.END_TIME AS EndTime,
+                       p.STATUS AS Status,
+                       p.PICKUP_SPOT_ID AS PickupSpotId,
+                       p.SLOT_DT AS SlotDt,
+                       p.CUSTOM_LAT AS CustomLat,
+                       p.EXPIRE_DT AS ExpireDt,
+                       p.TIMETABLE_DAY_ID AS TimetableDayId
+                FROM PICKUP_PLAN AS p FORCE INDEX (PRIMARY)
+                WHERE p.PICKUP_PLAN_ID = @pickupPlanId
+                FOR UPDATE";
+
+            return await _dapper.QueryFirstOrDefaultAsync<PlanLockRow>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 오늘 계획의 임의 좌표 도보 경로 선을 바꾼다. lineStringWkt는 SRID 4326 WKT("LINESTRING(위도 경도,…)")이고 null이면 비운다
+    /// </summary>
+    public async Task SetCustomWalkPathAsync(int pickupPlanId, string? lineStringWkt, IDbTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("pickupPlanId", pickupPlanId);
+            dp.Add("wkt", lineStringWkt);
+
+            // CUSTOM_WALK_PATH는 스캐폴드가 건너뛴 칸이라 Dapper로 쓴다. SRID 4326 WKT는 위도·경도 축 순서다
+            var sql = @"
+                UPDATE PICKUP_PLAN
+                SET CUSTOM_WALK_PATH = CASE WHEN @wkt IS NULL THEN NULL ELSE ST_GeomFromText(@wkt, 4326) END
+                WHERE PICKUP_PLAN_ID = @pickupPlanId";
+
+            await _dapper.ExecuteAsync(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 오늘 계획에 그 유형·차량 이벤트 번호의 이벤트가 있는지 조회한다
+    /// </summary>
+    public async Task<bool> HasPlanEventAsync(int pickupPlanId, string eventType, Guid clientEventId,
+        IDbTransaction transaction, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("pickupPlanId", pickupPlanId);
+            dp.Add("eventType", eventType);
+            // CHAR(36)에 소문자 하이픈 형식으로 저장된다
+            dp.Add("clientEventId", clientEventId.ToString("D"));
+
+            // UK_PICKUP_EVENT_01 (PICKUP_PLAN_ID, CLIENT_EVENT_ID). 픽업 계열 테이블이라 DELETE_YN 조건을 붙이지 않는다
+            var sql = @"
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM PICKUP_EVENT AS e
+                    WHERE e.PICKUP_PLAN_ID = @pickupPlanId
+                      AND e.CLIENT_EVENT_ID = @clientEventId
+                      AND e.EVENT_TYPE = @eventType)";
+
+            return await _dapper.ExecuteScalarAsync<bool>(
                 new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다

@@ -7,6 +7,7 @@ using MySql.Data.MySqlClient;
 using RideMateService.Comm;
 using RideMateService.Comm.Dto.v1.Pickup.Request;
 using RideMateService.Comm.Dto.v1.Pickup.Response;
+using RideMateService.Comm.Map;
 using RideMateService.Commons.DBModels;
 using RideMateService.Repository.v1.Pickup;
 
@@ -15,11 +16,17 @@ namespace RideMateService.Service.v1.Pickup;
 public partial class PickupService
 {
     private const string PlanStatusPlanned = "PLANNED";
+    private const string PlanStatusStarted = "STARTED";
     private const string EventPlanned = "PLANNED";
+    private const string EventReassigned = "REASSIGNED";
+    private const string ReassignReasonLocationChanged = "LOCATION_CHANGED";
     private const string LocationTypeSpot = "SPOT";
     private const string LocationTypeCustom = "CUSTOM";
     private const string ReasonTooEarly = "TOO_EARLY";
+    private const string ReasonAlreadyStopped = "ALREADY_STOPPED";
+    private const string DefaultCustomName = "부모님이 정한 장소";
     private const int PlanAreaRetryMaxAttempts = 3;
+    private static readonly string[] LocationChangeableStatuses = { "PLANNED", "STARTED", "WAITING" };
 
     /// <summary>
     /// 오늘 픽업 계획 만들기(이미 있으면 그 계획). 기본 지점을 우선순위·금지 시간·정원으로 배정한다
@@ -37,14 +44,11 @@ public partial class PickupService
             if (dto is null || (dto.pickupLat is null) != (dto.pickupLng is null))
                 return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
 
-            // 임의 좌표 계획은 아직 만들지 않는다(설계 6.1 처리 5, 다음 작업에서 채운다)
-            if (dto.pickupLat is not null)
-                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
-
             // 3) 잠근 시간표의 학원가가 잠근 학원가와 다르면(그사이 시간표 편집) 대상 고르기부터 다시 한다
             for (var attempt = 1; attempt <= PlanAreaRetryMaxAttempts; attempt++)
             {
-                var result = await TryAddPickupPlanAsync(userId, cancellationToken).ConfigureAwait(false);
+                var result = await TryAddPickupPlanAsync(userId, dto.pickupLat, dto.pickupLng, cancellationToken)
+                    .ConfigureAwait(false);
                 if (result is not null)
                     return result;
             }
@@ -62,8 +66,10 @@ public partial class PickupService
         }
     }
 
-    // 계획 만들기 한 번(설계 6.1 처리 1~7). 잠근 학원가가 틀려 처음부터 다시 해야 하면 null
-    private async Task<ResponseModel<PickupPlanDto>?> TryAddPickupPlanAsync(int userId, CancellationToken cancellationToken)
+    // 계획 만들기 한 번(설계 6.1 처리 1~7). 잠근 학원가가 틀려 처음부터 다시 해야 하면 null.
+    // pickupLat·pickupLng가 있으면 임의 좌표 계획을 만든다(둘 다 있거나 둘 다 없다)
+    private async Task<ResponseModel<PickupPlanDto>?> TryAddPickupPlanAsync(int userId, decimal? pickupLat,
+        decimal? pickupLng, CancellationToken cancellationToken)
     {
         var now = DateTime.Now;
         var date = DateOnly.FromDateTime(now);
@@ -87,8 +93,14 @@ public partial class PickupService
             return PlanConflict(ReasonTooEarly);
 
         // 4) 학원 좌표나 학원가가 없으면 지점을 배정할 수 없어 계획을 만들지 않는다
-        if (pickup.AcademyLat is null || pickup.AcademyLng is null || pickup.AreaId is not { } areaId)
+        if (pickup.AcademyLat is not { } academyLat || pickup.AcademyLng is not { } academyLng
+            || pickup.AreaId is not { } areaId)
             return PlanConflict(ReasonNoAcademyLocation);
+
+        // 5) 임의 좌표면 잠그기 전에 외부 호출(카카오 도보 경로·주소 변환)을 끝낸다
+        CustomLocation? custom = null;
+        if (pickupLat is { } lat && pickupLng is { } lng)
+            custom = await ResolveCustomLocationAsync(academyLat, academyLng, lat, lng, cancellationToken).ConfigureAwait(false);
 
         // 요일 유형 — 그해 공휴일이 적재되지 않았으면 공휴일이 아닌 것으로 본다. 기준 데이터라 잠그기 전에 읽는다
         var holiday = await _pickupRepository.GetHolidayAsync(date, cancellationToken).ConfigureAwait(false);
@@ -147,9 +159,25 @@ public partial class PickupService
             return PlanOk(await BuildPlanDtoAsync(existingId, false, null, cancellationToken).ConfigureAwait(false));
         }
 
-        // 6-4) 기본 지점 배정. 쓸 지점이 없으면 지점·시각·도보 시간을 비운 채 만든다
-        var assignment = await AssignDefaultSpotAsync(day.AcademyId, date, day.EndTime, dayType, thisTime, null, null,
-            dbTransaction, cancellationToken).ConfigureAwait(false);
+        // 6-4) 임의 좌표면 정원을 보지 않고 배정 시각 = 하원 + 정리 + 도보.
+        //      기본 지점이면 정원 배정. 쓸 지점이 없으면 지점·시각·도보 시간을 비운 채 만든다
+        int? spotId;
+        DateTime? slotDt;
+        byte? walkMin;
+        if (custom is not null)
+        {
+            spotId = null;
+            slotDt = DepartureGuideCalculator.ChildArrival(date, day.EndTime, _options.TidyUpMin, custom.WalkMin);
+            walkMin = custom.WalkMin;
+        }
+        else
+        {
+            var assignment = await AssignDefaultSpotAsync(day.AcademyId, date, day.EndTime, dayType, thisTime, null, null,
+                dbTransaction, cancellationToken).ConfigureAwait(false);
+            spotId = assignment?.PickupSpotId;
+            slotDt = assignment?.SlotDt;
+            walkMin = assignment?.WalkMin;
+        }
 
         // 6-5) 계획과 PLANNED 이벤트를 넣는다. 감사 컬럼은 Service가 채운다
         var plan = new PickupPlan
@@ -161,13 +189,13 @@ public partial class PickupService
             AreaId = areaId,
             PickupDate = dayStart,
             EndTime = day.EndTime,
-            PickupSpotId = assignment?.PickupSpotId,
-            SlotDt = assignment?.SlotDt,
-            WalkMin = assignment is null ? null : (sbyte)assignment.WalkMin,
-            CustomLat = null,
-            CustomLng = null,
-            CustomName = null,
-            ExpireDt = (assignment?.SlotDt ?? dayStart + day.EndTime).AddHours(_planOptions.ExpireAfterHours),
+            PickupSpotId = spotId,
+            SlotDt = slotDt,
+            WalkMin = (sbyte?)walkMin,
+            CustomLat = custom?.Lat,
+            CustomLng = custom?.Lng,
+            CustomName = custom?.Name,
+            ExpireDt = (slotDt ?? dayStart + day.EndTime).AddHours(_planOptions.ExpireAfterHours),
             Status = PlanStatusPlanned,
             CreateDt = thisTime,
             CreateUser = AuditUser,
@@ -199,13 +227,18 @@ public partial class PickupService
             return PlanOk(await BuildPlanDtoAsync(duplicatedId.Value, false, null, cancellationToken).ConfigureAwait(false));
         }
 
+        // 임의 좌표의 도보 경로 선은 엔티티에 없는 칸이라 같은 트랜잭션에서 Dapper로 쓴다
+        if (custom?.WalkPathWkt is { } walkPathWkt)
+            await _pickupRepository.SetCustomWalkPathAsync(plan.PickupPlanId, walkPathWkt, dbTransaction, cancellationToken)
+                .ConfigureAwait(false);
+
         var plannedEvent = new PickupEvent
         {
             PickupPlanId = plan.PickupPlanId,
             EventType = EventPlanned,
             EventDt = thisTime,
             ClientEventId = null,
-            Detail = JsonSerializer.Serialize(new PlannedDetail(plan.PickupSpotId, false, FormatEventDt(plan.SlotDt))),
+            Detail = JsonSerializer.Serialize(new PlannedDetail(plan.PickupSpotId, custom is not null, FormatEventDt(plan.SlotDt))),
             CreateDt = thisTime,
             CreateUser = AuditUser,
             UpdateDt = thisTime,
@@ -221,6 +254,223 @@ public partial class PickupService
         await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
 
         return PlanOk(await BuildPlanDtoAsync(plan.PickupPlanId, false, null, cancellationToken).ConfigureAwait(false));
+    }
+
+    /// <summary>
+    /// 픽업 장소 바꾸기. 좌표가 오면 임의 좌표로, 둘 다 없으면 기본 지점으로 다시 배정한다(설계 6.2)
+    /// </summary>
+    public async Task<ResponseModel<PickupPlanDto>> UpdatePickupPlanLocationService(UpdatePickupPlanLocationDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // 1) 인증 확인 — 로그인 사용자(USER_ID)는 HttpContext의 클레임 sub에서 꺼낸다
+            if (!int.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("sub"), out var userId))
+                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 401 };
+
+            // 2) 입력 검증 — 필수값, 픽업 좌표는 둘 다 있거나 둘 다 없어야 한다
+            if (dto?.pickupPlanSeq is null || dto.clientEventId is null || (dto.pickupLat is null) != (dto.pickupLng is null))
+                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
+
+            var pickupPlanId = dto.pickupPlanSeq.Value;
+            var clientEventId = dto.clientEventId.Value;
+
+            // 3) 잠금 없이 소유·상태·만료를 먼저 본다(404·409는 외부 호출 전에 돌려준다)
+            var plan = await _pickupRepository.GetPlanByIdAsync(pickupPlanId, null, cancellationToken).ConfigureAwait(false);
+            if (plan is null)
+                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 404 };
+
+            var rejected = CheckPlanLocationChangeable(plan.UserId, plan.Status, plan.ExpireDt, userId, DateTime.Now);
+            if (rejected is not null)
+                return rejected;
+
+            // 4) 임의 좌표면 잠그기 전에 외부 호출(카카오 도보 경로·주소 변환)을 끝낸다. 학원 좌표는 계획 학원의 현재 값이다
+            CustomLocation? custom = null;
+            if (dto.pickupLat is { } lat && dto.pickupLng is { } lng)
+            {
+                if (plan.AcademyLat is not { } academyLat || plan.AcademyLng is not { } academyLng)
+                    return PlanConflict(ReasonNoAcademyLocation);
+
+                custom = await ResolveCustomLocationAsync(academyLat, academyLng, lat, lng, cancellationToken).ConfigureAwait(false);
+            }
+
+            // 요일 유형(기본 지점으로 되돌릴 때 금지 시간에 쓴다). 기준 데이터라 잠그기 전에 읽는다
+            var holiday = await _pickupRepository.GetHolidayAsync(plan.PickupDate, cancellationToken).ConfigureAwait(false);
+            var dayType = DepartureGuideCalculator.DayType(plan.PickupDate, holiday.IsHoliday);
+
+            // 5) 트랜잭션 — 예외로 빠져나가면 await using이 트랜잭션을 롤백한다
+            var transaction = await _context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            await using var transactionScope = transaction.ConfigureAwait(false);
+            var dbTransaction = transaction.GetDbTransaction();
+
+            // 5-1) 학원가 행 잠금이 첫 문장이다(재배정은 AREA 먼저). 계획의 AREA_ID는 바뀌지 않는다
+            if (!await _pickupRepository.LockAreaAsync(plan.AreaId, dbTransaction, cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                _logService.LogMessage($"pickup plan location area not found: plan={pickupPlanId}");
+                return new ResponseModel<PickupPlanDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+            }
+
+            // 5-2) 계획 행을 PK로 잠그고 잠근 값으로 다시 판정한다
+            var locked = await _pickupRepository.LockPickupPlanByIdAsync(pickupPlanId, dbTransaction, cancellationToken)
+                .ConfigureAwait(false);
+            // 기준 시각은 잠금을 얻은 뒤에 잡는다
+            var thisTime = DateTime.Now;
+            if (locked is null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 404 };
+            }
+
+            rejected = CheckPlanLocationChangeable(locked.UserId, locked.Status, locked.ExpireDt, userId, thisTime);
+            if (rejected is not null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return rejected;
+            }
+
+            // 5-3) 같은 clientEventId의 재배정이 이미 있으면 같은 요청을 다시 부른 것이다. 지금 계획을 돌려준다
+            if (await _pickupRepository.HasPlanEventAsync(pickupPlanId, EventReassigned, clientEventId, dbTransaction,
+                    cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return PlanOk(await BuildPlanDtoAsync(pickupPlanId, false, null, cancellationToken).ConfigureAwait(false));
+            }
+
+            var entity = await _pickupRepository.GetPickupPlanEntityAsync(pickupPlanId, cancellationToken).ConfigureAwait(false);
+            if (entity is null || locked.EndTime is not { } endTime || locked.AcademyId is not { } academyId)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 404 };
+            }
+
+            // 5-4) 재배정. STARTED면 늦은 출발 결과를 지키려고 지금 배정 시각보다 앞당기지 않는다
+            var date = locked.PickupDate;
+            var notBefore = locked.Status == PlanStatusStarted ? locked.SlotDt : null;
+            if (custom is not null)
+            {
+                var arrival = DepartureGuideCalculator.ChildArrival(date, endTime, _options.TidyUpMin, custom.WalkMin);
+                entity.PickupSpotId = null;
+                entity.SlotDt = notBefore is { } floor && floor > arrival ? floor : arrival;
+                entity.WalkMin = (sbyte)custom.WalkMin;
+                entity.CustomLat = custom.Lat;
+                entity.CustomLng = custom.Lng;
+                entity.CustomName = custom.Name;
+            }
+            else
+            {
+                // 자기 자신의 현재 자리는 정원 세기에서 뺀다. 쓸 지점이 없으면 장소 없는 계획이 된다
+                var assignment = await AssignDefaultSpotAsync(academyId, date, endTime, dayType, thisTime, pickupPlanId,
+                    notBefore, dbTransaction, cancellationToken).ConfigureAwait(false);
+                entity.PickupSpotId = assignment?.PickupSpotId;
+                entity.SlotDt = assignment?.SlotDt;
+                entity.WalkMin = (sbyte?)assignment?.WalkMin;
+                entity.CustomLat = null;
+                entity.CustomLng = null;
+                entity.CustomName = null;
+            }
+
+            entity.ExpireDt = (entity.SlotDt ?? date.ToDateTime(TimeOnly.MinValue) + endTime)
+                .AddHours(_planOptions.ExpireAfterHours);
+            entity.UpdateDt = thisTime;
+            entity.UpdateUser = AuditUser;
+
+            if (!await _pickupRepository.UpdatePickupPlanAsync(entity, cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<PickupPlanDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+            }
+
+            // 도보 경로 선은 엔티티에 없는 칸이라 Dapper로 쓴다. 기본 지점으로 되돌리면 비운다
+            await _pickupRepository.SetCustomWalkPathAsync(pickupPlanId, custom?.WalkPathWkt, dbTransaction, cancellationToken)
+                .ConfigureAwait(false);
+
+            // 5-5) REASSIGNED 이벤트. DETAIL에 좌표·이름은 넣지 않고 custom 플래그만 남긴다
+            var reassignedEvent = new PickupEvent
+            {
+                PickupPlanId = pickupPlanId,
+                EventType = EventReassigned,
+                EventDt = thisTime,
+                ClientEventId = clientEventId,
+                Detail = JsonSerializer.Serialize(new ReassignedDetail(ReassignReasonLocationChanged,
+                    locked.PickupSpotId, entity.PickupSpotId, locked.CustomLat is not null, custom is not null,
+                    FormatEventDt(locked.SlotDt), FormatEventDt(entity.SlotDt))),
+                CreateDt = thisTime,
+                CreateUser = AuditUser,
+                UpdateDt = thisTime,
+                UpdateUser = AuditUser,
+                DeleteYn = false
+            };
+            if (!await _pickupRepository.AddPickupEventAsync(reassignedEvent, cancellationToken).ConfigureAwait(false))
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return new ResponseModel<PickupPlanDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+            }
+
+            await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+
+            return PlanOk(await BuildPlanDtoAsync(pickupPlanId, true, null, cancellationToken).ConfigureAwait(false));
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 그대로 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return new ResponseModel<PickupPlanDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
+        }
+    }
+
+    // 장소를 바꿀 수 있는지(설계 6.2). 남의 계획·끝난 계획(USER_ID NULL)은 404, 정차·한 바퀴 중이면 409 ALREADY_STOPPED,
+    // PLANNED·STARTED·WAITING이 아니면 404, 만료 시각이 지났으면 409 PLAN_CLOSED. 바꿀 수 있으면 null
+    private static ResponseModel<PickupPlanDto>? CheckPlanLocationChangeable(int? ownerId, string status, DateTime expireDt,
+        int userId, DateTime now)
+    {
+        if (ownerId != userId)
+            return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 404 };
+
+        if (StoppedPlanStatuses.Contains(status))
+            return PlanConflict(ReasonAlreadyStopped);
+
+        if (!LocationChangeableStatuses.Contains(status))
+            return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 404 };
+
+        if (expireDt <= now)
+            return PlanConflict(ReasonPlanClosed);
+
+        return null;
+    }
+
+    // 임의 좌표의 도보 시간·경로와 장소 이름(설계 6.1 처리 5, 8절). 잠그기 전에 부른다.
+    // 카카오 도보 경로가 실패하면 직선 거리 ÷ 아이 도보 속도(올림)로 추정하고 경로는 없다. 이름 변환이 실패하면 기본 이름을 쓴다
+    private async Task<CustomLocation> ResolveCustomLocationAsync(decimal academyLat, decimal academyLng, decimal lat,
+        decimal lng, CancellationToken cancellationToken)
+    {
+        int minutes;
+        string? walkPathWkt = null;
+        var route = await _walkRouteClient.GetWalkRouteAsync(academyLat, academyLng, lat, lng, cancellationToken)
+            .ConfigureAwait(false);
+        if (route is not null)
+        {
+            minutes = DepartureGuideCalculator.SecondsToMinutesCeil(route.TotalSeconds);
+            // LINESTRING은 점이 둘 이상이어야 한다. SRID 4326 WKT라 "위도 경도" 순이다(ParseLineString과 같다)
+            if (route.Path.Count >= 2)
+                walkPathWkt = "LINESTRING(" + string.Join(",",
+                    route.Path.Select(p => FormattableString.Invariant($"{p.Lat} {p.Lng}"))) + ")";
+        }
+        else
+        {
+            var meters = GeoDistance.Meters(academyLat, academyLng, lat, lng);
+            minutes = DepartureGuideCalculator.EstimateMinutes(meters, _options.ChildWalkKmh);
+        }
+
+        // WALK_MIN은 TINYINT(부호 있음)라 127분을 넘지 않게 한다. 학원과의 거리는 검증하지 않으므로 먼 좌표가 올 수 있다
+        var walkMin = (byte)Math.Min(minutes, sbyte.MaxValue);
+
+        var name = await _addressClient.GetPlaceNameAsync(lat, lng, cancellationToken).ConfigureAwait(false)
+                   ?? DefaultCustomName;
+
+        return new CustomLocation(lat, lng, name, walkMin, walkPathWkt);
     }
 
     // 대상 픽업 고르기(설계 3절). 출발 안내와 계획 API가 같은 규칙을 쓴다.
@@ -366,4 +616,11 @@ public partial class PickupService
 
     // PLANNED 이벤트 DETAIL(설계 7절). 임의 좌표·이름은 넣지 않고 custom 플래그만 남긴다
     private sealed record PlannedDetail(int? pickupSpotId, bool custom, string? slotDt);
+
+    // REASSIGNED 이벤트 DETAIL(설계 7절). 임의 좌표·이름은 넣지 않고 custom 플래그만 남긴다
+    private sealed record ReassignedDetail(string reason, int? fromSpotId, int? toSpotId, bool fromCustom, bool toCustom,
+        string? fromSlotDt, string? toSlotDt);
+
+    // 임의 좌표 외부 호출 결과. WalkPathWkt는 SRID 4326 WKT("LINESTRING(위도 경도,…)"), 도보 경로가 실패했으면 null
+    private sealed record CustomLocation(decimal Lat, decimal Lng, string Name, byte WalkMin, string? WalkPathWkt);
 }

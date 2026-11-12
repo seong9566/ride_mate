@@ -129,11 +129,13 @@ public class LinkEventRow
 
 /// <summary>
 /// 오늘 계획 한 건(응답 만들기·대상 고르기용). 지점은 LEFT JOIN이라 지점이 없거나 삭제됐으면 Spot* 값이 null이다.
-/// CustomWalkPathWkt는 SRID 4326 WKT라 점이 "위도 경도" 순이다. AcademyName은 시간표의 DISPLAY_NAME이다
+/// CustomWalkPathWkt는 SRID 4326 WKT라 점이 "위도 경도" 순이다. AcademyName은 시간표의 DISPLAY_NAME이다.
+/// AcademyLat·AcademyLng는 계획 학원의 현재 좌표다. 끝난 계획은 UserId·AcademyId가 NULL이다
 /// </summary>
 public class LivePlanRow
 {
     public int PickupPlanId { get; set; }
+    public int? UserId { get; set; }
     public int? TimetableDayId { get; set; }
     public int AreaId { get; set; }
     public DateOnly PickupDate { get; set; }
@@ -154,6 +156,8 @@ public class LivePlanRow
     public string? PhotoUrl { get; set; }
     public string? AcademyName { get; set; }
     public int? AcademyId { get; set; }
+    public decimal? AcademyLat { get; set; }
+    public decimal? AcademyLng { get; set; }
 }
 
 /// <summary>
@@ -174,4 +178,23 @@ public class TimetableDayLockRow
     public TimeSpan EndTime { get; set; }
     public bool Skipped { get; set; }
     public bool Alive { get; set; }
+}
+
+/// <summary>
+/// 재배정을 위해 잠근 오늘 계획 한 건. 끝난 계획은 UserId·AcademyId·EndTime이 NULL이다
+/// </summary>
+public class PlanLockRow
+{
+    public int PickupPlanId { get; set; }
+    public int? UserId { get; set; }
+    public int? AcademyId { get; set; }
+    public int AreaId { get; set; }
+    public DateOnly PickupDate { get; set; }
+    public TimeSpan? EndTime { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public int? PickupSpotId { get; set; }
+    public DateTime? SlotDt { get; set; }
+    public decimal? CustomLat { get; set; }
+    public DateTime ExpireDt { get; set; }
+    public int? TimetableDayId { get; set; }
 }

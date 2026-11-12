@@ -135,6 +135,49 @@ public partial class PickupRepository
         }
     }
 
+    /// <summary>
+    /// 오늘 계획을 PK로 불러온다(수정 대상, 추적). 끝난 계획도 돌려준다
+    /// </summary>
+    public async Task<PickupPlan?> GetPickupPlanEntityAsync(int pickupPlanId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // 픽업 계열 테이블은 DELETE_YN이 "끝나서 익명화됨"이라 조건을 붙이지 않는다(schema.md)
+            return await _context.PickupPlans
+                .FirstOrDefaultAsync(x => x.PickupPlanId == pickupPlanId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw; // Service가 500으로 바꾼다
+        }
+    }
+
+    /// <summary>
+    /// 오늘 계획 수정
+    /// </summary>
+    public async Task<bool> UpdatePickupPlanAsync(PickupPlan model, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            _context.PickupPlans.Update(model);
+
+            return await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false) > 0;
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw; // Service가 500으로 바꾼다
+        }
+    }
+
     private static bool IsDuplicateKey(Exception? ex)
     {
         for (; ex is not null; ex = ex.InnerException)

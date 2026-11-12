@@ -36,6 +36,16 @@ public interface IPickupRepository
     /// </summary>
     Task<bool> AddPickupPlanAsync(PickupPlan model, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// 오늘 계획을 PK로 불러온다(수정 대상, 추적). 끝난 계획도 돌려준다
+    /// </summary>
+    Task<PickupPlan?> GetPickupPlanEntityAsync(int pickupPlanId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 오늘 계획 수정
+    /// </summary>
+    Task<bool> UpdatePickupPlanAsync(PickupPlan model, CancellationToken cancellationToken = default);
+
     // ====== Dapper
 
     /// <summary>
@@ -157,4 +167,24 @@ public interface IPickupRepository
     /// </summary>
     Task<int> CountSlotPlansAsync(int pickupSpotId, DateTime slotDt, int windowMin, DateTime now, int? excludePlanId,
         IDbTransaction transaction, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 오늘 계획 행을 PK 인덱스(FORCE INDEX (PRIMARY))로 FOR UPDATE 잠그고 읽는다. 재배정 트랜잭션에서 AREA 잠금 다음에 부른다.
+    /// DELETE_YN 조건을 붙이지 않으므로 끝난 계획도 돌려준다(UserId가 NULL). 행이 없으면 null
+    /// </summary>
+    Task<PlanLockRow?> LockPickupPlanByIdAsync(int pickupPlanId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 오늘 계획의 임의 좌표 도보 경로 선(CUSTOM_WALK_PATH)을 바꾼다.
+    /// lineStringWkt는 SRID 4326 WKT("LINESTRING(위도 경도,…)")이고 null이면 비운다
+    /// </summary>
+    Task SetCustomWalkPathAsync(int pickupPlanId, string? lineStringWkt, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 오늘 계획에 그 유형·차량 이벤트 번호(CLIENT_EVENT_ID)의 이벤트가 있는지 조회한다
+    /// </summary>
+    Task<bool> HasPlanEventAsync(int pickupPlanId, string eventType, Guid clientEventId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
 }

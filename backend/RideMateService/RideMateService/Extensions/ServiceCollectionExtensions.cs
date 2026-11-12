@@ -178,7 +178,7 @@ public static class InfrastructureExtensions
     }
 
     /// <summary>
-    /// 카카오 설정(Kakao)과 출발 안내 설정(DepartureGuide), 픽업 링크 설정(PickupLink), 픽업 계획 설정(PickupPlan)을 등록하고, 도보 경로 클라이언트를 타임아웃 3초의 typed HttpClient로 등록한다.
+    /// 카카오 설정(Kakao)과 출발 안내 설정(DepartureGuide), 픽업 링크 설정(PickupLink), 픽업 계획 설정(PickupPlan)을 등록하고, 도보 경로·좌표→주소 변환 클라이언트를 타임아웃 3초의 typed HttpClient로 등록한다.
     /// Kakao:RestApiKey가 비어 있어도 기동은 하며, 이때 클라이언트는 카카오를 부르지 않고 null을 돌려준다.
     /// PickupLink:BaseUrl이 http(s) 절대 URI가 아니거나 PickupLink:MaxAttempts·InFlightTimeoutSec가 1보다 작으면 기동할 때 InvalidOperationException을 던진다.
     /// PickupPlan:CreateLeadHours·ExpireAfterHours·ExpireIntervalSec가 1보다 작거나 SlotWindowMin·SlotShiftMaxMin이 0보다 작아도 같다.
@@ -214,6 +214,11 @@ public static class InfrastructureExtensions
         services.Configure<PickupPlanOptions>(pickupPlan);
 
         services.AddHttpClient<IWalkRouteClient, KakaoWalkRouteClient>(client =>
+        {
+            client.BaseAddress = new Uri("https://dapi.kakao.com/");
+            client.Timeout = TimeSpan.FromSeconds(3);
+        });
+        services.AddHttpClient<IAddressClient, KakaoAddressClient>(client =>
         {
             client.BaseAddress = new Uri("https://dapi.kakao.com/");
             client.Timeout = TimeSpan.FromSeconds(3);

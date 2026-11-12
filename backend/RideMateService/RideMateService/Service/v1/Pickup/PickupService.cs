@@ -35,6 +35,7 @@ public partial class PickupService : IPickupService
     private readonly ILogService _logService;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IWalkRouteClient _walkRouteClient;
+    private readonly IAddressClient _addressClient;
     private readonly DepartureGuideOptions _options;
     private readonly RideMateContext _context; // 트랜잭션 시작·완료에만 쓴다
     private readonly IHashService _hashService;
@@ -47,6 +48,7 @@ public partial class PickupService : IPickupService
         ILogService logService,
         IHttpContextAccessor httpContextAccessor,
         IWalkRouteClient walkRouteClient,
+        IAddressClient addressClient,
         IOptions<DepartureGuideOptions> options,
         RideMateContext context,
         IHashService hashService,
@@ -59,6 +61,7 @@ public partial class PickupService : IPickupService
         this._logService = logService;
         this._httpContextAccessor = httpContextAccessor;
         this._walkRouteClient = walkRouteClient;
+        this._addressClient = addressClient;
         this._options = options.Value;
         this._context = context;
         this._hashService = hashService;

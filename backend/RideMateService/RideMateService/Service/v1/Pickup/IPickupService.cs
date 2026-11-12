@@ -41,4 +41,10 @@ public interface IPickupService
     /// </summary>
     Task<ResponseModel<PickupPlanDto>> AddPickupPlanService(AddPickupPlanDto dto,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 픽업 장소 바꾸기(임의 좌표로 바꾸거나 기본 지점으로 되돌리기). 같은 clientEventId를 다시 보내면 한 번만 반영한다
+    /// </summary>
+    Task<ResponseModel<PickupPlanDto>> UpdatePickupPlanLocationService(UpdatePickupPlanLocationDto dto,
+        CancellationToken cancellationToken = default);
 }
