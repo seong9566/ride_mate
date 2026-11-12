@@ -754,6 +754,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `END_TIME_CHANGED` | 오늘 하원 시각 변경 | 전·후 시각 |
 | `REASSIGNED` | 지점·시각 재배정 | `{"reason": "LATE_START"·"LOCATION_CHANGED", "fromSpotId", "toSpotId", "fromCustom", "toCustom", "fromSlotDt", "toSlotDt"}` |
 | `LINK_SENT` | 링크 발송 | 채널, 성공 여부, 발송 업체 결과 코드 |
+| `LINK_RESENT` | 정차 전 같은 링크 다시 보내기 | 채널, 성공 여부, 발송 업체 결과 코드(`LINK_SENT`와 같은 모양) |
 | `LINK_OPENED` | 아이가 링크 열람 | — |
 | `CHILD_LEAVING` | 아이가 "지금 나가요" | — |
 | `LEAVE_SCHEDULED` | 아이가 출발 시각을 정하거나 바꿈 | 출발 시각 `{"leaveDt":"2026-11-12T22:03:00"}` |
@@ -766,7 +767,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `EXPIRED` | 만료 | — |
 | `CANCELED` | 취소 | — |
 
-- `LINK_SENT`·`REMIND_SENT`의 `DETAIL`은 `{"channel":"SMS","success":true,"resultCode":"2000"}` 모양(`channel`, `success`, `resultCode`)이다. `resultCode`는 사업자의 결과 코드 문자열뿐이다(접수 `2000`, 개발 발송기 `DEV`, 시간 초과 `TIMEOUT`, 그 밖의 예외 `ERROR`).
+- `LINK_SENT`·`LINK_RESENT`·`REMIND_SENT`의 `DETAIL`은 `{"channel":"SMS","success":true,"resultCode":"2000"}` 모양(`channel`, `success`, `resultCode`)이다. `resultCode`는 사업자의 결과 코드 문자열뿐이다(접수 `2000`, 개발 발송기 `DEV`, 시간 초과 `TIMEOUT`, 그 밖의 예외 `ERROR`).
   - 보내기 전에 `success`와 `resultCode`가 null인 진행 중 이벤트를 먼저 넣고 커밋한다. 잠금 밖에서 문자를 보낸 뒤 계획 행을 다시 잠그고 같은 행의 `DETAIL`을 결과로 고친다. 이 두 이벤트는 넣은 뒤 결과 칸을 채우려고 한 번 고친다.
   - `success`가 null이면 결과를 기다리는 진행 중 발송이다. `CREATE_DT`가 `PickupLink:InFlightTimeoutSec`(30초)보다 오래됐는데 결과가 없으면 실패로 센다.
   - 시도 횟수에는 성공·실패·진행 중을 모두 센다. 한도는 `PickupLink:MaxAttempts`(3)다.

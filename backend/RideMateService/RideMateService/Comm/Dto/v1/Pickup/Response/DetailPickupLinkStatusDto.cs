@@ -54,4 +54,14 @@ public class DetailPickupLinkStatusDto
     /// 다시 알림 발송 상태 (NONE, SENDING, SENT, FAILED)
     /// </summary>
     public string remindStatus { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 정차 전 링크 다시 보내기 발송 상태 (NONE, SENDING, SENT, FAILED)
+    /// </summary>
+    public string resendStatus { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 다시 보내기가 처음 접수된 시각. 접수된 발송이 없으면 null
+    /// </summary>
+    public DateTime? resentDt { get; set; }
 }

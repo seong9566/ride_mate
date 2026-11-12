@@ -918,6 +918,55 @@
         ]
       }
     },
+    "/api/v1/Pickup/M/sign/AddPickupLinkResend": {
+      "post": {
+        "tags": [
+          "Pickup"
+        ],
+        "summary": "정차 전 픽업 링크 다시 보내기",
+        "requestBody": {
+          "content": {
+            "application/json-patch+json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupLinkResendDto"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupLinkResendDto"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupLinkResendDto"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupLinkResendDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Pickup_Response_PickupLinkSendDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": [ ]
+          }
+        ]
+      }
+    },
     "/api/v1/Pickup/M/sign/AddPickupRemind": {
       "post": {
         "tags": [
@@ -2575,6 +2624,29 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupLinkResendDto": {
+        "required": [
+          "clientEventId",
+          "etaDt",
+          "pickupPlanSeq"
+        ],
+        "type": "object",
+        "properties": {
+          "pickupPlanSeq": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "etaDt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "clientEventId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_Dto_v1_Pickup_Request_AddPickupRemindDto": {
         "required": [
           "clientEventId",
@@ -3225,6 +3297,15 @@
           },
           "remindStatus": {
             "type": "string",
+            "nullable": true
+          },
+          "resendStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "resentDt": {
+            "type": "string",
+            "format": "date-time",
             "nullable": true
           }
         },

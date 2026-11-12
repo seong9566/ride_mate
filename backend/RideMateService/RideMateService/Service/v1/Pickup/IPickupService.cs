@@ -31,6 +31,12 @@ public interface IPickupService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 정차 전 픽업 링크 다시 보내기(같은 링크를 한 번 더 문자로 보낸다)
+    /// </summary>
+    Task<ResponseModel<PickupLinkSendDto>> AddPickupLinkResendService(AddPickupLinkResendDto dto,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 정차 후 "도착했어요" 다시 알림 문자 발송
     /// </summary>
     Task<ResponseModel<PickupLinkSendDto>> AddPickupRemindService(AddPickupRemindDto dto,

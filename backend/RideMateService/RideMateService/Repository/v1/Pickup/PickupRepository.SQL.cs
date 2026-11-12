@@ -625,7 +625,7 @@ public partial class PickupRepository
     }
 
     /// <summary>
-    /// 오늘 계획의 링크 관련 이벤트(LINK_SENT·REMIND_SENT·LINK_OPENED·CHILD_LEAVING)를 PICKUP_EVENT_ID 순으로 조회한다
+    /// 오늘 계획의 링크 관련 이벤트(LINK_SENT·LINK_RESENT·REMIND_SENT·LINK_OPENED·CHILD_LEAVING)를 PICKUP_EVENT_ID 순으로 조회한다
     /// </summary>
     public async Task<List<LinkEventRow>> GetLinkEventsAsync(int pickupPlanId, IDbTransaction? transaction,
         CancellationToken cancellationToken = default)
@@ -646,7 +646,7 @@ public partial class PickupRepository
                        e.CREATE_DT AS CreateDt
                 FROM PICKUP_EVENT AS e
                 WHERE e.PICKUP_PLAN_ID = @pickupPlanId
-                  AND e.EVENT_TYPE IN ('LINK_SENT', 'REMIND_SENT', 'LINK_OPENED', 'CHILD_LEAVING')
+                  AND e.EVENT_TYPE IN ('LINK_SENT', 'LINK_RESENT', 'REMIND_SENT', 'LINK_OPENED', 'CHILD_LEAVING')
                 ORDER BY e.PICKUP_EVENT_ID";
 
             var rows = await _dapper.QueryAsync<LinkEventRow>(

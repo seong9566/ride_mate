@@ -358,6 +358,7 @@
 | API | 설명 |
 |---|---|
 | `POST /api/v1/Pickup/M/sign/AddPickupLink` | 링크 문자 발송. 최초 발송과 실패 뒤 다시 보내기가 같은 API다. 본문 `pickupPlanSeq`·`etaDt`·`clientEventId`가 모두 필수다 |
+| `POST /api/v1/Pickup/M/sign/AddPickupLinkResend` | 정차 전 링크 다시 보내기. 링크를 보낸 지 한참 됐는데 아이가 아직 열지 않았을 때 같은 링크를 `LINK_SENT`와 같은 문구로 한 번 더 보낸다(세션을 새로 만들지 않는다). 접수된 `LINK_SENT`가 있어야 하고 정차 전(`STATUS`가 `STOPPED`·`LOOPING`이 아님)에만 쓴다. 아이가 이미 링크를 열었어도(`LINK_OPENED`) 막지 않는다. 본문 `pickupPlanSeq`·`etaDt`·`clientEventId`가 모두 필수이고 검증은 `AddPickupLink`와 같다. 접수된 다시 보내기는 한 번만 받는다 |
 | `POST /api/v1/Pickup/M/sign/AddPickupRemind` | 정차 뒤 "도착했어요" 다시 알림. 정차 기록(`UpdatePickupPlanStop`, 잘못된 위치 정차 포함) 뒤 사용할 수 있다. 본문 `pickupPlanSeq`·`clientEventId`가 모두 필수다 |
 | `GET /api/v1/Pickup/M/sign/DetailPickupLinkStatus` | 전달 상태 조회. query `pickupPlanSeq`가 필수다. 실시간 연결을 쓸 수 없을 때 차량이 간격을 두고 부른다(3초 이상) |
 | `GET /api/v1/Pickup/M/sign/DetailPickupLinkStream` | 전달 상태 실시간 연결(SSE). query `pickupPlanSeq`가 필수다. 차량은 이것을 먼저 쓴다(아래 "전달 상태 실시간 연결") |
@@ -366,7 +367,7 @@
 - `clientEventId`는 차량이 요청마다 만드는 UUID다. 같은 발송을 다시 부를 때는 같은 값을, 새로 보낼 때는 새 값을 쓴다.
 - 응답 `data`는 `{ reason, sent, remainingAttempts, receiverLast4 }`이고 값이 없는 필드도 null로 나간다. `sent`는 이번 시도를 사업자가 접수했는지, `remainingAttempts`는 남은 시도 횟수, `receiverLast4`는 아이 번호 뒤 4자리다.
 
-두 발송 API(`AddPickupLink`·`AddPickupRemind`)의 응답이다.
+세 발송 API(`AddPickupLink`·`AddPickupLinkResend`·`AddPickupRemind`)의 응답이다.
 
 | code | 상황 | HTTP |
 |---|---|---|
@@ -381,18 +382,19 @@
 
 | `reason` (409) | 상황 | API |
 |---|---|---|
-| `PLAN_CLOSED` | `EXPIRE_DT`가 지났는데 만료 처리가 아직 돌지 않았다. 이미 `BOARDED`·`EXPIRED`·`CANCELED`로 끝난 계획은 `USER_ID`가 NULL이라 404가 먼저 나간다 | 둘 다 |
-| `NO_SPOT` | 계획에 기본 지점도 임의 좌표도 없다(배정된 지점이 그사이 삭제된 경우 포함) | 둘 다 |
-| `NO_CHILD_PHONE` | 아이가 삭제됐거나 `PHONE_ENC`가 비었거나 복호화할 수 없다 | 둘 다 |
+| `PLAN_CLOSED` | `EXPIRE_DT`가 지났는데 만료 처리가 아직 돌지 않았다. 이미 `BOARDED`·`EXPIRED`·`CANCELED`로 끝난 계획은 `USER_ID`가 NULL이라 404가 먼저 나간다 | 세 API 모두 |
+| `NO_SPOT` | 계획에 기본 지점도 임의 좌표도 없다(배정된 지점이 그사이 삭제된 경우 포함) | 세 API 모두 |
+| `NO_CHILD_PHONE` | 아이가 삭제됐거나 `PHONE_ENC`가 비었거나 복호화할 수 없다 | 세 API 모두 |
 | `NOT_STOPPED` | `STATUS`가 `STOPPED`·`LOOPING`이 아니다. `UpdatePickupPlanStop`이 `STOPPED`로 바꾼다 | `AddPickupRemind` |
-| `LINK_NOT_SENT` | 접수된 링크 발송(`LINK_SENT` 성공)이 없다. 링크 세션이 없는 경우도 같다 | `AddPickupRemind` |
-| `ALREADY_SENT` | 그 유형의 발송이 이미 접수됐다 | 둘 다 |
-| `IN_PROGRESS` | 그 유형의 발송이 진행 중이다(결과가 없고 만든 지 `PickupLink:InFlightTimeoutSec`, 30초가 안 됐다) | 둘 다 |
-| `LIMIT_REACHED` | 그 유형의 시도가 `PickupLink:MaxAttempts`(3)에 이르렀다. 성공·실패·진행 중을 모두 센다(성공 1회 + 실패 재시도 2회) | 둘 다 |
+| `ALREADY_STOPPED` | `STATUS`가 `STOPPED`·`LOOPING`이다. 정차 뒤에는 `AddPickupRemind`를 쓴다 | `AddPickupLinkResend` |
+| `LINK_NOT_SENT` | 접수된 링크 발송(`LINK_SENT` 성공)이 없다. 링크 세션이 없는 경우도 같다 | `AddPickupLinkResend`, `AddPickupRemind` |
+| `ALREADY_SENT` | 그 유형의 발송이 이미 접수됐다 | 세 API 모두 |
+| `IN_PROGRESS` | 그 유형의 발송이 진행 중이다(결과가 없고 만든 지 `PickupLink:InFlightTimeoutSec`, 30초가 안 됐다) | 세 API 모두 |
+| `LIMIT_REACHED` | 그 유형의 시도가 `PickupLink:MaxAttempts`(3)에 이르렀다. 성공·실패·진행 중을 모두 센다(성공 1회 + 실패 재시도 2회) | 세 API 모두 |
 
-- 판정 순서는 404 → `PLAN_CLOSED` → `NO_SPOT` → `NO_CHILD_PHONE` → (`AddPickupRemind`만) `NOT_STOPPED` → `LINK_NOT_SENT` → 같은 `clientEventId` 재시도 확인 → `ALREADY_SENT` → `IN_PROGRESS` → `LIMIT_REACHED`다. 먼저 걸린 것을 돌려준다.
+- 판정 순서는 404 → `PLAN_CLOSED` → `NO_SPOT` → `NO_CHILD_PHONE` → (`AddPickupRemind`만) `NOT_STOPPED` → (`AddPickupLinkResend`만) `ALREADY_STOPPED` → `LINK_NOT_SENT`(`AddPickupLinkResend`·`AddPickupRemind`) → 같은 `clientEventId` 재시도 확인 → `ALREADY_SENT` → `IN_PROGRESS` → `LIMIT_REACHED`다. 먼저 걸린 것을 돌려준다.
 - 409의 `remainingAttempts`는 `IN_PROGRESS`만 남은 횟수이고 나머지는 0이다. `receiverLast4`는 `ALREADY_SENT`·`IN_PROGRESS`·`LIMIT_REACHED`에만 있고 나머지는 null이다.
-- 링크와 다시 알림은 서로 다른 이벤트(`LINK_SENT`·`REMIND_SENT`)라 시도 횟수와 `ALREADY_SENT`를 따로 센다.
+- 링크·링크 다시 보내기·다시 알림은 서로 다른 이벤트(`LINK_SENT`·`LINK_RESENT`·`REMIND_SENT`)라 시도 횟수와 `ALREADY_SENT`를 따로 센다.
 - 문자의 장소 이름은 기본 지점이면 지점 이름(`SPOT_NAME`), 임의 좌표면 계획에 저장된 장소 이름(`CUSTOM_NAME`)이다.
 
 같은 `clientEventId`로 다시 부르는 경우는 이렇게 처리한다.
@@ -400,7 +402,7 @@
 - 원래 요청이 끝났으면 문자를 다시 보내지 않고 원래 결과(200 또는 101)를 그대로 돌려준다. 이벤트도 늘지 않는다.
 - 원래 요청이 아직 진행 중이면 409 `IN_PROGRESS`다. 차량의 5초 타임아웃 뒤 자동 재시도가 원래 요청보다 먼저 오는 경우다. 앱은 `DetailPickupLinkStatus`를 폴링해 결과를 확인한다.
 - 결과 없이 30초가 지난 진행 중 이벤트는 실패로 세므로 같은 `clientEventId`를 다시 부르면 문자를 보내지 않고 101이 온다. 다시 보내려면 새 `clientEventId`를 쓴다.
-- 이 재시도도 계획 판정(404, `PLAN_CLOSED`, `NO_SPOT`, `NO_CHILD_PHONE`, 다시 알림은 `NOT_STOPPED`, `LINK_NOT_SENT`)을 먼저 거친다. 그 사이 계획이 끝났으면 원래 결과 대신 그 오류가 온다.
+- 이 재시도도 계획 판정(404, `PLAN_CLOSED`, `NO_SPOT`, `NO_CHILD_PHONE`, 다시 알림은 `NOT_STOPPED`, 다시 보내기는 `ALREADY_STOPPED`, 다시 보내기·다시 알림은 `LINK_NOT_SENT`)을 먼저 거친다. 그 사이 계획이 끝났으면 원래 결과 대신 그 오류가 온다.
 
 중복 발송과 실패 처리:
 
@@ -417,14 +419,14 @@
 | 401 | 인증 실패 | 401 |
 | 404 | 계획이 없거나, 로그인한 계정의 계획이 아니거나, 끝났거나(`BOARDED`·`EXPIRED`·`CANCELED`), `EXPIRE_DT`가 지났다 | 404 |
 
-- `data`는 `{ linkStatus, sentDt, remainingAttempts, opened, openedDt, leaving, leavingDt, leaveStatus, plannedLeaveDt, remindStatus }`다. `linkStatus`·`remindStatus`는 `NONE`(시도 없음), `SENDING`(진행 중), `SENT`(접수된 시도가 있음), `FAILED`(접수된 시도가 없고 마지막 시도가 실패. 결과 없이 30초가 지난 진행 중 발송 포함) 중 하나다. `sentDt`는 처음 접수된 링크 발송의 `EVENT_DT`이고, `remainingAttempts`는 링크 발송의 남은 횟수다.
+- `data`는 `{ linkStatus, sentDt, remainingAttempts, opened, openedDt, leaving, leavingDt, leaveStatus, plannedLeaveDt, remindStatus, resendStatus, resentDt }`다. `linkStatus`·`remindStatus`·`resendStatus`는 `NONE`(시도 없음), `SENDING`(진행 중), `SENT`(접수된 시도가 있음), `FAILED`(접수된 시도가 없고 마지막 시도가 실패. 결과 없이 30초가 지난 진행 중 발송 포함) 중 하나다. `sentDt`는 처음 접수된 링크 발송의 `EVENT_DT`이고, `remainingAttempts`는 링크 발송의 남은 횟수다(둘 다 `LINK_SENT`만 센다). `resendStatus`·`resentDt`는 `AddPickupLinkResend`가 기록한 `LINK_RESENT`로 같은 규칙으로 계산한 상태와 처음 접수된 시각(없으면 null)이다.
 - `leaving`·`leavingDt`는 아이 출발 알림 API가 기록한 `CHILD_LEAVING` 이벤트의 유무와 첫 이벤트의 `EVENT_DT`다. `opened`·`openedDt`는 아이 휴대폰 웹의 열람 기록(`AddPickupLinkOpen`, 아래 "아이 픽업 안내")이 넣은 첫 `LINK_OPENED`의 유무와 `EVENT_DT`다.
 - `leaveStatus`·`plannedLeaveDt`는 아래 "아이 출발 알림"의 출발 상태와 예정 시각이다. `plannedLeaveDt`는 `SCHEDULED`·`SOON`일 때만 값이 있다. 차량은 상태가 바뀐 순간에만 알린다(`SCHEDULED`가 되거나 `plannedLeaveDt`가 바뀌면 "22:03에 나온대요", `SOON`이 되면 "곧 나와요", `LEAVING`이 되면 "나오고 있어요").
-- 필드·예시는 Notion "[차량] 픽업 링크 문자 발송"(https://app.notion.com/p/415aa638eaf881bbbd18cf5d4fd3de6d), "[차량] 정차 후 다시 알림 문자 발송"(https://app.notion.com/p/415aa638eaf881068dd4f1dbf92a31cd), "[차량] 픽업 링크 전달 상태 조회"(https://app.notion.com/p/415aa638eaf881a0a737d13571e9265c) 페이지가 정본이다.
+- 필드·예시는 Notion "[차량] 픽업 링크 문자 발송"(https://app.notion.com/p/415aa638eaf881bbbd18cf5d4fd3de6d), "[차량] 정차 후 다시 알림 문자 발송"(https://app.notion.com/p/415aa638eaf881068dd4f1dbf92a31cd), "[차량] 정차 전 픽업 링크 다시 보내기"(Notion 페이지 작성 예정), "[차량] 픽업 링크 전달 상태 조회"(https://app.notion.com/p/415aa638eaf881a0a737d13571e9265c) 페이지가 정본이다.
 
 ### 전달 상태 실시간 연결
 
-`GET /api/v1/Pickup/M/sign/DetailPickupLinkStream?pickupPlanSeq=`(차량, Bearer, SSE). 아이의 링크 열람·출발 알림·"곧 나와요" 전환·문자 발송 결과를 조회 없이 바로 받는다. [ADR-0024]
+`GET /api/v1/Pickup/M/sign/DetailPickupLinkStream?pickupPlanSeq=`(차량, Bearer, SSE). 아이의 링크 열람·출발 알림·"곧 나와요" 전환·문자 발송 결과(링크 다시 보내기의 `resendStatus`·`resentDt` 포함)를 조회 없이 바로 받는다. [ADR-0024]
 
 - 판정 실패는 SSE가 아니라 JSON이다. 400(`pickupPlanSeq` 없음, `ProblemDetails`)·401·404(계획 없음·남의 계획·끝남·만료 시각 지남)는 `DetailPickupLinkStatus`와 같다. 연결 시도는 사용자(JWT `sub`)마다 1분 20회다(넘으면 429 + `Retry-After`).
 - 연결 직후 `linkStatus` 이벤트 하나를 보낸다. `data`는 `DetailPickupLinkStatus`의 `data`와 같은 모양이다. 그 뒤로는 값이 직전과 달라질 때만 다시 보낸다.
