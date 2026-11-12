@@ -415,9 +415,56 @@
 | 404 | 계획이 없거나, 로그인한 계정의 계획이 아니거나, 끝났거나(`BOARDED`·`EXPIRED`·`CANCELED`), `EXPIRE_DT`가 지났다 | 404 |
 
 - `data`는 `{ linkStatus, sentDt, remainingAttempts, opened, openedDt, leaving, leavingDt, leaveStatus, plannedLeaveDt, remindStatus }`다. `linkStatus`·`remindStatus`는 `NONE`(시도 없음), `SENDING`(진행 중), `SENT`(접수된 시도가 있음), `FAILED`(접수된 시도가 없고 마지막 시도가 실패. 결과 없이 30초가 지난 진행 중 발송 포함) 중 하나다. `sentDt`는 처음 접수된 링크 발송의 `EVENT_DT`이고, `remainingAttempts`는 링크 발송의 남은 횟수다.
-- `leaving`·`leavingDt`는 아이 출발 알림 API가 기록한 `CHILD_LEAVING` 이벤트의 유무와 첫 이벤트의 `EVENT_DT`다. `opened`·`openedDt`(`LINK_OPENED`)를 기록하는 API는 아직 없어서 지금은 항상 false와 null이다.
+- `leaving`·`leavingDt`는 아이 출발 알림 API가 기록한 `CHILD_LEAVING` 이벤트의 유무와 첫 이벤트의 `EVENT_DT`다. `opened`·`openedDt`는 아이 휴대폰 웹의 열람 기록(`AddPickupLinkOpen`, 아래 "아이 픽업 안내")이 넣은 첫 `LINK_OPENED`의 유무와 `EVENT_DT`다.
 - `leaveStatus`·`plannedLeaveDt`는 아래 "아이 출발 알림"의 출발 상태와 예정 시각이다. `plannedLeaveDt`는 `SCHEDULED`·`SOON`일 때만 값이 있다. 차량은 상태가 바뀐 순간에만 알린다(`SCHEDULED`가 되거나 `plannedLeaveDt`가 바뀌면 "22:03에 나온대요", `SOON`이 되면 "곧 나와요", `LEAVING`이 되면 "나오고 있어요").
 - 필드·예시는 Notion "[차량] 픽업 링크 문자 발송"(https://app.notion.com/p/415aa638eaf881bbbd18cf5d4fd3de6d), "[차량] 정차 후 다시 알림 문자 발송"(https://app.notion.com/p/415aa638eaf881068dd4f1dbf92a31cd), "[차량] 픽업 링크 전달 상태 조회"(https://app.notion.com/p/415aa638eaf881a0a737d13571e9265c) 페이지가 정본이다.
+
+## 아이 픽업 안내
+
+아이 휴대폰 웹(픽업 링크를 연 화면, RM-M02~M04)이 화면을 그리려고 부른다. 아이는 로그인하지 않으므로 인증 구간 `sign`이 없고, 링크 토큰으로 계획을 찾는다. 토큰 전달과 404 판정은 아래 "아이 출발 알림"과 같다(`X-Pickup-Token` 헤더만, 형식 오류도 없는 링크와 같은 404).
+
+| 주소 | 용도 |
+|---|---|
+| `GET /api/v1/Pickup/W/DetailChildPickup` | 화면 전체 데이터. 끝난 링크도 200이고 `linkStatus`로 나눈다 |
+| `POST /api/v1/Pickup/W/AddPickupLinkOpen` | 링크 열람 기록. 본문 없음. 웹이 화면을 처음 그린 뒤 한 번 부른다 |
+
+- 열람 기록을 조회와 나눈 것은 GET에 쓰기 부작용을 두지 않으려는 것이다. 웹의 15초 대체 조회나 미리 불러오기가 기록을 건드리지 않는다.
+- 열람은 계획마다 한 번만 기록한다(`LINK_OPENED`). 다시 부르면 이벤트를 늘리지 않고 첫 열람 시각을 돌려준다. 계획 행을 잠근 뒤 이력을 다시 읽으므로 동시에 두 번 와도 한 건이다.
+- 조회 응답은 `Cache-Control: no-store`다. 링크가 끝난 뒤 브라우저 캐시로 장소·차 정보가 보이지 않게 한다.
+
+`DetailChildPickup` 응답 `data`
+
+| 필드 | 설명 |
+|---|---|
+| `linkStatus` | `ACTIVE`(진행 중), `BOARDED`(탑승으로 끝남), `CLOSED`(만료·취소로 끝남, `EXPIRE_DT` 지남(만료 작업 전 포함), 링크 닫힘). `ACTIVE`가 아니면 `serverDt` 말고 모든 필드가 null이다. 웹은 `BOARDED`면 "탑승 완료! 조심히 가자", `CLOSED`면 "이 링크는 끝났어요"를 보여준다 |
+| `serverDt` | 서버 현재 시각(KST). 휴대폰 시계가 어긋나도 남은 시간을 맞게 계산하게 한다 |
+| `driverName` | 아이 화면에 보이는 호칭. 운전자 이름(`USER_NAME`)이다(ADR-0016) |
+| `car` | `{ model, color, noLast4 }`. 차종·색(`WHITE`·`BLACK`·`GRAY`·`ETC`)·번호 뒷자리. 입력하지 않은 칸은 null |
+| `academy` | `{ lat, lng }`. 도보 경로의 시작점(학원). 좌표가 없으면 null |
+| `pickup` | 차량 계획 응답의 `pickup`과 같은 모양 `{ locationType, pickupSpotSeq, name, lat, lng, walkMin, guideText, photoUrl }`. 배정 장소가 없으면 null |
+| `walkPath` | 학원에서 픽업 장소까지 도보 경로 점 목록 `[{ lat, lng }]`. 기본 지점은 학원·지점 후보의 경로, 임의 좌표는 계획에 저장된 경로다. 경로가 없거나 지점이 사용 중지돼 후보에서 빠졌으면 null |
+| `planStatus` | `PLANNED`·`STARTED`·`WAITING`·`STOPPED`·`LOOPING` |
+| `stopAtSpot` | `planStatus`가 `STOPPED`일 때만 값이 있다. 마지막 정차 이벤트가 `STOPPED`(배정 장소 반경 안)면 true, `WRONG_STOP`이면 false |
+| `slotDt` | 배정 도착 시각 |
+| `arrivalDt`·`arrivalSource` | 화면에 보여줄 도착 예정과 그 근거. 지금은 늘 `slotDt`와 `SLOT`이다(배정 시각이 없으면 둘 다 null). 차 위치 보고가 생기면 `NAVI`(차량 내비 남은 시간)가 더해진다 |
+| `vehicle` | 차 현재 위치 `{ lat, lng, reportedDt }`. 차 위치 보고가 생기면 값이 있다. 지금은 늘 null |
+| `leave` | `{ leaveStatus, plannedLeaveDt, leavingDt }`. 아래 "아이 출발 알림"의 출발 상태다 |
+
+화면 문구는 웹이 이 값으로 만든다.
+
+- "4분 뒤 도착"은 `arrivalDt − serverDt`, "22:04 도착 예정"은 `arrivalDt`다. "곧 도착"(1분 전) 칩은 `arrivalDt − serverDt`가 1분 이하일 때다.
+- "도착" 칩("○○ 앞에 있어요")은 `planStatus`가 `STOPPED`이고 `stopAtSpot`이 true일 때다.
+- "엄마 차 도착 1분 전"은 `arrivalDt − leave.plannedLeaveDt`다.
+
+| code | 상황 | HTTP |
+|---|---|---|
+| 200 | 조회했다(끝난 링크 포함) / 열람을 기록했거나 이미 기록돼 있었다 | 200 |
+| 404 | 토큰 헤더가 없거나 형식이 틀렸거나 없는 링크다. `data`는 null | 404 |
+| 409 | `AddPickupLinkOpen`만. 링크가 끝났다. `data`는 `{ reason: "LINK_CLOSED", openedDt: null }`이고 판정은 "아이 출발 알림"의 `LINK_CLOSED`와 같다 | 409 |
+| 429 | 요청 빈도 제한. 본문 없음, `Retry-After` 헤더 | 429 |
+
+- `AddPickupLinkOpen` 응답 `data`는 `{ reason, openedDt }`다. `openedDt`는 첫 열람 시각이다.
+- 빈도 제한은 IP가 아니라 링크 토큰마다 센다(정확히는 토큰 해시를 4096칸으로 나눈 칸마다). 조회는 1분 30회, 열람 기록은 1분 10회다. 두 API를 합쳐 전체 1분 600회의 공용 상한이 따로 있다. 토큰 형식이 틀린 요청은 DB를 부르기 전에 404로 끝나므로 세지 않는다(`security.md`).
 
 ## 아이 출발 알림
 

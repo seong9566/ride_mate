@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using System.Threading.RateLimiting;
 using Microsoft.Extensions.Options;
 using RideMateService.Comm;
@@ -76,6 +77,7 @@ public static class InfrastructureExtensions
 {
     /// <summary>
     /// 요청 빈도 제한 정책 등록. 차 계정 목록과 아이 출발 알림을 클라이언트별 고정 창 30회/분으로 막고, 넘으면 본문 없이 429와 Retry-After를 돌려준다.
+    /// 아이 픽업 안내 조회는 토큰별 30회/분, 링크 열람 기록은 토큰별 10회/분이고, 토큰별 제한을 통과한 요청만 두 API 전체 공용 상한 600회/분을 쓴다(GlobalLimiter 체인).
     /// </summary>
     public static IServiceCollection AddRateLimitPolicies(this IServiceCollection services)
     {
@@ -104,8 +106,44 @@ public static class InfrastructureExtensions
                     Window = TimeSpan.FromMinutes(1),
                     QueueLimit = 0
                 }));
+
+            // 아이 픽업 안내 API: 토큰별 제한 → 전체 공용 상한 순서로 묶는다. 토큰별 제한을 통과한 요청만 공용 상한을 쓴다.
+            // 엔드포인트 정책은 GlobalLimiter 뒤에 획득되고 고정 창 허용량은 거절돼도 돌려주지 않으므로 둘 다 여기 둔다(PR #40 리뷰)
+            options.GlobalLimiter = PartitionedRateLimiter.CreateChained(
+                PartitionedRateLimiter.Create<HttpContext, string>(context =>
+                    context.GetEndpoint()?.Metadata.GetMetadata<ChildPickupLimitAttribute>() is { } limit
+                    && ChildPickupPartitionKey(context) is { } key
+                        ? RateLimitPartition.GetFixedWindowLimiter($"{limit.Group}:{key}", _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = limit.PermitLimit,
+                            Window = TimeSpan.FromMinutes(1),
+                            QueueLimit = 0
+                        })
+                        : RateLimitPartition.GetNoLimiter(string.Empty)),
+                PartitionedRateLimiter.Create<HttpContext, string>(context =>
+                    context.GetEndpoint()?.Metadata.GetMetadata<ChildPickupLimitAttribute>() is not null
+                    && ChildPickupPartitionKey(context) is not null
+                        ? RateLimitPartition.GetFixedWindowLimiter("child-pickup", _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = ChildPickupRateLimit.GlobalPermitLimit,
+                            Window = TimeSpan.FromMinutes(1),
+                            QueueLimit = 0
+                        })
+                        : RateLimitPartition.GetNoLimiter(string.Empty)));
         });
         return services;
+    }
+
+    // 토큰 해시를 TokenBucketCount칸으로 나눈 칸 번호를 키로 쓴다. 토큰 원문을 메모리 키로 두지 않고,
+    // 가짜 토큰을 바꿔 가며 보내도 제한기 상태가 칸 수를 넘지 않게 한다(PR #40 2차 리뷰). 형식이 틀린 토큰은 DB 조회 전에 404로 끝나므로 세지 않는다
+    private static string? ChildPickupPartitionKey(HttpContext context)
+    {
+        var token = context.Request.Headers["X-Pickup-Token"].FirstOrDefault();
+        if (!PickupLinkToken.IsWellFormed(token))
+            return null;
+
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(token!));
+        return (((hash[0] << 8) | hash[1]) % ChildPickupRateLimit.TokenBucketCount).ToString();
     }
 
     /// <summary>

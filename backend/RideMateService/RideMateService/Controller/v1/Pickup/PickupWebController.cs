@@ -23,6 +23,90 @@ public class PickupWebController : ApiControllerBase
     }
 
     /// <summary>
+    /// 아이 픽업 안내 조회
+    /// </summary>
+    /// <remarks>
+    /// X-Pickup-Token 헤더로 픽업 링크 토큰을 전달한다. 끝난 링크도 200이고 linkStatus(ACTIVE·BOARDED·CLOSED)로 나눈다.
+    /// 응답 code: 200 정상, 404 링크 없음, 429 요청 초과, 500 서버 처리 실패
+    /// </remarks>
+    [Produces("application/json")]
+    [HttpGet]
+    [Route("v1/Pickup/W/DetailChildPickup")]
+    [ChildPickupLimit(ChildPickupRateLimit.ViewGroup, ChildPickupRateLimit.ViewPermitLimit)]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    [SwaggerOperation(Summary = "아이 픽업 안내 조회(휴대폰 웹)")]
+    [ProducesResponseType(typeof(ResponseModel<ChildPickupDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ResponseModel<ChildPickupDto>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(void), StatusCodes.Status429TooManyRequests)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> DetailChildPickup(
+        [FromHeader(Name = "X-Pickup-Token")] string? token,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _pickupService.DetailChildPickupService(token, cancellationToken)
+                .ConfigureAwait(false);
+            return ToActionResult(model);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // 웹 요청이 끊겼다. 오류로 기록하지 않는다
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
+
+    /// <summary>
+    /// 아이 픽업 링크 열람 기록
+    /// </summary>
+    /// <remarks>
+    /// X-Pickup-Token 헤더로 픽업 링크 토큰을 전달한다. 본문 없음. 웹이 화면을 처음 그린 뒤 한 번 부른다. 열람은 한 번만 기록하고, 다시 부르면 첫 열람 시각을 돌려준다.
+    /// 응답 code: 200 정상, 404 링크 없음, 409 링크 종료, 429 요청 초과, 500 서버 처리 실패
+    /// </remarks>
+    [Produces("application/json")]
+    [HttpPost]
+    [Route("v1/Pickup/W/AddPickupLinkOpen")]
+    [ChildPickupLimit(ChildPickupRateLimit.OpenGroup, ChildPickupRateLimit.OpenPermitLimit)]
+    [SwaggerOperation(Summary = "아이 픽업 링크 열람 기록(휴대폰 웹)")]
+    [ProducesResponseType(typeof(ResponseModel<ChildPickupOpenDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ResponseModel<ChildPickupOpenDto>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ResponseModel<ChildPickupOpenDto>), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(void), StatusCodes.Status429TooManyRequests)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> AddPickupLinkOpen(
+        [FromHeader(Name = "X-Pickup-Token")] string? token,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _pickupService.AddPickupLinkOpenService(token, cancellationToken)
+                .ConfigureAwait(false);
+            return ToActionResult(model);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // 웹 요청이 끊겼다. 오류로 기록하지 않는다
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
+
+    /// <summary>
     /// 아이 출발 알림 등록
     /// </summary>
     /// <remarks>
