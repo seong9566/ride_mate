@@ -6,7 +6,7 @@ namespace RideMateService.Comm.Dto.v1.Pickup.Response;
 public class PickupStopCheckDto
 {
     /// <summary>
-    /// 배정 장소 반경(기본 30m) 안에 섰는지. 배정 장소가 없는 계획은 false
+    /// 배정 장소 반경(기본 30m) 안에 섰는지. 배정 장소가 없는 계획은 false(단, 그 정차를 같은 요청으로 다시 보낸 응답은 true로 나온다 — 받아들인 한계)
     /// </summary>
     public bool atSpot { get; set; }
 

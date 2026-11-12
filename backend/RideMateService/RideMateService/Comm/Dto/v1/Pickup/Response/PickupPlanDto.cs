@@ -6,7 +6,7 @@ namespace RideMateService.Comm.Dto.v1.Pickup.Response;
 public class PickupPlanDto
 {
     /// <summary>
-    /// 409일 때만 사유 코드 (TOO_EARLY, NO_ACADEMY_LOCATION, PLAN_CLOSED, ALREADY_STOPPED, INVALID_STATUS). 200이면 null
+    /// 409일 때만 사유 코드 (TOO_EARLY, NO_ACADEMY_LOCATION, PLAN_CLOSED, ALREADY_STOPPED, INVALID_STATUS, INVALID_PARKING_LOT). 200이면 null
     /// </summary>
     public string? reason { get; set; }
 
@@ -66,7 +66,7 @@ public class PickupPlanDto
     public string? cancelNotice { get; set; }
 
     /// <summary>
-    /// 대기 중인 주차장 ID. 대기 장소에 도착한 계획만 채우고 아니면 null
+    /// 대기 중인 주차장 ID. 계획 상태가 WAITING일 때만 채우고 아니면 null(대기 뒤 출발하면 null)
     /// </summary>
     public int? parkingLotSeq { get; set; }
 }

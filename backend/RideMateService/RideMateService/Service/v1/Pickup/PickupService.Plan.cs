@@ -876,7 +876,8 @@ public partial class PickupService
             slotDt = location is null ? null : row.SlotDt,
             expireDt = row.ExpireDt,
             reassigned = reassigned,
-            parkingLotSeq = row.ParkingLotId
+            // 대기 중(WAITING)일 때만 채운다. 출발하면 DB에는 마지막 주차장이 남지만 응답은 null이다
+            parkingLotSeq = row.Status == PlanStatusWaiting ? row.ParkingLotId : null
         };
     }
 

@@ -526,11 +526,20 @@ public partial class PickupService
             var cancelNotice = CancelNoticeNone;
             if (noticePhone is not null && noticeUserName is not null)
             {
-                var result = await _smsSender.SendAsync(noticePhone, PickupLinkMessage.Cancel(noticeUserName),
-                    CancellationToken.None).ConfigureAwait(false);
-                cancelNotice = result.Success ? CancelNoticeSent : CancelNoticeFailed;
-                if (!result.Success)
-                    _logService.LogMessage($"pickup cancel notice failed: plan={pickupPlanId}, code={result.ResultCode}");
+                // 취소는 이미 커밋했으므로 발송 중 예외가 나도 500이 아니라 FAILED로 답한다. 로그에는 계획 ID만 남긴다
+                try
+                {
+                    var result = await _smsSender.SendAsync(noticePhone, PickupLinkMessage.Cancel(noticeUserName),
+                        CancellationToken.None).ConfigureAwait(false);
+                    cancelNotice = result.Success ? CancelNoticeSent : CancelNoticeFailed;
+                    if (!result.Success)
+                        _logService.LogMessage($"pickup cancel notice failed: plan={pickupPlanId}, code={result.ResultCode}");
+                }
+                catch (Exception)
+                {
+                    cancelNotice = CancelNoticeFailed;
+                    _logService.LogMessage($"pickup cancel notice failed: plan={pickupPlanId}, exception");
+                }
             }
 
             // 끝난 계획은 개인정보 칸이 비어 있어 계획 ID와 상태, 취소 문자 결과만 돌려준다
@@ -608,6 +617,7 @@ public partial class PickupService
                 return rejected;
 
             // 4) 주차장은 계획과 같은 학원가의 살아 있는 것이어야 한다. 계획의 AREA_ID는 바뀌지 않으므로 잠근 뒤 다시 보지 않는다
+            //    PARKING_LOT은 AVAILABLE_SPACES 갱신과 소프트 삭제로만 바뀌고 FK에는 영향이 없어, 사이에 삭제돼도 삭제 전에 쓴 것과 결과가 같다
             if (!await _pickupRepository.IsParkingLotInAreaAsync(parkingLotId, plan.AreaId, cancellationToken)
                     .ConfigureAwait(false))
                 return PlanConflict(ReasonInvalidParkingLot);
