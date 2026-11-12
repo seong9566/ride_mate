@@ -615,6 +615,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_ChildInfo_Response_AddChildResultDto"
+                }
+              }
+            }
           }
         },
         "security": [
