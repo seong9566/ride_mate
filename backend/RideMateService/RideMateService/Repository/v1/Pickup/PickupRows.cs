@@ -323,3 +323,19 @@ public class PositionPlanRow
     /// </summary>
     public DateTime ExpireDt { get; set; }
 }
+
+/// <summary>
+/// 픽업 장소 추가 요청 대상 시간표의 학원
+/// </summary>
+public class SpotRequestScheduleRow
+{
+    /// <summary>
+    /// 학원 ID
+    /// </summary>
+    public int AcademyId { get; set; }
+
+    /// <summary>
+    /// 학원가 ID. 학원에 좌표가 없으면 null
+    /// </summary>
+    public int? AreaId { get; set; }
+}

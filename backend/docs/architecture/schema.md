@@ -56,7 +56,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 
 - 계정·인증: `USER_INFO`, `LOGIN_SESSION`, `PHONE_VERIFICATION`, `QR_LOGIN`, `CONSENT`
 - 아이·시간표: `CHILD`, `ACADEMY`, `TIMETABLE`, `TIMETABLE_DAY`, `TIMETABLE_EXCEPTION`
-- 기준 데이터: `AREA`, `PICKUP_SPOT`, `PICKUP_SPOT_BLOCK`, `ACADEMY_PICKUP_SPOT`, `LOOP_ROUTE`, `RESTRICTED_ZONE`, `PARKING_LOT`, `HOLIDAY`
+- 기준 데이터: `AREA`, `PICKUP_SPOT`, `PICKUP_SPOT_REQUEST`, `PICKUP_SPOT_BLOCK`, `ACADEMY_PICKUP_SPOT`, `LOOP_ROUTE`, `RESTRICTED_ZONE`, `PARKING_LOT`, `HOLIDAY`
 - 도로 소통 수집: `TRAFFIC_LINK`, `TRAFFIC_COLLECT_RUN`, `TRAFFIC_SPEED`, `TRAFFIC_HOURLY_SPEED`, `TRAFFIC_PROFILE`
 - 픽업 진행: `PICKUP_PLAN`, `PICKUP_SESSION`, `PICKUP_EVENT`
 
@@ -348,6 +348,31 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `USE_YN` | TINYINT(1) | N | 배정에 쓰는지 여부. 처음 값 1 |
 
 - CHECK: `CAPACITY >= 1`
+
+### PICKUP_SPOT_REQUEST — 픽업 장소 추가 요청
+
+후보 지점에 원하는 곳이 없을 때 부모가 남기는 요청이다. 운영팀이 DB에서 보고 현장 검증 후보로 쓴다. 처리 API와 관리 화면은 없다.
+
+| 컬럼 | 타입 | NULL | 설명 |
+|---|---|---|---|
+| `PICKUP_SPOT_REQUEST_ID` | INT | N | PK |
+| `ACADEMY_ID` | INT | N | FK → ACADEMY. 요청한 시간표의 학원 |
+| `AREA_ID` | INT | Y | FK → AREA. 학원에 좌표가 없으면 NULL |
+| `LAT`·`LNG` | DECIMAL(10,7) | Y | 원하는 위치 |
+| `PLACE_NAME` | VARCHAR(100) | Y | 원하는 장소 이름 |
+| `MEMO` | VARCHAR(200) | Y | 요청 메모 |
+| `STATUS` | VARCHAR(20) | N | 처리 상태 |
+
+| `STATUS` | 뜻 |
+|---|---|
+| `REQUESTED` | 접수됨. 서버가 넣는 처음 값 |
+| `ACCEPTED` | 운영팀이 검증 후보로 받음 |
+| `REJECTED` | 운영팀이 받지 않음 |
+
+- CHECK: `(LAT IS NULL) = (LNG IS NULL)`
+- 인덱스: `ACADEMY_ID`, `AREA_ID`
+- 계정·아이·시간표를 가리키는 칸을 두지 않는다. 원하는 위치가 학원 근처라 계정과 이으면 아이를 좁힐 수 있다. 감사 컬럼은 `CREATE_USER`·`UPDATE_USER` = `PARENT`다. [ADR-0008]
+- `STATUS`는 운영팀이 DB에서 바꾼다. 서버는 `REQUESTED`로 넣기만 하고 읽지 않는다.
 
 ### PICKUP_SPOT_BLOCK — 픽업 지점을 쓸 수 없는 시간
 
