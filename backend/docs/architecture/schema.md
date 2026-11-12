@@ -567,11 +567,11 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `CUSTOM_WALK_PATH` | LINESTRING SRID 4326 | Y | 학원에서 임의 좌표까지 도보 경로 선. 카카오 도보 경로가 실패했으면 NULL. 끝나면 NULL. 스캐폴드가 건너뛰므로 엔티티에 없고 읽기·쓰기는 Dapper로 한다 |
 | `EXPIRE_DT` | DATETIME | N | 만료 시각. `SLOT_DT`(없으면 그날 하원 시각)에 설정값(기본 1시간)을 더한다. 재배정하거나 하원 시각이 바뀌면 다시 계산한다 |
 | `STATUS` | VARCHAR(20) | N | 아래 코드 |
-| `PARKING_LOT_ID` | INT | Y | FK → PARKING_LOT. 대기 장소를 골랐을 때 |
+| `PARKING_LOT_ID` | INT | Y | FK → PARKING_LOT. 대기 장소에 도착했을 때(`UpdatePickupPlanWait`) 그 주차장. 다른 주차장으로 옮기면 바꾸고, 출발해도 비우지 않는다 |
 | `START_DT` | DATETIME | Y | 경로를 시작한 시각 |
-| `WAIT_START_DT` | DATETIME | Y | 대기 장소 도착 시각 |
-| `STOP_DT` | DATETIME | Y | 픽업 지점에 처음 정차한 시각. 한 바퀴 돌고 다시 서도 바꾸지 않는다 |
-| `BOARD_DT` | DATETIME | Y | 탑승 감지 시각 |
+| `WAIT_START_DT` | DATETIME | Y | 대기 장소에 처음 도착한 시각. `UpdatePickupPlanWait`가 비어 있을 때만 `eventDt`로 채운다. 다른 주차장으로 옮기거나 출발했다가 다시 대기해도 바꾸지 않는다 |
+| `STOP_DT` | DATETIME | Y | 처음 정차한 시각(잘못된 위치 포함). `UpdatePickupPlanStop`이 비어 있을 때만 `eventDt`로 채운다. 차를 옮겨 다시 서거나 한 바퀴 돌고 다시 서도 바꾸지 않는다 |
+| `BOARD_DT` | DATETIME | Y | 탑승 감지 시각. `UpdatePickupPlanBoard`가 `eventDt`로 채운다(끝내기·익명화 UPDATE보다 먼저, 같은 트랜잭션) |
 | `CLOSE_DT` | DATETIME | Y | 계획이 끝난 시각 |
 
 | `STATUS` | 뜻 |
@@ -587,7 +587,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 
 - 아이 화면의 "곧 도착"(도착 1분 전)은 상태로 저장하지 않는다. 배정 시각과 현재 시각으로 계산한다.
 - UNIQUE: `(TIMETABLE_DAY_ID, PICKUP_DATE)`. 진행 중에 같은 계획을 두 번 만들 수 없다. 끝난 계획은 `TIMETABLE_DAY_ID`가 NULL이라 걸리지 않으므로 `ACTIVE_FLAG`가 필요 없다. 중복 키 오류가 나면 이미 만들어진 계획을 돌려준다.
-- 탑승이나 만료로 끝난 뒤 다시 만드는 것은 `TIMETABLE_DAY.LAST_PICKUP_DATE`로 막는다.
+- 탑승이나 만료로 끝난 뒤 다시 만드는 것은 `TIMETABLE_DAY.LAST_PICKUP_DATE`로 막는다. 부모 취소(`DeletePickupPlan`)는 이 값을 바꾸지 않아 그날 다시 만들 수 있다.
 - 임의 좌표(`CUSTOM_*`)는 공유 지점이 아니라 정원 개념이 없다. 임의 좌표 계획은 `PICKUP_SPOT_ID`가 NULL이고, `CUSTOM_LAT`·`CUSTOM_LNG`·`CUSTOM_NAME`은 셋 다 있거나 셋 다 없다.
 - CHECK:
   - `CK_PICKUP_PLAN_01`: `DELETE_YN = 1 OR (SLOT_DT IS NULL) = (PICKUP_SPOT_ID IS NULL AND CUSTOM_LAT IS NULL)` — 장소(지점 또는 임의 좌표)가 있으면 `SLOT_DT`가 있다. 익명화된 행은 장소 칸이 비어도 `SLOT_DT`가 남으므로 예외다
@@ -627,6 +627,14 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 - `UPDATE_USER`에는 그 변경을 일으킨 쪽의 역할을 넣는다. 부모가 취소했으면 `PARENT`, 만료 처리면 `SYSTEM`이다.
 
 **만료 처리.** 주기 작업이 `EXPIRE_DT`가 지난 진행 중 계획을 찾아 `EXPIRED`로 끝낸다. 주기는 설정값이다.
+
+**차량 이벤트로 상태 바꾸기.** 대기 장소 도착(`UpdatePickupPlanWait`), 정차(`UpdatePickupPlanStop`), 탑승(`UpdatePickupPlanBoard`), 부모 취소(`DeletePickupPlan`)는 위 "상태 바꾸기" 순서를 따른다. 재배정이 없어 `AREA`를 잠그지 않고, 첫 문장이 계획 행 PK 잠금이다. 탑승·취소는 계획을 끝내므로 그다음 `TIMETABLE_DAY`를 잠근다(계획 PK → `TIMETABLE_DAY` → 계획 UPDATE).
+
+- `EVENT_DT`와 시각 컬럼(`WAIT_START_DT`·`STOP_DT`·`BOARD_DT`)에는 차량이 보낸 `eventDt`를 쓴다. 취소는 차량 시각을 받지 않아 `CANCELED` 이벤트의 `EVENT_DT`가 서버 시각이다. `CLOSE_DT`는 끝낸 서버 시각이라 탑승의 `EVENT_DT`(`eventDt`)가 `CLOSE_DT`보다 앞일 수 있다.
+- 정차는 배정 장소(기본 지점 좌표, 임의 좌표면 그 좌표)에서 `PickupPlan:StopRadiusM`(기본 30m, 1 미만이면 기동 실패) 안이면 `STOPPED`, 밖이면 `WRONG_STOP` 이벤트다. 배정 장소가 없는 계획은 `STOPPED`다. 어느 쪽이든 `STATUS`는 `STOPPED`다. 정차 좌표와 거리는 판정에만 쓰고 저장하지 않는다.
+- 취소의 취소 문자 대상(아이 번호·부모 이름)은 익명화 전에 같은 트랜잭션에서 읽어 두고, 문자는 커밋한 뒤 잠금 밖에서 보낸다. 결과는 이벤트로 남기지 않는다(`api.md` "상태 바꾸기").
+
+**끝난 계획의 재요청.** 계획이 끝나면 `USER_ID`가 비어 소유를 확인할 수 없다. 응답을 못 받은 차량이나 오프라인 대기열이 같은 요청을 다시 보낼 수 있으므로, 위 네 API는 `PICKUP_EVENT`에 같은 계획·같은 `CLIENT_EVENT_ID`의 이벤트가 있고 그 유형이 그 API의 유형(대기 `WAIT_STARTED`, 정차 `STOPPED`·`WRONG_STOP`, 탑승 `BOARDED`, 취소 `CANCELED`)이면 처음 요청이 반영된 것으로 보고 200을 돌려준다. 이 확인은 `PLAN_CLOSED` 같은 409 판정보다 먼저이고 잠근 뒤에도 같다. 그 밖의 끝난 계획은 404다. 이 조회는 `PICKUP_EVENT`의 UNIQUE `(PICKUP_PLAN_ID, CLIENT_EVENT_ID)`를 쓰고 `DELETE_YN` 조건을 붙이지 않는다.
 
 **익명화.** 계획이 `BOARDED`·`EXPIRED`·`CANCELED`가 되면 같은 트랜잭션에서 아래를 한다. [ADR-0008]
 
@@ -684,14 +692,14 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 |---|---|---|
 | `PLANNED` | 계획 생성, 배정 | `{"pickupSpotId": 12 또는 null, "custom": true/false, "slotDt": "2026-11-12T22:04:00" 또는 null}` |
 | `STARTED` | 경로 시작 | — |
-| `WAIT_STARTED` | 대기 장소 도착 | — |
+| `WAIT_STARTED` | 대기 장소 도착 | `{"parkingLotId": 12}` |
 | `END_TIME_CHANGED` | 오늘 하원 시각 변경 | 전·후 시각 |
 | `REASSIGNED` | 지점·시각 재배정 | `{"reason": "LATE_START"·"LOCATION_CHANGED", "fromSpotId", "toSpotId", "fromCustom", "toCustom", "fromSlotDt", "toSlotDt"}` |
 | `LINK_SENT` | 링크 발송 | 채널, 성공 여부, 발송 업체 결과 코드 |
 | `LINK_OPENED` | 아이가 링크 열람 | — |
 | `CHILD_LEAVING` | 아이가 "지금 나가요" | — |
-| `STOPPED` | 픽업 지점 정차 | — |
-| `WRONG_STOP` | 배정 지점이 아닌 곳에 정차 | 걸린 `ZONE_TYPE` |
+| `STOPPED` | 배정 장소 반경 안 정차(배정 장소가 없는 계획의 정차 포함) | — |
+| `WRONG_STOP` | 배정 장소 반경 밖에 정차 | `{"zoneTypes": ["NO_PARKING", …]}`(걸린 `ZONE_TYPE`, 없으면 빈 배열) 또는 `{"zoneTypes": null}`(판정 불가: 학원가 밖·구역 데이터 없음). 좌표·거리는 넣지 않는다 |
 | `REMIND_SENT` | "도착했어요" 다시 알림 | 채널, 성공 여부, 발송 업체 결과 코드 |
 | `LOOP_STARTED` | 한 바퀴 시작 | `LOOP_ROUTE_ID`, 다시 도착 시각 |
 | `BOARDED` | 탑승 감지 | — |
@@ -706,7 +714,8 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 - 횟수 제한(다시 알림 1회, "지금 나가요" 1회)은 이 이력을 세어 Service에서 확인한다.
 - `DETAIL`에는 위 표에 적힌 값만 넣는다. 발송 업체 응답을 그대로 넣지 않는다. 수신 번호가 들어 있을 수 있다.
 - `PLANNED`·`REASSIGNED`의 `DETAIL`에 임의 좌표, 장소 이름, 주소를 넣지 않는다. `custom` 플래그만 남긴다. 계획이 끝나 익명화한 뒤에도 이벤트 이력은 남기 때문이다.
-- `EVENT_DT`: 차량이 일으킨 이벤트(`STARTED`, 사유가 `LATE_START`인 `REASSIGNED`)는 차량이 보낸 `eventDt`(출발 시각)다. 사유가 `LOCATION_CHANGED`인 `REASSIGNED`와 서버가 만든 이벤트(`PLANNED`, `EXPIRED` 등)는 서버 현재 시각이다.
+- `EVENT_DT`: 차량이 일으킨 이벤트(`STARTED`, 사유가 `LATE_START`인 `REASSIGNED`, `WAIT_STARTED`, `STOPPED`, `WRONG_STOP`, `BOARDED`)는 차량이 보낸 `eventDt`다. 사유가 `LOCATION_CHANGED`인 `REASSIGNED`, `CANCELED`, 서버가 만든 이벤트(`PLANNED`, `EXPIRED` 등)는 서버 현재 시각이다.
+- `BOARDED`·`CANCELED`의 `CLIENT_EVENT_ID`는 차량 요청의 값이다. 만료로 끝난 `EXPIRED`는 NULL이다.
 - 이벤트의 순서와 "여기부터 새 이벤트" 기준은 `PICKUP_EVENT_ID`다. `EVENT_DT`는 차량 시각이고 늦게 도착할 수 있어 순서 기준으로 쓰지 않는다. 화면은 `PICKUP_PLAN_ID = ? AND PICKUP_EVENT_ID > ?`로 새 이벤트를 읽는다. 이벤트를 넣을 때 계획 행을 잠그므로 번호 순서와 커밋 순서가 같다.
 - 인덱스는 위 UNIQUE 하나로 충분하다. `PICKUP_PLAN_ID`가 맨 앞이라 FK 인덱스를 겸한다. 새 이벤트 조회는 그 계획의 이벤트를 훑어 번호로 거른다. 계획 하나의 이벤트는 수십 건이라 따로 인덱스를 두지 않는다.
 
