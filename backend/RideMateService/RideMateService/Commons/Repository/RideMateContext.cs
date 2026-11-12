@@ -815,6 +815,18 @@ public partial class RideMateContext : DbContext
                 .HasMaxLength(50)
                 .HasComment("생성자")
                 .HasColumnName("CREATE_USER");
+            entity.Property(e => e.CustomLat)
+                .HasPrecision(10, 7)
+                .HasComment("부모가 고른 픽업 위도")
+                .HasColumnName("CUSTOM_LAT");
+            entity.Property(e => e.CustomLng)
+                .HasPrecision(10, 7)
+                .HasComment("부모가 고른 픽업 경도")
+                .HasColumnName("CUSTOM_LNG");
+            entity.Property(e => e.CustomName)
+                .HasMaxLength(100)
+                .HasComment("부모가 고른 픽업 장소 이름")
+                .HasColumnName("CUSTOM_NAME");
             entity.Property(e => e.DeleteYn)
                 .HasComment("삭제 여부")
                 .HasColumnName("DELETE_YN");
