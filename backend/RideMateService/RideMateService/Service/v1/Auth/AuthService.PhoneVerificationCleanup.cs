@@ -18,15 +18,18 @@ public partial class AuthService
         var expiredBefore = thisTime.AddHours(-PhoneVerificationCleanupExpiredHours);
 
         var cleaned = 0;
+        var afterId = 0; // 앞 묶음에서 읽은 마지막 ID. 다음 묶음은 그 뒤부터 읽어 이미 지나온 행을 다시 훑지 않는다
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
                 var ids = await _authRepository.GetCleanupPhoneVerificationIdsAsync(verifiedBefore, expiredBefore,
-                    PhoneVerificationCleanupBatchSize, cancellationToken).ConfigureAwait(false);
+                    afterId, PhoneVerificationCleanupBatchSize, cancellationToken).ConfigureAwait(false);
                 if (ids.Count == 0)
                     break;
+
+                afterId = ids.Max(); // 모두 바뀌지 않았어도 선택한 ID 다음부터 읽는다
 
                 var updated = await _authRepository.CleanupPhoneVerificationsAsync(ids, verifiedBefore, expiredBefore,
                     thisTime, AuditSystem, cancellationToken).ConfigureAwait(false);
