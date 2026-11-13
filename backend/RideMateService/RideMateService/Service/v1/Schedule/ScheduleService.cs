@@ -162,7 +162,7 @@ public class ScheduleService : IScheduleService
             var timetableDays = input.Days.Order().Select(day => new TimetableDay
             {
                 DayOfWeek = (sbyte)day,
-                PickupYn = true,
+                PickupYn = input.IsPickupOn(day),
                 CreateDt = thisTime,
                 CreateUser = AuditUser,
                 UpdateDt = thisTime,
@@ -642,7 +642,7 @@ public class ScheduleService : IScheduleService
                 {
                     TimetableId = scheduleSeq,
                     DayOfWeek = (sbyte)day,
-                    PickupYn = true,
+                    PickupYn = input.IsPickupOn(day),
                     CreateDt = thisTime,
                     CreateUser = AuditUser,
                     UpdateDt = thisTime,
@@ -707,6 +707,11 @@ public class ScheduleService : IScheduleService
                 return Fail(500, "서버에서 요청을 처리하지 못하였습니다.");
             }
 
+            // 13-1) 픽업을 끌 요일을 보냈으면 남은 요일 전체의 스위치를 맞춘다(되살린 요일도 포함). 안 보냈으면 지금 스위치를 그대로 둔다
+            if (input.PickupOffDays is not null)
+                await _scheduleRepository.SetScheduleDaysPickupAsync(scheduleSeq, input.PickupOffDays, thisTime, AuditUser,
+                    cancellationToken).ConfigureAwait(false);
+
             // 14) 응답 — 등록과 같이 커밋 전에 목록 항목 모양으로 읽는다
             var items = await _scheduleRepository.GetScheduleItemsAsync(childId.Value, scheduleSeq, dbTransaction,
                 cancellationToken).ConfigureAwait(false);
@@ -757,7 +762,11 @@ public class ScheduleService : IScheduleService
 
     // 검증을 통과한 값(앞뒤 공백을 지우고 학원 이름·주소는 연속 공백을 한 칸으로 줄인 값)
     private sealed record ValidInput(string DisplayName, string AcademyName, string Address, decimal? Lat, decimal? Lng,
-        List<int> Days, TimeSpan EndTime, bool ConfirmOverlap);
+        List<int> Days, TimeSpan EndTime, bool ConfirmOverlap, List<int>? PickupOffDays)
+    {
+        // 등록·편집에서 만드는 요일 행의 처음 픽업 스위치 — 끌 요일이 아니면 켠다
+        public bool IsPickupOn(int day) => PickupOffDays?.Contains(day) != true;
+    }
 
     // 스펙 표의 규칙대로 검증한다. 하나라도 어긋나면 null이다
     private static ValidInput? ValidateInput(AddScheduleDto? dto)
@@ -801,8 +810,14 @@ public class ScheduleService : IScheduleService
         if (endTime < EndTimeMin || endTime > EndTimeMax || minute % 5 != 0)
             return null;
 
+        // 픽업을 끌 요일: 보냈으면 days 안의 값만, 중복 없음
+        var pickupOffDays = dto.pickupOffDays;
+        if (pickupOffDays is not null
+            && (pickupOffDays.Any(x => !days.Contains(x)) || pickupOffDays.Distinct().Count() != pickupOffDays.Count))
+            return null;
+
         return new ValidInput(displayName, NormalizeText(academyName), NormalizeText(address), place.lat, place.lng,
-            days, endTime, dto.confirmOverlap == true);
+            days, endTime, dto.confirmOverlap == true, pickupOffDays);
     }
 
     // 앞뒤 공백을 지운 값이 min~max자(코드 포인트)인지 본다
