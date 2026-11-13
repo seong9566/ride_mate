@@ -10,6 +10,7 @@ public partial class PickupService
 {
     private const string DriveRouteSourceRoute = "ROUTE";
     private const string DriveRouteSourceEstimate = "ESTIMATE";
+    private const string LegCurrentName = "현재 위치";
     private const string LegHomeName = "집";
 
     /// <summary>
@@ -26,7 +27,7 @@ public partial class PickupService
 
             // 2) 입력 검증 — API 모델 검증을 거치지 않은 호출도 필수값·경유지 개수·경유지 좌표/주소 조합은 거절한다(범위·길이는 모델 검증)
             var requestWaypoints = dto?.waypoints ?? new List<TodayPickupWaypointReqDto>();
-            if (dto is not { scheduleSeq: >= 1, dayOfWeek: >= 1 and <= 7 }
+            if (dto is not { scheduleSeq: >= 1, dayOfWeek: >= 1 and <= 7, currentLat: not null, currentLng: not null }
                 || requestWaypoints.Count > DetailTodayPickupRouteReqDto.MaxWaypoints
                 || !requestWaypoints.All(DetailTodayPickupRouteReqDto.IsValidWaypoint))
                 return new ResponseModel<DetailTodayPickupRouteDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
@@ -98,19 +99,27 @@ public partial class PickupService
                 waypoints = waypoints
             };
 
-            // 5) 학원 → 경유지 → 집 차량 경로 — 카카오모빌리티 자동차 길찾기(지금 출발) 한 번으로 구간별 시간을 받는다.
-            //    실패하면 구간마다 직선 거리로 추정한다. 학원·집·경유지 좌표 중 하나라도 없으면 계산하지 않는다
+            // 5) 현재 위치 → 학원 → 경유지 → 집 차량 경로 — 카카오모빌리티 자동차 길찾기(지금 출발) 한 번으로 구간별 시간을 받는다.
+            //    학원은 카카오의 첫 경유지가 된다. 실패하면 구간마다 직선 거리로 추정한다. 학원·집·경유지 좌표 중 하나라도 없으면 계산하지 않는다
             if (row is { AcademyLat: { } academyLat, AcademyLng: { } academyLng }
                 && result.home is { lat: { } homeLat, lng: { } homeLng }
                 && waypoints.All(w => w.lat is not null && w.lng is not null))
             {
-                // 구간 이름: 학원 이름 → 경유지 이름들 → 집
-                var pointNames = new List<string> { row.AcademyName };
+                // 점 순서: 현재 위치 → 학원 → 경유지들 → 집. 구간의 도착 경유지 순번은 사용자 경유지 기준(학원·집은 null)
+                var points = new List<(decimal Lat, decimal Lng)> { (dto.currentLat!.Value, dto.currentLng!.Value), (academyLat, academyLng) };
+                points.AddRange(waypoints.Select(w => (w.lat!.Value, w.lng!.Value)));
+                points.Add((homeLat, homeLng));
+
+                var pointNames = new List<string> { LegCurrentName, row.AcademyName };
                 pointNames.AddRange(waypoints.Select(w => w.name));
                 pointNames.Add(LegHomeName);
-                result.driveRoute = await DriveRouteAsync((academyLat, academyLng),
-                    waypoints.Select(w => (w.lat!.Value, w.lng!.Value)).ToList(), (homeLat, homeLng), pointNames,
-                    cancellationToken).ConfigureAwait(false);
+
+                var toWaypointIndexes = new List<int?> { null };
+                toWaypointIndexes.AddRange(Enumerable.Range(0, waypoints.Count).Select(i => (int?)i));
+                toWaypointIndexes.Add(null);
+
+                result.driveRoute = await DriveRouteAsync(points, pointNames, toWaypointIndexes, cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             return new ResponseModel<DetailTodayPickupRouteDto>
@@ -133,57 +142,36 @@ public partial class PickupService
     private async Task<AddressSearchResult?> SearchWaypointAsync(string address, CancellationToken cancellationToken)
         => await _addressClient.SearchAddressAsync(address, cancellationToken).ConfigureAwait(false);
 
-    // 결과를 저장하지 않는다(카카오 길찾기 결과 캐싱 금지). 실패하면 구간마다 직선 거리 × 도로 보정 ÷ 차량 추정 속도를 올림한 분이다.
-    // 전체 시간은 구간 시간의 합이다(화면의 구간 시간을 더한 값과 맞춘다)
-    private async Task<TodayPickupDriveRouteDto> DriveRouteAsync((decimal Lat, decimal Lng) academy,
-        IReadOnlyList<(decimal Lat, decimal Lng)> waypoints, (decimal Lat, decimal Lng) home,
-        IReadOnlyList<string> pointNames, CancellationToken cancellationToken)
+    // 결과를 저장하지 않는다(카카오 길찾기 결과 캐싱 금지). points는 출발지·중간 지점들·도착지 순서이고 구간은 points 수 − 1개다.
+    // 중간 지점은 카카오 경유지로 보낸다. 실패하면 구간마다 직선 거리 × 도로 보정 ÷ 차량 추정 속도를 올림한 분이다.
+    // 전체 시간은 구간 시간의 합이다(화면의 구간 시간을 더한 값과 맞춘다). pointNames는 points와, toWaypointIndexes는 구간과 같은 순서다
+    private async Task<TodayPickupDriveRouteDto> DriveRouteAsync(IReadOnlyList<(decimal Lat, decimal Lng)> points,
+        IReadOnlyList<string> pointNames, IReadOnlyList<int?> toWaypointIndexes, CancellationToken cancellationToken)
     {
-        var route = await _driveRouteClient.GetDriveRouteAsync(academy, waypoints, home, cancellationToken)
-            .ConfigureAwait(false);
+        var route = await _driveRouteClient.GetDriveRouteAsync(points[0], points.Skip(1).Take(points.Count - 2).ToList(),
+            points[^1], cancellationToken).ConfigureAwait(false);
 
-        List<TodayPickupDriveLegDto> legs;
-        string source;
-        if (route is not null)
-        {
-            legs = route.Legs
-                .Select((leg, i) => NewLeg(i, waypoints.Count, pointNames, DepartureGuideCalculator.SecondsToMinutesCeil(leg.Seconds), leg.DistanceM))
-                .ToList();
-            source = DriveRouteSourceRoute;
-        }
-        else
-        {
-            var points = new List<(decimal Lat, decimal Lng)> { academy };
-            points.AddRange(waypoints);
-            points.Add(home);
-            legs = Enumerable.Range(0, points.Count - 1)
-                .Select(i => NewLeg(i, waypoints.Count, pointNames,
-                    DepartureGuideCalculator.EstimateMinutes(
+        var legs = Enumerable.Range(0, points.Count - 1)
+            .Select(i => new TodayPickupDriveLegDto
+            {
+                from = pointNames[i],
+                to = pointNames[i + 1],
+                toWaypointIndex = toWaypointIndexes[i],
+                driveMin = route is not null
+                    ? DepartureGuideCalculator.SecondsToMinutesCeil(route.Legs[i].Seconds)
+                    : DepartureGuideCalculator.EstimateMinutes(
                         GeoDistance.Meters(points[i].Lat, points[i].Lng, points[i + 1].Lat, points[i + 1].Lng),
                         _options.DriveKmh, _options.RoadFactor),
-                    null))
-                .ToList();
-            source = DriveRouteSourceEstimate;
-        }
+                distanceM = route?.Legs[i].DistanceM
+            })
+            .ToList();
 
         return new TodayPickupDriveRouteDto
         {
             driveMin = legs.Sum(l => l.driveMin),
             distanceM = route?.DistanceM,
-            source = source,
+            source = route is not null ? DriveRouteSourceRoute : DriveRouteSourceEstimate,
             legs = legs
         };
     }
-
-    // i번째 구간(0부터). 경유지가 n개면 구간은 n + 1개이고 마지막 구간이 집으로 간다. pointNames는 학원·경유지들·집 순서의 이름이다
-    private static TodayPickupDriveLegDto NewLeg(int i, int waypointCount, IReadOnlyList<string> pointNames, int driveMin,
-        int? distanceM)
-        => new()
-        {
-            from = pointNames[i],
-            to = pointNames[i + 1],
-            toWaypointIndex = i == waypointCount ? null : i,
-            driveMin = driveMin,
-            distanceM = distanceM
-        };
 }

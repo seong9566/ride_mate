@@ -8,9 +8,9 @@ namespace RideMateService.Comm.Dto.v1.Pickup.Request;
 public class DetailTodayPickupRouteReqDto : IValidatableObject
 {
     /// <summary>
-    /// 경유지 최대 개수(카카오모빌리티 자동차 길찾기 한도)
+    /// 경유지 최대 개수. 카카오모빌리티 자동차 길찾기 경유지 한도 5개 중 하나를 학원이 쓴다
     /// </summary>
-    public const int MaxWaypoints = 5;
+    public const int MaxWaypoints = 4;
 
     /// <summary>
     /// 고른 시간표 ID(이번 주 스케줄의 scheduleSeq)
@@ -27,7 +27,21 @@ public class DetailTodayPickupRouteReqDto : IValidatableObject
     public int? dayOfWeek { get; set; }
 
     /// <summary>
-    /// 학원과 집 사이에 들를 곳. 보낸 순서대로 학원 → 경유지 → 집으로 계산한다. 최대 5개, 빠지면 경유지 없음
+    /// 차량 현재 위도. 경로의 출발지다
+    /// </summary>
+    [Required]
+    [Range(-90.0, 90.0)]
+    public decimal? currentLat { get; set; }
+
+    /// <summary>
+    /// 차량 현재 경도. 경로의 출발지다
+    /// </summary>
+    [Required]
+    [Range(-180.0, 180.0)]
+    public decimal? currentLng { get; set; }
+
+    /// <summary>
+    /// 학원과 집 사이에 들를 곳. 보낸 순서대로 현재 위치 → 학원 → 경유지 → 집으로 계산한다. 최대 4개, 빠지면 경유지 없음
     /// </summary>
     public List<TodayPickupWaypointReqDto>? waypoints { get; set; }
 

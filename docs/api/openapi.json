@@ -3023,6 +3023,8 @@
       },
       "RideMateService_Comm_Dto_v1_Pickup_Request_DetailTodayPickupRouteReqDto": {
         "required": [
+          "currentLat",
+          "currentLng",
           "dayOfWeek",
           "scheduleSeq"
         ],
@@ -3039,6 +3041,18 @@
             "minimum": 1,
             "type": "integer",
             "format": "int32"
+          },
+          "currentLat": {
+            "maximum": 90,
+            "minimum": -90,
+            "type": "number",
+            "format": "double"
+          },
+          "currentLng": {
+            "maximum": 180,
+            "minimum": -180,
+            "type": "number",
+            "format": "double"
           },
           "waypoints": {
             "type": "array",
