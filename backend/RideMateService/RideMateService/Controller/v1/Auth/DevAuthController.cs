@@ -26,7 +26,7 @@ public class DevAuthController : ApiControllerBase
     /// 개발 전용 토큰 발급
     /// </summary>
     /// <remarks>
-    /// 개발 단계라 배포 서버(Production)에서도 동작한다. 출시 전에 막는다. 클라이언트(IP)마다 1분 10회다(넘으면 429).
+    /// 개발 단계라 배포 서버(Production)에서도 동작한다. 출시 전에 막는다. 클라이언트(IP)마다 1분 30회다(넘으면 429). 배포 서버는 프록시 뒤라 지금은 모든 호출이 한 묶음으로 센다.
     /// 인증번호·QR 없이 계정 ID로 로그인과 같은 차량 세션을 만들고 `Auth/M/Token`과 같은 본문을 돌려준다.
     /// 받은 access_token을 Swagger의 Authorize에 넣는다. device_id를 비우면 swagger-dev이고, 값을 넣으면 같은 기기 ID로 로그인해 있던 그 계정의 실제 차량 세션이 끝난다.
     /// 없는 계정이면 400 `invalid_grant`다.
