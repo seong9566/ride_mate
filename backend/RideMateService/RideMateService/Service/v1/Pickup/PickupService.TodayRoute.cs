@@ -26,7 +26,7 @@ public partial class PickupService
             if (!int.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("sub"), out var userId))
                 return new ResponseModel<DetailTodayPickupRouteDto> { message = "잘못된 요청입니다.", data = null, code = 401 };
 
-            // 2) 입력 검증 — API 모델 검증을 거치지 않은 호출도 같은 규칙으로 거절한다
+            // 2) 입력 검증 — API 모델 검증을 거치지 않은 호출도 필수값·경유지 개수·경유지 좌표/주소 조합은 거절한다(범위·길이는 모델 검증)
             var requestWaypoints = dto?.waypoints ?? new List<TodayPickupWaypointReqDto>();
             if (dto is not { scheduleSeq: >= 1, dayOfWeek: >= 1 and <= 7 }
                 || requestWaypoints.Count > DetailTodayPickupRouteReqDto.MaxWaypoints
@@ -49,20 +49,27 @@ public partial class PickupService
                 return new ResponseModel<DetailTodayPickupRouteDto> { message = "요청이 정상 처리되었습니다.", data = null, code = 101 };
 
             // 4) 경유지 좌표 — 좌표를 보냈으면 그대로, 주소만 보냈으면 카카오 주소 검색으로 찾는다.
-            //    주소를 찾지 못하면(결과 없음) 400, 카카오 장애·키 없음이면 좌표 없이 두고 경로를 계산하지 않는다
+            //    주소 검색은 동시에 부른다(카카오 장애 때 타임아웃이 경유지 수만큼 쌓이지 않게).
+            //    주소를 찾지 못하면(결과 없음) 순번이 가장 작은 것으로 400, 카카오 장애·키 없음이면 좌표 없이 두고 경로를 계산하지 않는다
+            var searches = requestWaypoints
+                .Select(w => w is { lat: not null, lng: not null }
+                    ? Task.FromResult<AddressSearchResult?>(null)
+                    : SearchWaypointAsync(w.address!.Trim(), cancellationToken))
+                .ToList();
+            var found = await Task.WhenAll(searches).ConfigureAwait(false);
+
             var waypoints = new List<TodayPickupWaypointDto>(requestWaypoints.Count);
             for (var i = 0; i < requestWaypoints.Count; i++)
             {
                 var request = requestWaypoints[i];
                 var address = string.IsNullOrWhiteSpace(request.address) ? null : request.address.Trim();
-                if (request is { lat: { } lat, lng: { } lng })
+                if (found[i] is null)
                 {
-                    waypoints.Add(new TodayPickupWaypointDto { address = address, lat = lat, lng = lng });
+                    waypoints.Add(new TodayPickupWaypointDto { address = address, lat = request.lat, lng = request.lng });
                     continue;
                 }
 
-                var found = await _addressClient.SearchAddressAsync(address!, cancellationToken).ConfigureAwait(false);
-                if (found.Status == AddressSearchStatus.NotFound)
+                if (found[i]!.Status == AddressSearchStatus.NotFound)
                     return new ResponseModel<DetailTodayPickupRouteDto>
                     {
                         message = $"{i + 1}번째 경유지 주소를 찾을 수 없습니다.",
@@ -70,7 +77,7 @@ public partial class PickupService
                         code = 400
                     };
 
-                waypoints.Add(new TodayPickupWaypointDto { address = address, lat = found.Lat, lng = found.Lng });
+                waypoints.Add(new TodayPickupWaypointDto { address = address, lat = found[i]!.Lat, lng = found[i]!.Lng });
             }
 
             var result = new DetailTodayPickupRouteDto
@@ -119,6 +126,9 @@ public partial class PickupService
             return new ResponseModel<DetailTodayPickupRouteDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
         }
     }
+
+    private async Task<AddressSearchResult?> SearchWaypointAsync(string address, CancellationToken cancellationToken)
+        => await _addressClient.SearchAddressAsync(address, cancellationToken).ConfigureAwait(false);
 
     // 결과를 저장하지 않는다(카카오 길찾기 결과 캐싱 금지). 실패하면 구간마다 직선 거리 × 도로 보정 ÷ 차량 추정 속도를 올림한 분이다.
     // 전체 시간은 구간 시간의 합이다(화면의 구간 시간을 더한 값과 맞춘다)
