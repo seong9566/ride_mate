@@ -31,7 +31,7 @@ public class DetailDepartureGuideDto
     public DateTime? childArrivalDt { get; set; }
 
     /// <summary>
-    /// 현재 위치 → 픽업 장소 → 집 차량 경로. 자기 계획이 대기 중이면 첫 구간 출발지는 현재 위치가 아니라 대기 중인 주차장이다. 집 좌표가 없으면 첫 구간뿐이다. pickup이 null이면 null
+    /// 현재 위치 → 픽업 장소 → 집 차량 경로. 자기 계획이 대기 중이면 첫 구간 출발지 이름만 대기 중인 주차장 이름이고, 시간은 요청의 현재 위치 기준으로 구한다. 집 좌표가 없으면 첫 구간뿐이다. pickup이 null이면 null
     /// </summary>
     public DepartureGuideDriveRouteDto? driveRoute { get; set; }
 
@@ -158,7 +158,7 @@ public class DepartureGuideDriveRouteDto
     public string source { get; set; } = string.Empty;
 
     /// <summary>
-    /// 구간별 결과. 현재 위치(자기 계획이 대기 중이면 대기 중인 주차장) → 픽업 장소 → 집 순서이고 집 좌표가 없으면 첫 구간뿐이다
+    /// 구간별 결과. 현재 위치 → 픽업 장소 → 집 순서이고(자기 계획이 대기 중이면 첫 출발지 이름만 대기 중인 주차장) 집 좌표가 없으면 첫 구간뿐이다
     /// </summary>
     public List<DepartureGuideDriveLegDto> legs { get; set; } = new();
 }

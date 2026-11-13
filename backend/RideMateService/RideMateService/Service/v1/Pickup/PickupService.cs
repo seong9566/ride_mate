@@ -430,7 +430,7 @@ public partial class PickupService : IPickupService
             });
 
         // 7) 차량 경로 — 현재 위치 → 픽업 장소 → 집을 카카오모빌리티 자동차 길찾기 한 번으로 구한다(실패하면 직선 거리 추정).
-        //    집 좌표가 없으면 현재 위치 → 픽업 장소 한 구간이다
+        //    집 좌표가 없으면 현재 위치 → 픽업 장소 한 구간이다. 대기 중이면 첫 점 이름만 주차장 이름이고 좌표는 요청의 현재 위치다(실제 차 위치)
         var points = new List<(decimal Lat, decimal Lng)>
         {
             (dto.currentLat!.Value, dto.currentLng!.Value),
