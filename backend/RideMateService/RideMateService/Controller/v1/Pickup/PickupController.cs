@@ -59,6 +59,47 @@ public class PickupController : ApiControllerBase
     }
 
     /// <summary>
+    /// 오늘의 픽업 경로 조회
+    /// </summary>
+    /// <remarks>
+    /// 현재 위치 → 학원 시간은 차량이 내비로 구하고, 학원 → (경유지) → 집 시간은 서버가 카카오모빌리티 자동차 길찾기(지금 출발)로 구한다.
+    /// 경유지가 최대 5개라 query 대신 JSON 본문으로 받으므로 조회지만 POST다.
+    /// 응답 code: 101 오늘 그 시간표의 픽업 없음(오늘 요일이 아님·스위치 꺼짐·오늘 쉼·이미 마침·없거나 남의 시간표), 200 정상,
+    /// 400 잘못된 입력·경유지 주소를 찾을 수 없음, 401 인증 실패, 500 서버 처리 실패
+    /// </remarks>
+    [Consumes("application/json")]
+    [Produces("application/json")]
+    [HttpPost]
+    [Route("v1/Pickup/M/sign/DetailTodayPickupRoute")]
+    [SwaggerOperation(Summary = "오늘의 픽업 경로 조회")]
+    [ProducesResponseType(typeof(ResponseModel<DetailTodayPickupRouteDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ResponseModel<DetailTodayPickupRouteDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ResponseModel<DetailTodayPickupRouteDto>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> DetailTodayPickupRoute([FromBody] DetailTodayPickupRouteReqDto dto,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _pickupService.DetailTodayPickupRouteService(dto, cancellationToken).ConfigureAwait(false);
+            return ToActionResult(model);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // 앱이 요청을 끊었다. 오류로 기록하지 않는다
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
+
+    /// <summary>
     /// 대기 장소 추천 목록
     /// </summary>
     /// <remarks>

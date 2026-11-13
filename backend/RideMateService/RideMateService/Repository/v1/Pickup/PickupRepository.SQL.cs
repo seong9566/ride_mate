@@ -66,6 +66,97 @@ public partial class PickupRepository
     }
 
     /// <summary>
+    /// 로그인한 부모의 살아 있는 아이 시간표 한 건이 그날 요일에 픽업하면 학원·하원 정보를 돌려준다. 아니면 null이다.
+    /// GetTodayPickupsAsync와 같은 규칙이다(픽업 스위치 꺼짐·그날 SKIP 예외·그날 픽업 마침은 빼고, TIME_CHANGE 예외는 바뀐 하원 시각)
+    /// </summary>
+    public async Task<TodayPickupRouteRow?> GetTodayPickupRouteAsync(int userId, int timetableId, DateOnly date,
+        byte dayOfWeek, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("userId", userId);
+            dp.Add("timetableId", timetableId);
+            // DateOnly를 그대로 넘기면 드라이버가 문화권 형식 문자열('11/11/2026')로 보내 DATE 비교가 실패한다
+            dp.Add("date", date.ToDateTime(TimeOnly.MinValue), DbType.Date);
+            dp.Add("dayOfWeek", dayOfWeek);
+
+            var sql = @"
+                SELECT c.CHILD_NAME AS ChildName,
+                       t.DISPLAY_NAME AS DisplayName,
+                       CASE WHEN e.EXCEPTION_TYPE = 'TIME_CHANGE' THEN e.CHANGED_END_TIME ELSE t.END_TIME END AS EndTime,
+                       (SELECT ar.AREA_NAME FROM AREA ar WHERE ar.AREA_ID = a.AREA_ID AND ar.DELETE_YN = FALSE) AS AreaName,
+                       a.ACADEMY_NAME AS AcademyName,
+                       a.ADDRESS AS AcademyAddress,
+                       a.LAT AS AcademyLat,
+                       a.LNG AS AcademyLng
+                FROM CHILD AS c
+                INNER JOIN TIMETABLE AS t
+                        ON t.CHILD_ID = c.CHILD_ID
+                       AND t.TIMETABLE_ID = @timetableId
+                       AND t.DELETE_YN = FALSE
+                INNER JOIN TIMETABLE_DAY AS td
+                        ON td.TIMETABLE_ID = t.TIMETABLE_ID
+                       AND td.DAY_OF_WEEK = @dayOfWeek
+                       AND td.PICKUP_YN = 1
+                       AND (td.LAST_PICKUP_DATE IS NULL OR td.LAST_PICKUP_DATE <> @date)
+                       AND td.DELETE_YN = FALSE
+                INNER JOIN ACADEMY AS a
+                        ON a.ACADEMY_ID = t.ACADEMY_ID
+                       AND a.DELETE_YN = FALSE
+                LEFT JOIN TIMETABLE_EXCEPTION AS e
+                       ON e.TIMETABLE_DAY_ID = td.TIMETABLE_DAY_ID
+                      AND e.TARGET_DATE = @date
+                      AND e.DELETE_YN = FALSE
+                WHERE c.USER_ID = @userId
+                  AND c.DELETE_YN = FALSE
+                  AND (e.EXCEPTION_TYPE IS NULL OR e.EXCEPTION_TYPE <> 'SKIP')";
+
+            return await _dapper.QueryFirstOrDefaultAsync<TodayPickupRouteRow>(
+                new CommandDefinition(sql, dp, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 살아 있는 계정의 저장된 집을 돌려준다. 계정이 없으면 null이다
+    /// </summary>
+    public async Task<UserHomeRow?> GetUserHomeAsync(int userId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("userId", userId);
+
+            var sql = @"
+                SELECT u.DEST_ADDRESS AS DestAddress,
+                       u.DEST_LAT AS DestLat,
+                       u.DEST_LNG AS DestLng
+                FROM USER_INFO AS u
+                WHERE u.USER_ID = @userId
+                  AND u.DELETE_YN = FALSE";
+
+            return await _dapper.QueryFirstOrDefaultAsync<UserHomeRow>(
+                new CommandDefinition(sql, dp, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
     /// 학원가의 살아 있는 대기 장소를 조회한다
     /// </summary>
     public async Task<List<ParkingLotRow>> GetParkingLotsAsync(int areaId,

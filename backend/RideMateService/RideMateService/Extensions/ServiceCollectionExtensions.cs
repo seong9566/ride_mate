@@ -343,6 +343,11 @@ public static class InfrastructureExtensions
             client.BaseAddress = new Uri("https://dapi.kakao.com/");
             client.Timeout = TimeSpan.FromSeconds(3);
         });
+        services.AddHttpClient<IDriveRouteClient, KakaoDriveRouteClient>(client =>
+        {
+            client.BaseAddress = new Uri("https://apis-navi.kakaomobility.com/");
+            client.Timeout = TimeSpan.FromSeconds(3);
+        });
         services.AddHttpClient<IParkingRealtimeClient, KotsaParkingRealtimeClient>((serviceProvider, client) =>
         {
             client.BaseAddress = new Uri("https://apis.data.go.kr/B553881/Parking_v1/");
