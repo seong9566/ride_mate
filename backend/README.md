@@ -135,7 +135,7 @@ API 서버를 컨테이너로 띄우고 Tailscale Funnel로 공개 HTTPS 주소�
    tailscale funnel --bg 8080
    tailscale funnel status    # https://<기기>.<tailnet>.ts.net
    ```
-5. `deploy.env`의 `PUBLIC_BASE_URL`에 4단계 주소를 넣고 `docker compose --env-file ~/.ridemate/deploy.env --profile deploy up -d api`로 다시 띄웁니다. `docker exec ridemate-api printenv QrLogin__VerificationUri`가 localhost가 아니라 공개 주소인지 확인합니다.
+5. `deploy.env`의 `PUBLIC_BASE_URL`에 4단계 주소를 넣고 `docker compose --env-file ~/.ridemate/deploy.env --profile deploy up -d api`로 다시 띄웁니다. `docker exec ridemate-api printenv QrLogin__VerificationUri`가 localhost가 아니라 공개 주소인지 확인합니다. SMS 픽업 링크는 `PUBLIC_BASE_URL`이 아니라 `CHILD_WEB_BASE_URL`(비우면 `https://ride-mate-child-web.vercel.app`)을 씁니다. `printenv PickupLink__BaseUrl`로 확인합니다.
 6. 맥이 잠들지 않게 하고, Docker Desktop과 Tailscale이 로그인할 때 자동으로 실행되게 합니다. 컨테이너는 `restart: unless-stopped`라 Docker가 뜨면 같이 뜹니다. FileVault가 켜져 있으면 재부팅 뒤 직접 로그인해야 Docker가 뜹니다.
 7. 휴대폰 LTE(와이파이 끔)로 `https://<기기>.<tailnet>.ts.net/swagger`가 열리는지 확인합니다.
 

@@ -730,7 +730,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 
 - 토큰은 `HMAC-SHA256(서버 비밀키, PICKUP_PLAN_ID와 TOKEN_NONCE)`다. 원문은 저장하지 않는다. 다시 알릴 때는 같은 식으로 다시 계산해 같은 주소를 보낸다. 명세서는 토큰을 UUID v4로 적었는데, 원문을 저장하지 않으려고 이 방식으로 바꿨다.
 - `TOKEN_NONCE`는 16바이트 CSPRNG 난수의 소문자 hex 32자다. 토큰 원문은 HMAC 입력 문자열 `"pickup-link:" + PICKUP_PLAN_ID + ":" + TOKEN_NONCE`의 결과 32바이트를 base64url(패딩 없음) 43자로 쓴 값이다. `TOKEN_HASH`는 입력 문자열 `"pickup-link-token:" + 토큰 원문`의 HMAC을 소문자 hex 64자로 쓴 값이다. 접두어는 `security.md`의 다른 해시와 겹치지 않는다.
-- 링크 주소는 설정값 `PickupLink:BaseUrl` + `/` + 토큰 원문이다.
+- 링크 주소는 설정값 `PickupLink:BaseUrl` + `/` + 토큰 원문이다. 배포는 아이 휴대폰 웹 주소(`CHILD_WEB_BASE_URL`, 기본 `https://ride-mate-child-web.vercel.app`)를 쓰고, 웹은 주소의 마지막 경로 조각을 토큰으로 읽는다.
 - 링크를 열 때는 받은 토큰을 위 식으로 해시해 `TOKEN_HASH`로 찾는다. 없으면 "링크를 찾을 수 없어요"다.
 - 세션은 링크 발송 API(`AddPickupLink`)가 만든다. 발송이 실패해도 세션은 남고, 다시 보낼 때 같은 링크를 쓴다. 다시 알림 API(`AddPickupRemind`)는 세션을 만들지 않는다.
 - `SEND_CHANNEL`은 지금 항상 `SMS`다. 아이 정보의 채널이 `ALIMTALK`이어도 SMS로 보낸다.

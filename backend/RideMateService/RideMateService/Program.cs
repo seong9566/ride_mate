@@ -172,6 +172,20 @@ builder.Services.AddTransient<IDbConnection>(sp =>
     sp.GetRequiredService<RideMateContext>().Database.GetDbConnection());
 #endregion
 
+#region CORS
+// 아이 휴대폰 웹은 링크 토큰을 X-Pickup-Token 헤더로 보내고 쿠키를 쓰지 않으므로 credentials는 허용하지 않는다.
+// 웹이 429의 Retry-After를 읽으므로 노출한다
+var childWebOrigins = builder.Configuration.GetSection("Cors:ChildWebOrigins").Get<string[]>();
+if (childWebOrigins is not { Length: > 0 } || childWebOrigins.Any(string.IsNullOrWhiteSpace))
+    throw new InvalidOperationException("Cors:ChildWebOrigins 설정이 비어 있습니다.");
+
+builder.Services.AddCors(options => options.AddPolicy(ChildWebCors.PolicyName, policy => policy
+    .WithOrigins(childWebOrigins)
+    .WithMethods("GET", "POST", "DELETE")
+    .WithHeaders("Accept", "Content-Type", "X-Pickup-Token")
+    .WithExposedHeaders("Retry-After")));
+#endregion
+
 builder.Services.AddControllers(options =>
     {
         options.Filters.Add<RunActionFilter>();
@@ -209,6 +223,8 @@ app.UseSwaggerUI(c =>
 
 });
 #endregion
+
+app.UseCors(); // 정책은 [EnableCors]로 엔드포인트에 붙인다. preflight는 빈도 제한 전에 여기서 끝난다
 
 app.UseAuthentication();
 app.UseAuthorization();

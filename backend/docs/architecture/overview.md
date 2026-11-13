@@ -72,7 +72,7 @@ Controller ──▶ Service ──▶ Repository ──▶ DbContext / IDbConne
 10. Dapper 타입 핸들러
 11. 인증 (`AddAuthInfrastructure()` — 키 설정 검증과 Singleton 등록, `PhoneVerification` 설정 등록(`CleanupIntervalMin`이 1보다 작으면 기동 실패), JwtBearer)
 12. DbContext + Dapper `IDbConnection` (연결 문자열이 없으면 기동 실패)
-13. CORS (허용 오리진이 없으면 기동 실패)
+13. CORS (`ChildWeb` 정책 — 아이 휴대폰 웹 오리진 `Cors:ChildWebOrigins`만 허용, GET·POST·DELETE, `Accept`·`Content-Type`·`X-Pickup-Token` 헤더, `Retry-After` 노출, credentials 없음. `PickupWebController`에 `[EnableCors]`로 붙인다. 허용 오리진이 없으면 기동 실패)
 14. `AddControllers` + `RunActionFilter` + `AddNewtonsoftJson`
 15. `AddAuthorization`
 16. 요청 빈도 제한 (`AddRateLimitPolicies()` — 차 계정 목록 정책. 파티션 키가 클라이언트 IP라 2번 ForwardedHeaders에 기댄다)
@@ -84,7 +84,7 @@ Controller ──▶ Service ──▶ Repository ──▶ DbContext / IDbConne
 3. `UseRouting()`
 4. `UseSwagger()` / `UseSwaggerUI()`
 5. `UseStaticFiles()`
-6. `UseCors()`
+6. `UseCors()` — 정책 이름 없이 등록하고 엔드포인트의 `[EnableCors]`를 따른다. preflight는 여기서 끝나 빈도 제한에 세지 않는다
 7. `UseAuthentication()`
 8. `UseAuthorization()`
 9. `UseRateLimiter()` — `UseRouting()` 뒤여야 엔드포인트별 정책(`[EnableRateLimiting]`)이 붙는다
