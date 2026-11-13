@@ -36,9 +36,35 @@ public class DetailTodayPickupRouteDto
     public TodayPickupRouteHomeDto? home { get; set; }
 
     /// <summary>
-    /// 학원 → 집 차량 경로. 학원이나 집 좌표가 없으면 null
+    /// 요청한 경유지. 보낸 순서이고 주소만 보낸 경유지는 서버가 찾은 좌표가 들어간다. 경유지가 없으면 빈 배열
+    /// </summary>
+    public List<TodayPickupWaypointDto> waypoints { get; set; } = new();
+
+    /// <summary>
+    /// 학원 → (경유지) → 집 차량 경로. 학원이나 집 좌표가 없거나 주소 경유지의 좌표를 구하지 못했으면(카카오 장애·키 없음) null
     /// </summary>
     public TodayPickupHomeDriveDto? homeDrive { get; set; }
+}
+
+/// <summary>
+/// 오늘의 픽업 경로의 경유지
+/// </summary>
+public class TodayPickupWaypointDto
+{
+    /// <summary>
+    /// 요청에 보낸 주소. 좌표만 보냈으면 null
+    /// </summary>
+    public string? address { get; set; }
+
+    /// <summary>
+    /// 위도. 주소만 보냈고 좌표를 구하지 못했으면 null
+    /// </summary>
+    public decimal? lat { get; set; }
+
+    /// <summary>
+    /// 경도. 주소만 보냈고 좌표를 구하지 못했으면 null
+    /// </summary>
+    public decimal? lng { get; set; }
 }
 
 /// <summary>
@@ -89,17 +115,17 @@ public class TodayPickupRouteHomeDto
 }
 
 /// <summary>
-/// 학원 → 집 차량 경로
+/// 학원 → (경유지) → 집 차량 경로
 /// </summary>
 public class TodayPickupHomeDriveDto
 {
     /// <summary>
-    /// 차량 소요 시간(분). 지금 출발 기준
+    /// 전체 차량 소요 시간(분). legs의 driveMin 합이라 화면의 구간 시간을 더한 값과 같다. 지금 출발 기준
     /// </summary>
     public int driveMin { get; set; }
 
     /// <summary>
-    /// 경로 거리(m). source가 ESTIMATE면 null
+    /// 전체 경로 거리(m). source가 ESTIMATE면 null
     /// </summary>
     public int? distanceM { get; set; }
 
@@ -109,7 +135,38 @@ public class TodayPickupHomeDriveDto
     public string source { get; set; } = string.Empty;
 
     /// <summary>
-    /// 학원 → 집 경로 선. source가 ESTIMATE면 null
+    /// 구간별 결과. 학원 → 경유지1 → … → 집 순서이고 경유지 수 + 1개다
     /// </summary>
-    public List<GeoPointDto>? path { get; set; }
+    public List<TodayPickupDriveLegDto> legs { get; set; } = new();
+}
+
+/// <summary>
+/// 차량 경로의 한 구간
+/// </summary>
+public class TodayPickupDriveLegDto
+{
+    /// <summary>
+    /// 출발점. ACADEMY 또는 WAYPOINT
+    /// </summary>
+    public string from { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 도착점. WAYPOINT 또는 HOME
+    /// </summary>
+    public string to { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 도착점이 경유지면 waypoints의 순번(0부터). 집이면 null
+    /// </summary>
+    public int? toWaypointIndex { get; set; }
+
+    /// <summary>
+    /// 구간 소요 시간(분, 올림)
+    /// </summary>
+    public int driveMin { get; set; }
+
+    /// <summary>
+    /// 구간 거리(m). source가 ESTIMATE면 null
+    /// </summary>
+    public int? distanceM { get; set; }
 }

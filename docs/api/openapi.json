@@ -772,35 +772,20 @@
       }
     },
     "/api/v1/Pickup/M/sign/DetailTodayPickupRoute": {
-      "get": {
+      "post": {
         "tags": [
           "Pickup"
         ],
         "summary": "오늘의 픽업 경로 조회",
-        "parameters": [
-          {
-            "name": "scheduleSeq",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "maximum": 2147483647,
-              "minimum": 1,
-              "type": "integer",
-              "format": "int32"
-            }
-          },
-          {
-            "name": "dayOfWeek",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "maximum": 7,
-              "minimum": 1,
-              "type": "integer",
-              "format": "int32"
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_DetailTodayPickupRouteReqDto"
+              }
             }
           }
-        ],
+        },
         "responses": {
           "200": {
             "description": "OK",
@@ -3036,6 +3021,59 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_Dto_v1_Pickup_Request_DetailTodayPickupRouteReqDto": {
+        "required": [
+          "dayOfWeek",
+          "scheduleSeq"
+        ],
+        "type": "object",
+        "properties": {
+          "scheduleSeq": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32"
+          },
+          "dayOfWeek": {
+            "maximum": 7,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32"
+          },
+          "waypoints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Request_TodayPickupWaypointReqDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Pickup_Request_TodayPickupWaypointReqDto": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "maximum": 90,
+            "minimum": -90,
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "lng": {
+            "maximum": 180,
+            "minimum": -180,
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "address": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_Dto_v1_Pickup_Request_UpdatePickupPlanBoardDto": {
         "required": [
           "clientEventId",
@@ -3670,6 +3708,13 @@
           "home": {
             "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_TodayPickupRouteHomeDto"
           },
+          "waypoints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_TodayPickupWaypointDto"
+            },
+            "nullable": true
+          },
           "homeDrive": {
             "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_TodayPickupHomeDriveDto"
           }
@@ -4029,6 +4074,34 @@
         },
         "additionalProperties": false
       },
+      "RideMateService_Comm_Dto_v1_Pickup_Response_TodayPickupDriveLegDto": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "nullable": true
+          },
+          "to": {
+            "type": "string",
+            "nullable": true
+          },
+          "toWaypointIndex": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "driveMin": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "distanceM": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "RideMateService_Comm_Dto_v1_Pickup_Response_TodayPickupHomeDriveDto": {
         "type": "object",
         "properties": {
@@ -4045,10 +4118,10 @@
             "type": "string",
             "nullable": true
           },
-          "path": {
+          "legs": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_GeoPointDto"
+              "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_TodayPickupDriveLegDto"
             },
             "nullable": true
           }
@@ -4080,6 +4153,26 @@
         "additionalProperties": false
       },
       "RideMateService_Comm_Dto_v1_Pickup_Response_TodayPickupRouteHomeDto": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "lat": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "lng": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Pickup_Response_TodayPickupWaypointDto": {
         "type": "object",
         "properties": {
           "address": {

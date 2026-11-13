@@ -23,8 +23,9 @@ public class KakaoDriveRouteClient : IDriveRouteClient
     /// <summary>
     /// 추천 경로(RECOMMEND)로 자동차 경로를 조회한다. 실패 사유는 로그에 남기되 좌표·키·URL은 남기지 않는다.
     /// </summary>
-    public async Task<DriveRouteResult?> GetDriveRouteAsync(decimal startLat, decimal startLng, decimal endLat,
-        decimal endLng, CancellationToken cancellationToken = default)
+    public async Task<DriveRouteResult?> GetDriveRouteAsync((decimal Lat, decimal Lng) start,
+        IReadOnlyList<(decimal Lat, decimal Lng)> waypoints, (decimal Lat, decimal Lng) end,
+        CancellationToken cancellationToken = default)
     {
         var apiKey = _options.RestApiKey;
         if (string.IsNullOrWhiteSpace(apiKey))
@@ -32,9 +33,12 @@ public class KakaoDriveRouteClient : IDriveRouteClient
 
         try
         {
-            // 카카오는 x=경도, y=위도 순서다
+            // 카카오는 x=경도, y=위도 순서다. 경유지는 '|'로 잇는다. 경로 선은 쓰지 않아 요약(summary=true)만 받는다
             var uri = FormattableString.Invariant(
-                $"v1/directions?origin={startLng},{startLat}&destination={endLng},{endLat}&priority=RECOMMEND");
+                $"v1/directions?origin={start.Lng},{start.Lat}&destination={end.Lng},{end.Lat}&priority=RECOMMEND&summary=true");
+            if (waypoints.Count > 0)
+                uri += "&waypoints=" + Uri.EscapeDataString(string.Join("|",
+                    waypoints.Select(w => FormattableString.Invariant($"{w.Lng},{w.Lat}"))));
 
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
             request.Headers.TryAddWithoutValidation("Authorization", $"KakaoAK {apiKey}");
@@ -47,7 +51,7 @@ public class KakaoDriveRouteClient : IDriveRouteClient
             }
 
             var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            return Parse(body);
+            return Parse(body, waypoints.Count + 1);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -72,8 +76,8 @@ public class KakaoDriveRouteClient : IDriveRouteClient
         }
     }
 
-    // 첫 경로의 result_code가 0이 아니면 null. 응답 모양이 다르면 예외를 던지고, 호출한 쪽이 null로 바꾼다
-    private DriveRouteResult? Parse(string body)
+    // 첫 경로의 result_code가 0이 아니면 null. 구간 수가 경유지 수 + 1과 다르거나 응답 모양이 다르면 예외를 던지고, 호출한 쪽이 null로 바꾼다
+    private DriveRouteResult? Parse(string body, int expectedLegs)
     {
         var root = JObject.Parse(body);
         var route = (root["routes"] as JArray)?.FirstOrDefault() ?? throw new FormatException("routes");
@@ -86,29 +90,20 @@ public class KakaoDriveRouteClient : IDriveRouteClient
         }
 
         var summary = route["summary"] ?? throw new FormatException("summary");
-        var totalSeconds = summary["duration"]?.Value<int>() ?? throw new FormatException("duration");
         var distanceM = summary["distance"]?.Value<int>() ?? throw new FormatException("distance");
 
-        var path = new List<(decimal Lat, decimal Lng)>();
-        foreach (var section in route["sections"] as JArray ?? new JArray())
-        {
-            foreach (var road in section["roads"] as JArray ?? new JArray())
+        var sections = route["sections"] as JArray ?? throw new FormatException("sections");
+        if (sections.Count != expectedLegs)
+            throw new FormatException("sections count");
+
+        var legs = sections
+            .Select(section => new DriveRouteLeg
             {
-                // vertexes는 [x1, y1, x2, y2, ...] 한 줄 배열이다(x=경도, y=위도)
-                if (road["vertexes"] is not JArray vertexes || vertexes.Count % 2 != 0)
-                    throw new FormatException("vertexes");
+                Seconds = section["duration"]?.Value<int>() ?? throw new FormatException("section duration"),
+                DistanceM = section["distance"]?.Value<int>() ?? throw new FormatException("section distance")
+            })
+            .ToList();
 
-                for (var i = 0; i < vertexes.Count; i += 2)
-                {
-                    var item = (Lat: vertexes[i + 1].Value<decimal>(), Lng: vertexes[i].Value<decimal>());
-                    if (path.Count > 0 && path[^1] == item)
-                        continue;
-
-                    path.Add(item);
-                }
-            }
-        }
-
-        return new DriveRouteResult { TotalSeconds = totalSeconds, DistanceM = distanceM, Path = path };
+        return new DriveRouteResult { DistanceM = distanceM, Legs = legs };
     }
 }

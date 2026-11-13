@@ -15,7 +15,7 @@ public interface IPickupService
     /// <summary>
     /// 오늘의 픽업 경로 조회
     /// </summary>
-    Task<ResponseModel<DetailTodayPickupRouteDto>> DetailTodayPickupRouteService(TodayPickupRouteQueryDto dto,
+    Task<ResponseModel<DetailTodayPickupRouteDto>> DetailTodayPickupRouteService(DetailTodayPickupRouteReqDto dto,
         CancellationToken cancellationToken = default);
 
     /// <summary>
