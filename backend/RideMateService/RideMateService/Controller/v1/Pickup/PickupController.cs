@@ -30,11 +30,18 @@ public class PickupController : ApiControllerBase
     /// <summary>
     /// 출발 안내 계산
     /// </summary>
+    /// <remarks>
+    /// 요청: scheduleSeq(시간표 ID)·dayOfWeek(1월~7일)·currentLat·currentLng 필수, pickupSpotSeq 또는 pickupLat·pickupLng 선택(함께 보낼 수 없음).
+    /// 응답 code: 101 dayOfWeek가 서버의 오늘 요일이 아니거나 그 일정의 오늘 픽업 없음, 200 정상, 400 잘못된 입력, 401 인증 실패·계정 없음, 500 서버 처리 실패
+    /// </remarks>
     [Produces("application/json")]
     [HttpGet]
     [Route("v1/Pickup/M/sign/DetailDepartureGuide")]
     [SwaggerOperation(Summary = "출발 안내 계산")]
     [ProducesResponseType(typeof(ResponseModel<DetailDepartureGuideDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ResponseModel<DetailDepartureGuideDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ResponseModel<DetailDepartureGuideDto>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> DetailDepartureGuide([FromQuery] DepartureGuideQueryDto dto,
         CancellationToken cancellationToken)
     {
@@ -103,7 +110,8 @@ public class PickupController : ApiControllerBase
     /// 대기 장소 추천 목록
     /// </summary>
     /// <remarks>
-    /// 응답 code: 101 오늘 남은 픽업 없음, 200 정상, 400 잘못된 입력, 401 인증 실패, 500 서버 처리 실패
+    /// 요청은 출발 안내와 같다: scheduleSeq(시간표 ID)·dayOfWeek(1월~7일)·currentLat·currentLng 필수, pickupSpotSeq 또는 pickupLat·pickupLng 선택(함께 보낼 수 없음).
+    /// 응답 code: 101 dayOfWeek가 서버의 오늘 요일이 아니거나 그 일정의 오늘 픽업 없음, 200 정상, 400 잘못된 입력, 401 인증 실패·계정 없음, 500 서버 처리 실패
     /// </remarks>
     [Produces("application/json")]
     [HttpGet]
@@ -406,13 +414,18 @@ public class PickupController : ApiControllerBase
     }
 
     /// <summary>
-    /// 경로 시작(오늘 계획이 없으면 만들면서 시작하고, 늦게 출발했으면 같은 장소에서 배정 시각을 미룬다)
+    /// 경로 시작(scheduleSeq로 지정한 일정의 오늘 계획이 없으면 만들면서 시작하고, 늦게 출발했으면 같은 장소에서 배정 시각을 미룬다)
     /// </summary>
     [Produces("application/json")]
     [HttpPatch]
     [Route("v1/Pickup/M/sign/UpdatePickupPlanStart")]
     [SwaggerOperation(Summary = "경로 시작")]
     [ProducesResponseType(typeof(ResponseModel<PickupPlanDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ResponseModel<PickupPlanDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ResponseModel<PickupPlanDto>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ResponseModel<PickupPlanDto>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ResponseModel<PickupPlanDto>), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> UpdatePickupPlanStart([FromBody] UpdatePickupPlanStartDto dto,
         CancellationToken cancellationToken)
     {

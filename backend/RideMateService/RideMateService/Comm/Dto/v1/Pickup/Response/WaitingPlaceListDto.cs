@@ -77,6 +77,31 @@ public class WaitingPlaceDto
     public int driveMin { get; set; }
 
     /// <summary>
+    /// 현재 위치에서 대기 장소까지 거리(m). 직선 거리에 도로 보정을 곱한 추정값
+    /// </summary>
+    public int distanceM { get; set; }
+
+    /// <summary>
+    /// 기본 요금 시간(분)
+    /// </summary>
+    public int baseMin { get; set; }
+
+    /// <summary>
+    /// 기본 요금(원)
+    /// </summary>
+    public int baseFee { get; set; }
+
+    /// <summary>
+    /// 추가 요금 단위 시간(분). 없으면 null
+    /// </summary>
+    public int? addUnitMin { get; set; }
+
+    /// <summary>
+    /// 추가 요금 단위 금액(원). 없으면 null
+    /// </summary>
+    public int? addFee { get; set; }
+
+    /// <summary>
     /// 예상 주차 요금(원). 계산할 수 없으면 null
     /// </summary>
     public int? fee { get; set; }

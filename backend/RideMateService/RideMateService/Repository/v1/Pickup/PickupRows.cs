@@ -8,6 +8,7 @@ public class TodayPickupRow
     public string? AreaName { get; set; }
 
     public int TimetableDayId { get; set; }
+    public int TimetableId { get; set; }
     public int AcademyId { get; set; }
     public int? AreaId { get; set; }
     public string DisplayName { get; set; } = string.Empty;

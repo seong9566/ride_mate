@@ -12,6 +12,7 @@ public partial class PickupService
     private const string DriveRouteSourceEstimate = "ESTIMATE";
     private const string LegCurrentName = "현재 위치";
     private const string LegHomeName = "집";
+    private const string LegPickupName = "픽업 장소";
 
     /// <summary>
     /// 오늘의 픽업 경로 조회
