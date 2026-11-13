@@ -246,7 +246,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `PICKUP_SPOT_ID` | INT | Y | FK → PICKUP_SPOT. 우리 픽업 장소(부모가 고른 기본 픽업 지점). NULL이면 `PRIORITY` 순으로 배정한다 |
 
 - `PICKUP_SPOT_ID`는 그 학원의 살아 있는 후보(`ACADEMY_PICKUP_SPOT` 행과 지점이 살아 있고 지점 `USE_YN = 1`)만 담는다. 제약으로 걸 수 없어 `UpdateSchedulePickupSpot`이 저장할 때 Service에서 확인하고, 읽는 쪽도 후보 조회에 없으면 무시한다. 시간표 편집으로 학원이 바뀌면 같은 `TIMETABLE` 쓰기에서 NULL로 되돌린다(학원이 그대로면 건드리지 않는다). 시간표 삭제는 바꾸지 않는다. 쓰기는 `USER_INFO`를 먼저 잠그는 요일별 픽업 스위치 변경과 같은 순서다(`AREA`를 잠그지 않는다). [ADR-0025]
-- CHECK: `MINUTE(END_TIME) % 5 = 0 AND SECOND(END_TIME) = 0`. 하원 시각 범위(14:00~23:30)는 DB 제약이 아니라 Service 검증으로만 둔다(`20261114_timetable_drop_end_time_check.sql`에서 `CK_TIMETABLE_01` 삭제). 자정을 넘는 픽업은 아직 처리하지 않는다(T88)
+- CHECK: `END_TIME BETWEEN '00:00:00' AND '23:55:00'`(하루 안. TIME은 24:00:00·음수도 받으므로 남긴다), `MINUTE(END_TIME) % 5 = 0 AND SECOND(END_TIME) = 0`. 업무 범위(14:00~23:30)는 Service 검증으로만 둔다(`20261114_timetable_end_time_any_hour.sql`). 자정을 넘는 픽업은 아직 처리하지 않는다(T88)
 - 등록 개수 제한(가정 10건)과 같은 요일 ±40분 겹침 경고는 Service에서 한다.
 - 시간표 등록과 픽업 스위치 변경은 트랜잭션 첫 문장에서 `USER_INFO`를 `FOR UPDATE`로 잠근 뒤 개수·겹침·소유를 확인한다(T13 아이 등록과 같은 순서). 새 학원 행을 학원가와 함께 넣거나 좌표를 채우면 FK 때문에 그 `AREA` 행에 공유 잠금이 걸린다 — 삭제·계획 생성처럼 `AREA`를 먼저 잠그는 경로를 구현할 때 순서를 확인한다.
 - 진행 중인 픽업 계획이 있는 시간표는 삭제하지 않고, 학원·하원 시각을 바꾸거나 그 계획의 요일을 빼는 편집도 거절한다. 오늘 하원 시각만 바꾸는 것은 `TIMETABLE_EXCEPTION`으로 한다.
