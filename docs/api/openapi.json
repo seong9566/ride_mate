@@ -3631,13 +3631,6 @@
           "walkSource": {
             "type": "string",
             "nullable": true
-          },
-          "walkPath": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_GeoPointDto"
-            },
-            "nullable": true
           }
         },
         "additionalProperties": false

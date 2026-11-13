@@ -223,11 +223,6 @@ public class DepartureGuidePickupDto
     /// 도보 시간 출처 (STORED, ROUTE, ESTIMATE)
     /// </summary>
     public string walkSource { get; set; } = string.Empty;
-
-    /// <summary>
-    /// 학원 → 픽업 장소 도보 경로 선. 경로가 없거나 ESTIMATE면 null
-    /// </summary>
-    public List<GeoPointDto>? walkPath { get; set; }
 }
 
 /// <summary>
