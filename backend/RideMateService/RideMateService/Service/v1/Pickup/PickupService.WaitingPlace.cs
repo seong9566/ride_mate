@@ -39,6 +39,9 @@ public partial class PickupService
                 };
             }
 
+            // 학원가 진입 혼잡 보정은 출발 안내와 같다. 남은 여유(slackMin)·대기 시간·예상 요금이 출발 안내의 추천 출발과 맞는다
+            await ApplyCongestionAsync(computation, cancellationToken).ConfigureAwait(false);
+
             var departure = computation.Result!;
             var target = computation.Target!;
             var result = new WaitingPlaceListDto

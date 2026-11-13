@@ -31,7 +31,7 @@ public class WaitingPlaceListDto
     public DepartureGuidePickupDto? pickup { get; set; }
 
     /// <summary>
-    /// 남은 여유(분). 계산할 수 없으면 null
+    /// 남은 여유(분). 출발 안내의 slackMin과 같다(혼잡 보정 포함). 계산할 수 없으면 null
     /// </summary>
     public int? slackMin { get; set; }
 
