@@ -62,6 +62,18 @@ public interface IPickupRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 로그인한 부모의 살아 있는 아이 시간표 한 건이 그날 요일에 픽업하면 학원·하원 정보를 돌려준다. 아니면 null이다.
+    /// GetTodayPickupsAsync와 같은 규칙이다(픽업 스위치 꺼짐·그날 SKIP 예외·그날 픽업 마침은 빼고, TIME_CHANGE 예외는 바뀐 하원 시각)
+    /// </summary>
+    Task<TodayPickupRouteRow?> GetTodayPickupRouteAsync(int userId, int timetableId, DateOnly date, byte dayOfWeek,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 살아 있는 계정의 저장된 집을 돌려준다. 계정이 없으면 null이다
+    /// </summary>
+    Task<UserHomeRow?> GetUserHomeAsync(int userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 학원가의 살아 있는 대기 장소를 조회한다
     /// </summary>
     Task<List<ParkingLotRow>> GetParkingLotsAsync(int areaId, CancellationToken cancellationToken = default);

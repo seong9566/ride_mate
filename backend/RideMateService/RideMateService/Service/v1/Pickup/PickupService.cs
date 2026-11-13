@@ -38,6 +38,7 @@ public partial class PickupService : IPickupService
     private readonly ILogService _logService;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IWalkRouteClient _walkRouteClient;
+    private readonly IDriveRouteClient _driveRouteClient;
     private readonly IAddressClient _addressClient;
     private readonly IParkingRealtimeClient _parkingRealtimeClient;
     private readonly DepartureGuideOptions _options;
@@ -56,6 +57,7 @@ public partial class PickupService : IPickupService
         ILogService logService,
         IHttpContextAccessor httpContextAccessor,
         IWalkRouteClient walkRouteClient,
+        IDriveRouteClient driveRouteClient,
         IAddressClient addressClient,
         IParkingRealtimeClient parkingRealtimeClient,
         IOptions<DepartureGuideOptions> options,
@@ -73,6 +75,7 @@ public partial class PickupService : IPickupService
         this._logService = logService;
         this._httpContextAccessor = httpContextAccessor;
         this._walkRouteClient = walkRouteClient;
+        this._driveRouteClient = driveRouteClient;
         this._addressClient = addressClient;
         this._parkingRealtimeClient = parkingRealtimeClient;
         this._options = options.Value;

@@ -13,6 +13,12 @@ public interface IPickupService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 오늘의 픽업 경로 조회
+    /// </summary>
+    Task<ResponseModel<DetailTodayPickupRouteDto>> DetailTodayPickupRouteService(TodayPickupRouteQueryDto dto,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 대기 장소 추천 목록
     /// </summary>
     Task<ResponseModel<WaitingPlaceListDto>> GetWaitingPlaceListService(WaitingPlaceQueryDto dto,
