@@ -91,9 +91,8 @@ public partial class PickupService
 
         foreach (var row in rows)
         {
-            var driveToLot = DepartureGuideCalculator.EstimateMinutes(
-                GeoDistance.Meters(dto.currentLat!.Value, dto.currentLng!.Value, row.Lat, row.Lng),
-                _options.DriveKmh, _options.RoadFactor);
+            var toLotMeters = GeoDistance.Meters(dto.currentLat!.Value, dto.currentLng!.Value, row.Lat, row.Lng);
+            var driveToLot = DepartureGuideCalculator.EstimateMinutes(toLotMeters, _options.DriveKmh, _options.RoadFactor);
             var lotToPickup = DepartureGuideCalculator.EstimateMinutes(
                 GeoDistance.Meters(row.Lat, row.Lng, pickup.lat, pickup.lng),
                 _options.DriveKmh, _options.RoadFactor);
@@ -114,6 +113,7 @@ public partial class PickupService
             {
                 Row = row,
                 DriveToLot = driveToLot,
+                DistanceM = (int)Math.Round(toLotMeters * _options.RoadFactor),
                 WaitMin = waitMin
             });
         }
@@ -190,6 +190,11 @@ public partial class PickupService
                 lat = candidate.Row.Lat,
                 lng = candidate.Row.Lng,
                 driveMin = candidate.DriveToLot,
+                distanceM = candidate.DistanceM,
+                baseMin = candidate.Row.BaseMin,
+                baseFee = candidate.Row.BaseFee,
+                addUnitMin = candidate.Row.AddUnitMin,
+                addFee = candidate.Row.AddFee,
                 fee = fee,
                 feeText = fee is null
                     ? WaitingPlaceCalculator.FeeText(candidate.Row.BaseMin, candidate.Row.BaseFee)
@@ -226,6 +231,7 @@ public partial class PickupService
     {
         public ParkingLotRow Row { get; init; } = null!;
         public int DriveToLot { get; init; }
+        public int DistanceM { get; init; }
         public int WaitMin { get; init; }
         public int? RealtimeAvailable { get; set; }
         public bool RealtimeMissing { get; set; }

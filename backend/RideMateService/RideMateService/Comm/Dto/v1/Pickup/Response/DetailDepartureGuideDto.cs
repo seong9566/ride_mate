@@ -79,6 +79,62 @@ public class DetailDepartureGuideDto
     /// 계획 상태 (PLANNED, STARTED, WAITING, STOPPED, LOOPING). 계획이 없으면 null
     /// </summary>
     public string? planStatus { get; set; }
+
+    /// <summary>
+    /// 자기 계획이 대기 중(WAITING)일 때 기다리는 주차장. 아니면 null
+    /// </summary>
+    public DepartureGuideWaitingPlaceDto? waitingPlace { get; set; }
+}
+
+/// <summary>
+/// 출발 안내의 대기 중인 주차장
+/// </summary>
+public class DepartureGuideWaitingPlaceDto
+{
+    /// <summary>
+    /// 주차장 ID
+    /// </summary>
+    public int parkingLotSeq { get; set; }
+
+    /// <summary>
+    /// 주차장 이름
+    /// </summary>
+    public string name { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 주차장 위도
+    /// </summary>
+    public decimal lat { get; set; }
+
+    /// <summary>
+    /// 주차장 경도
+    /// </summary>
+    public decimal lng { get; set; }
+
+    /// <summary>
+    /// 기본 요금 시간(분)
+    /// </summary>
+    public int baseMin { get; set; }
+
+    /// <summary>
+    /// 기본 요금(원)
+    /// </summary>
+    public int baseFee { get; set; }
+
+    /// <summary>
+    /// 추가 요금 단위 시간(분). 없으면 null
+    /// </summary>
+    public int? addUnitMin { get; set; }
+
+    /// <summary>
+    /// 추가 요금 단위 금액(원). 없으면 null
+    /// </summary>
+    public int? addFee { get; set; }
+
+    /// <summary>
+    /// 1일 주차권 요금(원). 없으면 null
+    /// </summary>
+    public int? dayPassFee { get; set; }
 }
 
 /// <summary>

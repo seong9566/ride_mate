@@ -313,6 +313,7 @@ public partial class PickupService : IPickupService
         DetailDepartureGuideDto result;
         DepartureGuidePickupDto? pickup;
         DateTime? slotDt = null;
+        string? waitingLotName = null; // 대기 중이면 첫 구간 출발지 이름으로 쓸 주차장 이름
 
         if (plan is not null)
         {
@@ -326,6 +327,29 @@ public partial class PickupService : IPickupService
                 pickupPlanSeq = plan.PickupPlanId,
                 planStatus = plan.Status
             };
+
+            // 대기 중이면 기다리는 주차장을 함께 준다. 계획 학원가의 살아 있는 주차장에서 못 찾으면 null
+            if (plan.Status == "WAITING" && plan.ParkingLotId is { } lotId)
+            {
+                var lots = await _pickupRepository.GetParkingLotsAsync(plan.AreaId, ct).ConfigureAwait(false);
+                var lot = lots.FirstOrDefault(x => x.ParkingLotId == lotId);
+                if (lot is not null)
+                {
+                    waitingLotName = lot.LotName;
+                    result.waitingPlace = new DepartureGuideWaitingPlaceDto
+                    {
+                        parkingLotSeq = lot.ParkingLotId,
+                        name = lot.LotName,
+                        lat = lot.Lat,
+                        lng = lot.Lng,
+                        baseMin = lot.BaseMin,
+                        baseFee = lot.BaseFee,
+                        addUnitMin = lot.AddUnitMin,
+                        addFee = lot.AddFee,
+                        dayPassFee = lot.DayPassFee
+                    };
+                }
+            }
 
             pickup = await PlanPickupAsync(plan, date, target.EndTime, dayType, result.reasons, ct).ConfigureAwait(false);
             if (pickup is null)
@@ -412,7 +436,7 @@ public partial class PickupService : IPickupService
             (dto.currentLat!.Value, dto.currentLng!.Value),
             (pickup.lat, pickup.lng)
         };
-        var pointNames = new List<string> { LegCurrentName, pickup.spotName ?? LegPickupName };
+        var pointNames = new List<string> { waitingLotName ?? LegCurrentName, pickup.spotName ?? LegPickupName };
         if (home is { DestLat: { } homeLat, DestLng: { } homeLng })
         {
             points.Add((homeLat, homeLng));
