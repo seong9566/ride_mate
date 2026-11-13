@@ -411,7 +411,7 @@ public class PickupController : ApiControllerBase
     }
 
     /// <summary>
-    /// 경로 시작(오늘 계획이 없으면 만들면서 시작하고, 늦게 출발했으면 같은 장소에서 배정 시각을 미룬다)
+    /// 경로 시작(scheduleSeq로 지정한 일정의 오늘 계획이 없으면 만들면서 시작하고, 늦게 출발했으면 같은 장소에서 배정 시각을 미룬다)
     /// </summary>
     [Produces("application/json")]
     [HttpPatch]

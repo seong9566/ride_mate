@@ -54,7 +54,7 @@ public partial class PickupService
                 return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 401 };
 
             // 2) 입력 검증 — 필수값, 픽업 좌표는 둘 다 있거나 둘 다 없어야 하고 eventDt는 서버 현재 시각 + 1분을 넘지 않아야 한다. 과거 쪽은 진행 중 계획이 있으면 그 계획의 픽업 날짜, 계획을 새로 만들 때는 서버 현재 시각 −10분으로 본다
-            if (dto?.clientEventId is null || dto.eventDt is null || dto.driveMin is null
+            if (dto?.scheduleSeq is null or < 1 || dto.clientEventId is null || dto.eventDt is null || dto.driveMin is null
                 || (dto.pickupLat is null) != (dto.pickupLng is null)
                 || dto.pickupSpotSeq is < 1
                 || (dto.pickupSpotSeq is not null && (dto.pickupLat is not null || dto.pickupLng is not null)))
@@ -68,14 +68,20 @@ public partial class PickupService
             var clientEventId = dto.clientEventId.Value;
             var driveMin = dto.driveMin.Value;
 
-            // 3) 대상 픽업 — 진행 중 계획이 있으면 그 계획을 시작한다
-            var target = await SelectPickupTargetAsync(userId, now, cancellationToken).ConfigureAwait(false);
+            var scheduleSeq = dto.scheduleSeq.Value;
+
+            // 3) 대상 픽업 — 그 일정의 진행 중 계획이 있으면 그 계획을 시작한다. 없으면 그 일정의 오늘 픽업이고, 하원 + PickupWindowHours가 지났으면 101
+            var target = await SelectScheduleTargetAsync(userId, scheduleSeq, now, cancellationToken).ConfigureAwait(false);
             if (target is null)
                 return new ResponseModel<PickupPlanDto> { message = "요청이 정상 처리되었습니다.", data = null, code = 101 };
 
             if (target.Plan is { } livePlan)
                 return await StartExistingPlanAsync(userId, livePlan.PickupPlanId, clientEventId, eventDt, driveMin,
                     cancellationToken).ConfigureAwait(false);
+
+            var todayStart = DateOnly.FromDateTime(now).ToDateTime(TimeOnly.MinValue);
+            if (todayStart + target.Pickup!.EndTime + TimeSpan.FromHours(_options.PickupWindowHours) <= now)
+                return new ResponseModel<PickupPlanDto> { message = "요청이 정상 처리되었습니다.", data = null, code = 101 };
 
             // 계획을 새로 만드는 시작만 서버 현재 시각 −10분을 하한으로 둔다
             if (eventDt < now.AddMinutes(-StartEventPastLimitMin))
@@ -84,7 +90,7 @@ public partial class PickupService
             // 4) 잠근 시간표의 학원가가 잠근 학원가와 다르면(그사이 시간표 편집) 대상 고르기부터 다시 한다
             for (var attempt = 1; attempt <= PlanAreaRetryMaxAttempts; attempt++)
             {
-                var result = await TryCreateStartedPlanAsync(userId, dto.pickupSpotSeq, dto.pickupLat, dto.pickupLng, clientEventId,
+                var result = await TryCreateStartedPlanAsync(userId, scheduleSeq, dto.pickupSpotSeq, dto.pickupLat, dto.pickupLng, clientEventId,
                     eventDt, driveMin, cancellationToken).ConfigureAwait(false);
                 if (result is not null)
                     return result;
@@ -105,7 +111,7 @@ public partial class PickupService
 
     // 시작된 계획 만들기 한 번(설계 6.1 처리 1~7). 잠근 학원가가 틀려 처음부터 다시 해야 하면 null.
     // pickupLat·pickupLng가 있으면 임의 좌표 계획을 만든다(둘 다 있거나 둘 다 없다)
-    private async Task<ResponseModel<PickupPlanDto>?> TryCreateStartedPlanAsync(int userId, int? pickupSpotSeq, decimal? pickupLat,
+    private async Task<ResponseModel<PickupPlanDto>?> TryCreateStartedPlanAsync(int userId, int scheduleSeq, int? pickupSpotSeq, decimal? pickupLat,
         decimal? pickupLng, Guid clientEventId, DateTime eventDt, int driveMin, CancellationToken cancellationToken)
     {
         var now = DateTime.Now;
@@ -113,10 +119,10 @@ public partial class PickupService
         var dayStart = date.ToDateTime(TimeOnly.MinValue);
         var leadTime = TimeSpan.FromHours(_planOptions.CreateLeadHours);
 
-        // 1) 대상 픽업 — 진행 중 계획이 있으면 그것을 시작한다(잠금 없이 읽는다)
-        var target = await SelectPickupTargetAsync(userId, now, cancellationToken).ConfigureAwait(false);
+        // 1) 대상 픽업 — 그 일정의 진행 중 계획이 있으면 그것을 시작한다(잠금 없이 읽는다)
+        var target = await SelectScheduleTargetAsync(userId, scheduleSeq, now, cancellationToken).ConfigureAwait(false);
 
-        // 2) 진행 중 계획도 오늘 남은 픽업도 없다
+        // 2) 그 일정의 진행 중 계획도 오늘 픽업도 없다
         if (target is null)
             return new ResponseModel<PickupPlanDto> { message = "요청이 정상 처리되었습니다.", data = null, code = 101 };
 
@@ -125,6 +131,10 @@ public partial class PickupService
                 cancellationToken).ConfigureAwait(false);
 
         var pickup = target.Pickup!;
+
+        // 하원 + PickupWindowHours가 지났으면 계획을 만들지 않는다
+        if (dayStart + pickup.EndTime + TimeSpan.FromHours(_options.PickupWindowHours) <= now)
+            return new ResponseModel<PickupPlanDto> { message = "요청이 정상 처리되었습니다.", data = null, code = 101 };
 
         // 3) 시간 창 — 하원 시각 − CreateLeadHours보다 이르면 아직 만들 수 없다
         if (now < dayStart + pickup.EndTime - leadTime)
@@ -851,32 +861,6 @@ public partial class PickupService
                    ?? DefaultCustomName;
 
         return new CustomLocation(lat, lng, name, walkMin, walkPathWkt);
-    }
-
-    // 대상 픽업 고르기(설계 3절). 출발 안내와 계획 API가 같은 규칙을 쓴다.
-    // 1) 진행 중 계획(서버 시각 now 기준)이 있으면 그것. 여럿이면 배정 시각(없으면 하원 시각)이 가장 이른 것
-    // 2) 없으면 now 날짜의 오늘 픽업 중 하원 + PickupWindowHours가 now보다 늦은 것에서 하원이 가장 이른 것
-    private async Task<PickupTarget?> SelectPickupTargetAsync(int userId, DateTime now,
-        CancellationToken cancellationToken)
-    {
-        var livePlan = await _pickupRepository.GetLivePlanAsync(userId, DateOnly.FromDateTime(now), now,
-            cancellationToken).ConfigureAwait(false);
-        if (livePlan is not null)
-            return new PickupTarget(livePlan, null);
-
-        var date = DateOnly.FromDateTime(now);
-        var todays = await _pickupRepository.GetTodayPickupsAsync(userId, date,
-            DepartureGuideCalculator.DayOfWeek(date), cancellationToken).ConfigureAwait(false);
-
-        var dayStart = date.ToDateTime(TimeOnly.MinValue);
-        var window = TimeSpan.FromHours(_options.PickupWindowHours);
-        var pickup = todays
-            .Where(t => dayStart + t.EndTime + window > now)
-            .OrderBy(t => t.EndTime)
-            .ThenBy(t => t.TimetableDayId)
-            .FirstOrDefault();
-
-        return pickup is null ? null : new PickupTarget(null, pickup);
     }
 
     // 한 일정(시간표)의 대상 픽업 고르기. 출발 안내·대기 장소가 쓴다.

@@ -903,41 +903,6 @@ public partial class PickupRepository
                        ON a.ACADEMY_ID = p.ACADEMY_ID";
 
     /// <summary>
-    /// 로그인한 부모의 진행 중 계획(그날 PICKUP_DATE, 끝나지 않은 STATUS, EXPIRE_DT > now) 중
-    /// 배정 시각(없으면 그날 하원 시각)이 가장 이른 하나를 잠금 없이 조회한다. 없으면 null
-    /// </summary>
-    public async Task<LivePlanRow?> GetLivePlanAsync(int userId, DateOnly date, DateTime now,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var dp = new DynamicParameters();
-            dp.Add("userId", userId);
-            dp.Add("date", date.ToDateTime(TimeOnly.MinValue), DbType.Date);
-            dp.Add("now", now);
-
-            var sql = LivePlanSelectSql + $@"
-                WHERE p.USER_ID = @userId
-                  AND p.PICKUP_DATE = @date
-                  AND p.STATUS IN ({LivePlanStatuses})
-                  AND p.EXPIRE_DT > @now
-                ORDER BY COALESCE(p.SLOT_DT, TIMESTAMP(p.PICKUP_DATE, p.END_TIME)), p.PICKUP_PLAN_ID
-                LIMIT 1";
-
-            return await _dapper.QueryFirstOrDefaultAsync<LivePlanRow>(
-                new CommandDefinition(sql, dp, cancellationToken: cancellationToken)).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
-        {
-            _logService.LogMessage(ex.ToString());
-#if DEBUG
-            _logService.ConsoleWarning(ex.ToString());
-#endif
-            throw;
-        }
-    }
-
-    /// <summary>
     /// 로그인한 부모의 한 시간표(TIMETABLE_ID)에 대한 진행 중 계획(그날 PICKUP_DATE, 끝나지 않은 STATUS, EXPIRE_DT > now) 중
     /// 배정 시각(없으면 그날 하원 시각)이 가장 이른 하나를 잠금 없이 조회한다. 없으면 null
     /// </summary>
