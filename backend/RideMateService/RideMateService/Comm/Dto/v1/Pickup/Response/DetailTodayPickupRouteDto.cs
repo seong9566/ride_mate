@@ -43,7 +43,7 @@ public class DetailTodayPickupRouteDto
     /// <summary>
     /// 학원 → (경유지) → 집 차량 경로. 학원이나 집 좌표가 없거나 주소 경유지의 좌표를 구하지 못했으면(카카오 장애·키 없음) null
     /// </summary>
-    public TodayPickupHomeDriveDto? homeDrive { get; set; }
+    public TodayPickupDriveRouteDto? driveRoute { get; set; }
 }
 
 /// <summary>
@@ -51,6 +51,11 @@ public class DetailTodayPickupRouteDto
 /// </summary>
 public class TodayPickupWaypointDto
 {
+    /// <summary>
+    /// 경유지 이름. 요청의 name, 없으면 주소, 주소도 없으면 '경유지 n'(n은 1부터)
+    /// </summary>
+    public string name { get; set; } = string.Empty;
+
     /// <summary>
     /// 요청에 보낸 주소. 좌표만 보냈으면 null
     /// </summary>
@@ -117,7 +122,7 @@ public class TodayPickupRouteHomeDto
 /// <summary>
 /// 학원 → (경유지) → 집 차량 경로
 /// </summary>
-public class TodayPickupHomeDriveDto
+public class TodayPickupDriveRouteDto
 {
     /// <summary>
     /// 전체 차량 소요 시간(분). legs의 driveMin 합이라 화면의 구간 시간을 더한 값과 같다. 지금 출발 기준
@@ -146,12 +151,12 @@ public class TodayPickupHomeDriveDto
 public class TodayPickupDriveLegDto
 {
     /// <summary>
-    /// 출발점. ACADEMY 또는 WAYPOINT
+    /// 출발지 이름. 첫 구간은 학원 이름(academyName), 그 뒤는 경유지 이름
     /// </summary>
     public string from { get; set; } = string.Empty;
 
     /// <summary>
-    /// 도착점. WAYPOINT 또는 HOME
+    /// 도착지 이름. 경유지 이름, 마지막 구간은 '집'
     /// </summary>
     public string to { get; set; } = string.Empty;
 

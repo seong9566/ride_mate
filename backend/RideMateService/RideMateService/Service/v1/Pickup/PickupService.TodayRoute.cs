@@ -8,11 +8,9 @@ namespace RideMateService.Service.v1.Pickup;
 
 public partial class PickupService
 {
-    private const string HomeDriveSourceRoute = "ROUTE";
-    private const string HomeDriveSourceEstimate = "ESTIMATE";
-    private const string LegPointAcademy = "ACADEMY";
-    private const string LegPointWaypoint = "WAYPOINT";
-    private const string LegPointHome = "HOME";
+    private const string DriveRouteSourceRoute = "ROUTE";
+    private const string DriveRouteSourceEstimate = "ESTIMATE";
+    private const string LegHomeName = "집";
 
     /// <summary>
     /// 오늘의 픽업 경로 조회
@@ -63,9 +61,10 @@ public partial class PickupService
             {
                 var request = requestWaypoints[i];
                 var address = string.IsNullOrWhiteSpace(request.address) ? null : request.address.Trim();
+                var name = string.IsNullOrWhiteSpace(request.name) ? address ?? $"경유지 {i + 1}" : request.name.Trim();
                 if (found[i] is null)
                 {
-                    waypoints.Add(new TodayPickupWaypointDto { address = address, lat = request.lat, lng = request.lng });
+                    waypoints.Add(new TodayPickupWaypointDto { name = name, address = address, lat = request.lat, lng = request.lng });
                     continue;
                 }
 
@@ -77,7 +76,7 @@ public partial class PickupService
                         code = 400
                     };
 
-                waypoints.Add(new TodayPickupWaypointDto { address = address, lat = found[i]!.Lat, lng = found[i]!.Lng });
+                waypoints.Add(new TodayPickupWaypointDto { name = name, address = address, lat = found[i]!.Lat, lng = found[i]!.Lng });
             }
 
             var result = new DetailTodayPickupRouteDto
@@ -105,9 +104,13 @@ public partial class PickupService
                 && result.home is { lat: { } homeLat, lng: { } homeLng }
                 && waypoints.All(w => w.lat is not null && w.lng is not null))
             {
-                result.homeDrive = await HomeDriveAsync((academyLat, academyLng),
-                    waypoints.Select(w => (w.lat!.Value, w.lng!.Value)).ToList(), (homeLat, homeLng), cancellationToken)
-                    .ConfigureAwait(false);
+                // 구간 이름: 학원 이름 → 경유지 이름들 → 집
+                var pointNames = new List<string> { row.AcademyName };
+                pointNames.AddRange(waypoints.Select(w => w.name));
+                pointNames.Add(LegHomeName);
+                result.driveRoute = await DriveRouteAsync((academyLat, academyLng),
+                    waypoints.Select(w => (w.lat!.Value, w.lng!.Value)).ToList(), (homeLat, homeLng), pointNames,
+                    cancellationToken).ConfigureAwait(false);
             }
 
             return new ResponseModel<DetailTodayPickupRouteDto>
@@ -132,9 +135,9 @@ public partial class PickupService
 
     // 결과를 저장하지 않는다(카카오 길찾기 결과 캐싱 금지). 실패하면 구간마다 직선 거리 × 도로 보정 ÷ 차량 추정 속도를 올림한 분이다.
     // 전체 시간은 구간 시간의 합이다(화면의 구간 시간을 더한 값과 맞춘다)
-    private async Task<TodayPickupHomeDriveDto> HomeDriveAsync((decimal Lat, decimal Lng) academy,
+    private async Task<TodayPickupDriveRouteDto> DriveRouteAsync((decimal Lat, decimal Lng) academy,
         IReadOnlyList<(decimal Lat, decimal Lng)> waypoints, (decimal Lat, decimal Lng) home,
-        CancellationToken cancellationToken)
+        IReadOnlyList<string> pointNames, CancellationToken cancellationToken)
     {
         var route = await _driveRouteClient.GetDriveRouteAsync(academy, waypoints, home, cancellationToken)
             .ConfigureAwait(false);
@@ -144,9 +147,9 @@ public partial class PickupService
         if (route is not null)
         {
             legs = route.Legs
-                .Select((leg, i) => NewLeg(i, waypoints.Count, DepartureGuideCalculator.SecondsToMinutesCeil(leg.Seconds), leg.DistanceM))
+                .Select((leg, i) => NewLeg(i, waypoints.Count, pointNames, DepartureGuideCalculator.SecondsToMinutesCeil(leg.Seconds), leg.DistanceM))
                 .ToList();
-            source = HomeDriveSourceRoute;
+            source = DriveRouteSourceRoute;
         }
         else
         {
@@ -154,16 +157,16 @@ public partial class PickupService
             points.AddRange(waypoints);
             points.Add(home);
             legs = Enumerable.Range(0, points.Count - 1)
-                .Select(i => NewLeg(i, waypoints.Count,
+                .Select(i => NewLeg(i, waypoints.Count, pointNames,
                     DepartureGuideCalculator.EstimateMinutes(
                         GeoDistance.Meters(points[i].Lat, points[i].Lng, points[i + 1].Lat, points[i + 1].Lng),
                         _options.DriveKmh, _options.RoadFactor),
                     null))
                 .ToList();
-            source = HomeDriveSourceEstimate;
+            source = DriveRouteSourceEstimate;
         }
 
-        return new TodayPickupHomeDriveDto
+        return new TodayPickupDriveRouteDto
         {
             driveMin = legs.Sum(l => l.driveMin),
             distanceM = route?.DistanceM,
@@ -172,12 +175,13 @@ public partial class PickupService
         };
     }
 
-    // i번째 구간(0부터). 경유지가 n개면 구간은 n + 1개이고 마지막 구간이 집으로 간다
-    private static TodayPickupDriveLegDto NewLeg(int i, int waypointCount, int driveMin, int? distanceM)
+    // i번째 구간(0부터). 경유지가 n개면 구간은 n + 1개이고 마지막 구간이 집으로 간다. pointNames는 학원·경유지들·집 순서의 이름이다
+    private static TodayPickupDriveLegDto NewLeg(int i, int waypointCount, IReadOnlyList<string> pointNames, int driveMin,
+        int? distanceM)
         => new()
         {
-            from = i == 0 ? LegPointAcademy : LegPointWaypoint,
-            to = i == waypointCount ? LegPointHome : LegPointWaypoint,
+            from = pointNames[i],
+            to = pointNames[i + 1],
             toWaypointIndex = i == waypointCount ? null : i,
             driveMin = driveMin,
             distanceM = distanceM
