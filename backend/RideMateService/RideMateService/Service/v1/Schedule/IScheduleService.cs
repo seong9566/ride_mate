@@ -18,6 +18,11 @@ public interface IScheduleService
     Task<ResponseModel<List<ScheduleItemDto>>> GetScheduleListService(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 이번 주 스케줄 조회
+    /// </summary>
+    Task<ResponseModel<DetailWeeklyScheduleDto>> DetailWeeklyScheduleService(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 요일별 픽업 스위치 변경
     /// </summary>
     Task<ResponseModel<ScheduleDayDto>> UpdateScheduleDayPickupService(UpdateScheduleDayPickupDto dto,
