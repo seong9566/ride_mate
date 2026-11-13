@@ -20,7 +20,7 @@
 | PATCH | `Update` | `UpdatePickup` |
 | DELETE | `Delete` | `DeletePickup` |
 
-- 예외: 오늘의 픽업 경로 조회 `POST /api/v1/Pickup/M/sign/DetailTodayPickupRoute`는 조회라 `Detail`이지만, 경유지 목록(최대 5개, 좌표 또는 주소)을 JSON 본문으로 받으려고 POST다. DB에 쓰지 않는다.
+- 예외: 오늘의 픽업 경로 조회 `POST /api/v1/Pickup/M/sign/DetailTodayPickupRoute`는 조회라 `Detail`이지만, 차량 현재 위치와 경유지 목록(최대 4개, 좌표 또는 주소)을 JSON 본문으로 받으려고 POST다. DB에 쓰지 않는다.
 - 수정은 PUT이 아니라 PATCH를 쓴다. 요청에서 `null`이거나 빠진 필드는 바꾸지 않는다(`architecture/dto.md`).
 
 ## 응답 `ResponseModel<T>`

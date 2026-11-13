@@ -1,7 +1,7 @@
 namespace RideMateService.Comm.Dto.v1.Pickup.Response;
 
 /// <summary>
-/// 오늘의 픽업 경로 조회 결과. 현재 위치 → 학원은 차량이 내비로 구하고, 학원 → 집은 서버가 구한다
+/// 오늘의 픽업 경로 조회 결과. 현재 위치 → 학원 → (경유지) → 집 차량 시간을 서버가 카카오모빌리티 자동차 길찾기로 구한다
 /// </summary>
 public class DetailTodayPickupRouteDto
 {
@@ -26,7 +26,7 @@ public class DetailTodayPickupRouteDto
     public string? areaName { get; set; }
 
     /// <summary>
-    /// 학원. 차량은 이 좌표로 현재 위치 → 학원 시간을 구한다
+    /// 학원
     /// </summary>
     public TodayPickupRouteAcademyDto academy { get; set; } = new();
 
@@ -41,7 +41,7 @@ public class DetailTodayPickupRouteDto
     public List<TodayPickupWaypointDto> waypoints { get; set; } = new();
 
     /// <summary>
-    /// 학원 → (경유지) → 집 차량 경로. 학원이나 집 좌표가 없거나 주소 경유지의 좌표를 구하지 못했으면(카카오 장애·키 없음) null
+    /// 현재 위치 → 학원 → (경유지) → 집 차량 경로. 학원이나 집 좌표가 없거나 주소 경유지의 좌표를 구하지 못했으면(카카오 장애·키 없음) null
     /// </summary>
     public TodayPickupDriveRouteDto? driveRoute { get; set; }
 }
@@ -120,7 +120,7 @@ public class TodayPickupRouteHomeDto
 }
 
 /// <summary>
-/// 학원 → (경유지) → 집 차량 경로
+/// 현재 위치 → 학원 → (경유지) → 집 차량 경로
 /// </summary>
 public class TodayPickupDriveRouteDto
 {
@@ -140,7 +140,7 @@ public class TodayPickupDriveRouteDto
     public string source { get; set; } = string.Empty;
 
     /// <summary>
-    /// 구간별 결과. 학원 → 경유지1 → … → 집 순서이고 경유지 수 + 1개다
+    /// 구간별 결과. 현재 위치 → 학원 → 경유지1 → … → 집 순서이고 경유지 수 + 2개다
     /// </summary>
     public List<TodayPickupDriveLegDto> legs { get; set; } = new();
 }
@@ -151,17 +151,17 @@ public class TodayPickupDriveRouteDto
 public class TodayPickupDriveLegDto
 {
     /// <summary>
-    /// 출발지 이름. 첫 구간은 학원 이름(academyName), 그 뒤는 경유지 이름
+    /// 출발지 이름. 첫 구간은 '현재 위치', 둘째 구간은 학원 이름(academyName), 그 뒤는 경유지 이름
     /// </summary>
     public string from { get; set; } = string.Empty;
 
     /// <summary>
-    /// 도착지 이름. 경유지 이름, 마지막 구간은 '집'
+    /// 도착지 이름. 첫 구간은 학원 이름, 그 뒤는 경유지 이름, 마지막 구간은 '집'
     /// </summary>
     public string to { get; set; } = string.Empty;
 
     /// <summary>
-    /// 도착점이 경유지면 waypoints의 순번(0부터). 집이면 null
+    /// 도착지가 경유지면 waypoints의 순번(0부터). 학원·집이면 null. 같은 이름의 경유지가 둘 이상이면 이 값으로 구별한다
     /// </summary>
     public int? toWaypointIndex { get; set; }
 
