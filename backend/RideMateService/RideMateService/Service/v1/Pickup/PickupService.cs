@@ -317,7 +317,7 @@ public partial class PickupService : IPickupService
 
         if (plan is not null)
         {
-            // 5) 계획이 있으면 계획이 정답이다. 앱이 보낸 pickupLat·pickupLng는 무시하고 카카오를 부르지 않는다(설계 6.5)
+            // 5) 계획이 있으면 계획이 정답이다. 앱이 보낸 pickupLat·pickupLng는 무시하고 도보 경로·주소 검색은 부르지 않는다(설계 6.5)
             target = PlanTarget(plan);
             result = new DetailDepartureGuideDto
             {
@@ -329,7 +329,7 @@ public partial class PickupService : IPickupService
             };
 
             // 대기 중이면 기다리는 주차장을 함께 준다. 계획 학원가의 살아 있는 주차장에서 못 찾으면 null
-            if (plan.Status == "WAITING" && plan.ParkingLotId is { } lotId)
+            if (plan.Status == PlanStatusWaiting && plan.ParkingLotId is { } lotId)
             {
                 var lots = await _pickupRepository.GetParkingLotsAsync(plan.AreaId, ct).ConfigureAwait(false);
                 var lot = lots.FirstOrDefault(x => x.ParkingLotId == lotId);

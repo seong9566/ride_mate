@@ -39,6 +39,9 @@ public class PickupController : ApiControllerBase
     [Route("v1/Pickup/M/sign/DetailDepartureGuide")]
     [SwaggerOperation(Summary = "출발 안내 계산")]
     [ProducesResponseType(typeof(ResponseModel<DetailDepartureGuideDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ResponseModel<DetailDepartureGuideDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ResponseModel<DetailDepartureGuideDto>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> DetailDepartureGuide([FromQuery] DepartureGuideQueryDto dto,
         CancellationToken cancellationToken)
     {
@@ -418,6 +421,11 @@ public class PickupController : ApiControllerBase
     [Route("v1/Pickup/M/sign/UpdatePickupPlanStart")]
     [SwaggerOperation(Summary = "경로 시작")]
     [ProducesResponseType(typeof(ResponseModel<PickupPlanDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ResponseModel<PickupPlanDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ResponseModel<PickupPlanDto>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ResponseModel<PickupPlanDto>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ResponseModel<PickupPlanDto>), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> UpdatePickupPlanStart([FromBody] UpdatePickupPlanStartDto dto,
         CancellationToken cancellationToken)
     {

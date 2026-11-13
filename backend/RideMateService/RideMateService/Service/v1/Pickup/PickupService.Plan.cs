@@ -863,7 +863,7 @@ public partial class PickupService
         return new CustomLocation(lat, lng, name, walkMin, walkPathWkt);
     }
 
-    // 한 일정(시간표)의 대상 픽업 고르기. 출발 안내·대기 장소가 쓴다.
+    // 한 일정(시간표)의 대상 픽업 고르기. 출발 안내·대기 장소·경로 시작이 쓴다.
     // 1) 그 일정의 진행 중 계획(서버 시각 now 기준)이 있으면 그것. 다른 일정의 계획은 보지 않는다
     // 2) 없으면 now 날짜의 오늘 픽업 중 그 일정의 행. 하원 뒤 시간 창은 걸지 않는다. 둘 다 없으면 null
     private async Task<PickupTarget?> SelectScheduleTargetAsync(int userId, int timetableId, DateTime now,
