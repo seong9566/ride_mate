@@ -562,16 +562,15 @@ public partial class PickupService : IPickupService
                 lat = spot.Lat,
                 lng = spot.Lng,
                 walkMin = spot.WalkMin,
-                walkSource = WalkSourceStored,
-                walkPath = ParseLineString(spot.WalkPathWkt)
+                walkSource = WalkSourceStored
             };
         }
 
         return null;
     }
 
-    // 계획의 픽업 장소(설계 6.5). 장소 판정은 BuildPlanDtoAsync와 같다: 임의 좌표면 계획에 저장된 좌표·이름·도보 시간·경로,
-    // 기본 지점이면 지점 좌표·계획의 도보 시간·학원 → 지점 도보 경로(ACADEMY_PICKUP_SPOT.WALK_PATH). 둘 다 STORED이고 장소가 없으면 null.
+    // 계획의 픽업 장소(설계 6.5). 장소 판정은 BuildPlanDtoAsync와 같다: 임의 좌표면 계획에 저장된 좌표·이름·도보 시간,
+    // 기본 지점이면 지점 좌표·계획의 도보 시간. 둘 다 STORED이고 장소가 없으면 null.
     // 기본 지점이면 계획 지점보다 우선순위가 높은 후보 중 아이 도착 시각이 금지 시간에 걸린 것마다 HIGHER_SPOT_BLOCKED를 더한다
     private async Task<DepartureGuidePickupDto?> PlanPickupAsync(LivePlanRow plan, DateOnly date, TimeSpan endTime,
         string dayType, List<DepartureGuideReasonDto> reasons, CancellationToken cancellationToken)
@@ -585,25 +584,21 @@ public partial class PickupService : IPickupService
                 lat = customLat,
                 lng = customLng,
                 walkMin = plan.WalkMin ?? 0,
-                walkSource = WalkSourceStored,
-                walkPath = ParseLineString(plan.CustomWalkPathWkt)
+                walkSource = WalkSourceStored
             };
         }
 
         if (plan is not { PickupSpotId: { } spotId, SpotName: { } spotName, SpotLat: { } spotLat, SpotLng: { } spotLng })
             return null;
 
-        // 후보 목록에서 계획 지점의 도보 경로와 그보다 앞선 후보를 찾는다.
-        // 배정 뒤 지점이 사용 중지되거나 학원 연결이 풀려 목록에 없으면 경로와 근거 없이 계획 지점을 준다
-        List<GeoPointDto>? walkPath = null;
+        // 후보 목록에서 계획 지점보다 앞선 후보를 찾는다.
+        // 배정 뒤 지점이 사용 중지되거나 학원 연결이 풀려 목록에 없으면 근거 없이 계획 지점을 준다
         if (plan.AcademyId is { } academyId)
         {
             var spots = await _pickupRepository.GetAcademyPickupSpotsAsync(academyId, plan.PreferredSpotId, cancellationToken).ConfigureAwait(false);
             var index = spots.FindIndex(s => s.PickupSpotId == spotId);
             if (index >= 0)
             {
-                walkPath = ParseLineString(spots[index].WalkPathWkt);
-
                 var higherSpots = spots.Take(index).ToList();
                 if (higherSpots.Count > 0)
                 {
@@ -628,8 +623,7 @@ public partial class PickupService : IPickupService
             lat = spotLat,
             lng = spotLng,
             walkMin = plan.WalkMin ?? 0,
-            walkSource = WalkSourceStored,
-            walkPath = walkPath
+            walkSource = WalkSourceStored
         };
     }
 
@@ -646,7 +640,7 @@ public partial class PickupService : IPickupService
         };
 
     // 임의 좌표: 카카오 도보 경로(학원 → 픽업)를 매번 부른다(결과 캐싱 금지).
-    // 실패하면 직선 거리 ÷ 아이 도보 속도로 추정하고 경로는 주지 않는다
+    // 실패하면 직선 거리 ÷ 아이 도보 속도로 추정한다
     private async Task<DepartureGuidePickupDto> CustomPickupAsync(decimal academyLat, decimal academyLng, decimal lat, decimal lng,
         CancellationToken cancellationToken)
     {
@@ -658,9 +652,6 @@ public partial class PickupService : IPickupService
         {
             pickup.walkMin = DepartureGuideCalculator.SecondsToMinutesCeil(route.TotalSeconds);
             pickup.walkSource = WalkSourceRoute;
-            pickup.walkPath = route.Path.Count > 0
-                ? route.Path.Select(p => new GeoPointDto { lat = p.Lat, lng = p.Lng }).ToList()
-                : null;
             return pickup;
         }
 
