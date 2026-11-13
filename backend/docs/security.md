@@ -9,7 +9,7 @@
 - 필수 설정(연결 문자열·서명 키)이 비어 있으면 기동할 때 `InvalidOperationException`으로 실패시킨다. 빈 값으로 조용히 넘어가지 않는다.
 - 설정 묶음은 `IOptions<T>`로 받는다. 서비스에 `IConfiguration`을 직접 주입하지 않는다.
 - Issuer·Audience·프록시 IP처럼 환경마다 다른 값도 코드 상수로 박지 않고 설정에서 읽는다.
-- `Kakao:RestApiKey`(카카오 REST API 키)는 선택 비밀값이다. 환경변수 `Kakao__RestApiKey`로 주입하고, 비어 있어도 기동은 하며 도보 시간은 직선 거리 추정으로, 임의 좌표의 장소 이름은 `부모님이 정한 장소`로 떨어진다(기동 로그 `Kakao walk route: ON/OFF`). 같은 키를 도보 경로와 좌표→주소 변환에 쓴다.
+- `Kakao:RestApiKey`(카카오 REST API 키)는 선택 비밀값이다. 환경변수 `Kakao__RestApiKey`로 주입하고, 비어 있어도 기동은 하며 도보 시간은 직선 거리 추정으로, 임의 좌표의 장소 이름은 `부모님이 정한 장소`로 떨어진다(기동 로그 `Kakao walk route: ON/OFF`). 같은 키를 도보 경로, 좌표→주소 변환, 카카오모빌리티 자동차 길찾기에 쓴다(키가 없으면 학원→집 차량 시간도 직선 거리 추정).
 - `PublicData:ServiceKey`(공공데이터포털 키)는 선택 비밀값이다. 환경변수 `PublicData__ServiceKey`로 주입하고(compose는 `.env`의 `DATA_GO_KR_API_KEY`를 넘긴다), 비어 있어도 기동은 하며 대기 장소의 실시간 빈자리는 저장값이나 `UNKNOWN`으로 떨어진다(기동 로그 `Parking realtime: ON/OFF`). 키는 요청 URL에만 넣고 로그·예외 메시지에 남기지 않는다. [ADR-0020]
 
 ## 로그
@@ -18,6 +18,7 @@
 - `EnableSensitiveDataLogging()`은 Development에서만 켠다.
 - 출발 안내 계산에서 부모가 바꾼 픽업 장소 좌표와 학원 좌표는 도보 시간을 구하려고 카카오 도보 경로 API(외부)로 전송된다.
 - 오늘 픽업 계획을 만들거나 장소를 바꿀 때 부모가 고른 임의 좌표와 학원 좌표는 도보 시간을 구하려고 카카오 도보 경로 API(외부)로, 임의 좌표는 장소 이름을 만들려고 카카오 좌표→주소 변환 API(외부, `coord2address`)로 전송된다. 결과는 계획에 저장하고 캐시하지 않는다.
+- 오늘의 픽업 경로 조회(`DetailTodayPickupRoute`)에서 학원 좌표와 집 좌표는 학원→집 차량 시간을 구하려고 카카오모빌리티 자동차 길찾기 API(외부, `apis-navi.kakaomobility.com`)로 전송된다. 결과는 저장·캐시하지 않는다.
 - 픽업 계획의 좌표, 주소·장소 이름(임의 좌표의 `CUSTOM_NAME`), 하원 시각, 전화번호는 로그와 `PICKUP_EVENT.DETAIL`에 남기지 않는다. 계획 관련 로그에는 계획·계정 ID 같은 식별자만 남기고, 카카오 호출 실패는 HTTP 상태 코드나 실패 종류만 남긴다(키·URL·응답 본문 제외).
 - 정차(`UpdatePickupPlanStop`)의 정차 좌표는 배정 장소와의 거리와 단속 구역 판정에만 쓰고 저장하지 않는다. 좌표와 거리는 DB(`PICKUP_PLAN`·`PICKUP_EVENT.DETAIL`)와 로그에 남기지 않는다. `WRONG_STOP`의 `DETAIL`에는 걸린 구역 유형만 둔다.
 - 부모 취소(`DeletePickupPlan`)는 아이가 링크를 받았을 수 있으면 아이 번호(`CHILD.PHONE_ENC`)를 복호화해 취소 문자를 보낸다. 번호와 부모 이름은 익명화 전에 읽어 메모리에만 두고, 커밋한 뒤 잠금 밖에서 보낸다. 발송 실패·예외와 복호화 실패 로그에는 계획 ID와 사업자 결과 코드만 남긴다(번호·본문 제외).
