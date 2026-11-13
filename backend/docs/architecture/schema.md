@@ -264,7 +264,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
   - 6에서 진행 중 계획을 찾는 요일은 학원(`ACADEMY_ID`)이나 하원 시각이 바뀌면 그 시간표의 요일 전부, 아니면 빼는 요일뿐이다. 이름 변경과 요일 추가는 확인하지 않는다.
   - 7 대신 뺀 요일의 `TIMETABLE_EXCEPTION` → 뺀 `TIMETABLE_DAY` → 되살릴 `TIMETABLE_DAY` → 새 `TIMETABLE_DAY` → `TIMETABLE` 순으로 쓴다.
 - 등록은 `USER_INFO` → (학원 FK) `AREA` 공유 잠금, 삭제·편집은 `AREA` → `USER_INFO` 순이라 같은 계정의 등록과 삭제·편집이 동시에 오면 교착할 수 있다. 세 API 모두 교착을 재시도한다. 경로 시작의 계획 생성(`AREA` → … → 계획 INSERT의 `USER_INFO` FK 공유 잠금)과 순서를 맞추는 쪽을 골랐다.
-- 편집으로 요일을 뺐다가 다시 넣으면 새 행을 만들지 않고 삭제 표시된 `TIMETABLE_DAY` 행을 되살린다. `LAST_PICKUP_DATE`가 이어진다. 되살린 행의 `PICKUP_YN`은 새 요일과 같이 1이고, 뺄 때 지운 날짜별 예외는 되살리지 않는다.
+- 편집으로 요일을 뺐다가 다시 넣으면 새 행을 만들지 않고 삭제 표시된 `TIMETABLE_DAY` 행을 되살린다. `LAST_PICKUP_DATE`가 이어진다. 되살린 행의 `PICKUP_YN`은 새 요일과 같이 1이고(편집에 `pickupOffDays`를 보내면 그 목록대로 — TIMETABLE_DAY 절), 뺄 때 지운 날짜별 예외는 되살리지 않는다.
 - 시간표를 지우고 같은 내용으로 다시 등록하면 새 시간표다. 그날 이미 탑승으로 끝났어도 계획이 다시 만들어질 수 있다. 감수한다.
 
 ### TIMETABLE_DAY — 시간표의 요일
@@ -274,7 +274,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `TIMETABLE_DAY_ID` | INT | N | PK |
 | `TIMETABLE_ID` | INT | N | FK → TIMETABLE |
 | `DAY_OF_WEEK` | TINYINT | N | 1(월)~7(일) |
-| `PICKUP_YN` | TINYINT(1) | N | 그 요일의 픽업 스위치. 처음 값 1(등록 때 `pickupOffDays`에 든 요일은 0) |
+| `PICKUP_YN` | TINYINT(1) | N | 그 요일의 픽업 스위치. 처음 값 1(등록·편집 때 `pickupOffDays`에 든 요일은 0) |
 | `LAST_PICKUP_DATE` | DATE | Y | 탑승이나 만료로 끝난 마지막 픽업 날짜 |
 
 - 살아 있는 행 UNIQUE: `(TIMETABLE_ID, DAY_OF_WEEK, ACTIVE_FLAG)`
