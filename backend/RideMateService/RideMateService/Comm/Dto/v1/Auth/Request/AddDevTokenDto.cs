@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 namespace RideMateService.Comm.Dto.v1.Auth.Request;
 
 /// <summary>
-/// 개발 전용 토큰 발급 요청. Development 환경에서만 쓴다
+/// 개발 전용 토큰 발급 요청. 출시 전까지 배포 서버에서도 쓴다
 /// </summary>
 public class AddDevTokenDto
 {
