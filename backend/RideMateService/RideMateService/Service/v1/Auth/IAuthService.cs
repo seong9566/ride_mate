@@ -92,7 +92,7 @@ public interface IAuthService
     Task<int> CleanupPhoneVerificationsService(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 개발 전용 토큰 발급. 인증번호·QR 없이 계정 ID로 로그인과 같은 차량 세션을 만든다. Development 환경에서만 부른다
+    /// 개발 전용 토큰 발급. 인증번호·QR 없이 계정 ID로 로그인과 같은 차량 세션을 만든다. 출시 전까지 배포 서버에서도 부른다
     /// </summary>
     Task<ResponseModel<TokenAuthResultDto>> AddDevTokenService(AddDevTokenDto dto, CancellationToken cancellationToken = default);
 }
