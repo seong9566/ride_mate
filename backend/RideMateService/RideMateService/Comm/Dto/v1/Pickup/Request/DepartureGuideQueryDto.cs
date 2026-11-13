@@ -8,6 +8,20 @@ namespace RideMateService.Comm.Dto.v1.Pickup.Request;
 public class DepartureGuideQueryDto : IValidatableObject
 {
     /// <summary>
+    /// 고른 시간표 ID(이번 주 스케줄의 scheduleSeq)
+    /// </summary>
+    [Required]
+    [Range(1, int.MaxValue)]
+    public int? scheduleSeq { get; set; }
+
+    /// <summary>
+    /// 고른 요일. 1(월)~7(일). 서버의 오늘 요일과 다르면 code 101이다
+    /// </summary>
+    [Required]
+    [Range(1, 7)]
+    public int? dayOfWeek { get; set; }
+
+    /// <summary>
     /// 오늘 고른 후보 지점. 픽업 좌표와 함께 보낼 수 없다
     /// </summary>
     [Range(1, int.MaxValue)]
@@ -26,12 +40,6 @@ public class DepartureGuideQueryDto : IValidatableObject
     [Required]
     [Range(-180.0, 180.0)]
     public decimal? currentLng { get; set; }
-
-    /// <summary>
-    /// 내비로 구한 차량의 픽업 장소까지 소요 시간(분). 없으면 서버가 추정한다
-    /// </summary>
-    [Range(0, 300)]
-    public int? driveMin { get; set; }
 
     /// <summary>
     /// 부모가 바꾼 픽업 장소 위도. pickupLng와 함께 보낸다

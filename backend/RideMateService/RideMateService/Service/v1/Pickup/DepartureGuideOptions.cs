@@ -11,9 +11,9 @@ public class DepartureGuideOptions
     public int TidyUpMin { get; set; } = 1;
 
     /// <summary>
-    /// 추천 출발 시각에 더하는 여유 시간(분)
+    /// 하원 시각보다 이만큼(분) 먼저 픽업 장소에 닿는 것을 목표로 한다
     /// </summary>
-    public int BufferMin { get; set; } = 1;
+    public int ArriveBeforeEndMin { get; set; } = 10;
 
     /// <summary>
     /// 도보 시간을 추정할 때 쓰는 아이 걷는 속도(km/h)

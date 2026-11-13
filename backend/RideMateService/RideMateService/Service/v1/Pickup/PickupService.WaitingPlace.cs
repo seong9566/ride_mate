@@ -21,12 +21,14 @@ public partial class PickupService
             if (!int.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("sub"), out var userId))
                 return new ResponseModel<WaitingPlaceListDto> { message = "잘못된 요청입니다.", data = null, code = 401 };
 
-            // 2) 입력 검증 — 필수값이 없거나 픽업 좌표가 한쪽만 오면 거절한다
-            if (dto?.currentLat is null || dto.currentLng is null
-                || (dto.pickupLat is null) != (dto.pickupLng is null))
+            // 2) 입력 검증 — 출발 안내와 같다. 필수값이 없거나 픽업 좌표가 한쪽만 오면 거절한다
+            if (!IsValidDepartureQuery(dto))
                 return new ResponseModel<WaitingPlaceListDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
 
-            var computation = await ComputeDepartureAsync(userId, dto, cancellationToken).ConfigureAwait(false);
+            var computation = await ComputeDepartureAsync(userId, dto!, cancellationToken).ConfigureAwait(false);
+            if (computation.Code == 401) // 계정이 없거나 지워졌다
+                return new ResponseModel<WaitingPlaceListDto> { message = "잘못된 요청입니다.", data = null, code = 401 };
+
             if (computation.Code == 101)
             {
                 return new ResponseModel<WaitingPlaceListDto>
@@ -99,7 +101,7 @@ public partial class PickupService
                 continue;
 
             var waitMin = WaitingPlaceCalculator.WaitMinutes(departure.slackMin!.Value,
-                departure.driveMin!.Value, driveToLot, lotToPickup);
+                computation.DriveMin!.Value, driveToLot, lotToPickup);
             if (waitMin <= 0)
                 continue;
 

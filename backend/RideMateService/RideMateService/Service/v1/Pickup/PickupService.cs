@@ -21,8 +21,6 @@ public partial class PickupService : IPickupService
     private const string WalkSourceStored = "STORED";
     private const string WalkSourceRoute = "ROUTE";
     private const string WalkSourceEstimate = "ESTIMATE";
-    private const string DriveSourceNavi = "NAVI";
-    private const string DriveSourceEstimate = "ESTIMATE";
     private const string EnforcementRestricted = "RESTRICTED";
     private const string EnforcementClear = "CLEAR";
     private const string EnforcementUnknown = "UNKNOWN";
@@ -103,15 +101,18 @@ public partial class PickupService : IPickupService
                 return new ResponseModel<DetailDepartureGuideDto> { message = "잘못된 요청입니다.", data = null, code = 401 };
 
             // 2) 입력 검증 — 필수값이 없거나 픽업 좌표가 한쪽만 오면 거절한다
-            if (dto?.currentLat is null || dto.currentLng is null
-                || (dto.pickupLat is null) != (dto.pickupLng is null)
-                || dto.pickupSpotSeq is < 1
-                || (dto.pickupSpotSeq is not null && (dto.pickupLat is not null || dto.pickupLng is not null)))
+            if (!IsValidDepartureQuery(dto))
                 return new ResponseModel<DetailDepartureGuideDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
 
-            var computation = await ComputeDepartureAsync(userId, dto, cancellationToken).ConfigureAwait(false);
+            var computation = await ComputeDepartureAsync(userId, dto!, cancellationToken).ConfigureAwait(false);
+            if (computation.Code == 401) // 계정이 없거나 지워졌다
+                return new ResponseModel<DetailDepartureGuideDto> { message = "잘못된 요청입니다.", data = null, code = 401 };
+
             if (computation.Code == 200)
+            {
                 await ApplyCongestionAsync(computation, cancellationToken).ConfigureAwait(false);
+                ApplyArrivalTimes(computation);
+            }
 
             return new ResponseModel<DetailDepartureGuideDto>
             {
@@ -271,21 +272,38 @@ public partial class PickupService : IPickupService
     // 계획이 끝난(탑승·취소·만료) 커밋 뒤에 부른다. 허브의 차 위치를 지우고 연결에 알린다
     private void SignalPlanEnded(int pickupPlanId) => _liveHub.NotifyPlanEnded(pickupPlanId);
 
+    // 출발 안내·대기 장소 요청 검증. scheduleSeq·dayOfWeek·현재 위치가 있어야 하고, 픽업 좌표는 한쪽만 올 수 없으며,
+    // pickupSpotSeq는 1 이상이고 픽업 좌표와 함께 올 수 없다(범위·길이는 모델 검증)
+    private static bool IsValidDepartureQuery(DepartureGuideQueryDto? dto)
+        => dto is { scheduleSeq: >= 1, dayOfWeek: >= 1 and <= 7, currentLat: not null, currentLng: not null }
+           && (dto.pickupLat is null) == (dto.pickupLng is null)
+           && dto.pickupSpotSeq is not < 1
+           && (dto.pickupSpotSeq is null || (dto.pickupLat is null && dto.pickupLng is null));
+
     private async Task<DepartureComputation> ComputeDepartureAsync(int userId, DepartureGuideQueryDto dto,
         CancellationToken ct)
     {
-        // 필수값(currentLat·currentLng) 검증은 호출자가 끝냈다. 기준 시각은 서버 현재 시각이다
+        // 입력 검증(scheduleSeq·dayOfWeek·currentLat·currentLng)은 호출자가 끝냈다. 기준 시각은 서버 현재 시각이다
         var now = DateTime.Now;
+        var today = DateOnly.FromDateTime(now);
 
-        // 3) 대상 픽업(설계 3절, 계획 API와 같은 규칙). 진행 중 계획이 있으면 그 계획,
-        //    없으면 오늘 날짜로 하원 뒤 창(PickupWindowHours)이 지나지 않은 것 중 하원이 가장 이른 것
-        var selected = await SelectPickupTargetAsync(userId, now, ct).ConfigureAwait(false);
+        // 3) 오늘 요일이 아니면 101
+        if (dto.dayOfWeek != DepartureGuideCalculator.DayOfWeek(today))
+            return new DepartureComputation { Code = 101, Result = null, Target = null, DayType = string.Empty, Now = now };
+
+        // 집 — 계정이 없거나 지워졌으면 401. 집 좌표가 없으면 집 구간 없이 계산한다
+        var home = await _pickupRepository.GetUserHomeAsync(userId, ct).ConfigureAwait(false);
+        if (home is null)
+            return new DepartureComputation { Code = 401, Result = null, Target = null, DayType = string.Empty, Now = now };
+
+        // 대상 픽업. 그 일정의 진행 중 계획이 있으면 그 계획, 없으면 오늘 그 일정의 픽업. 둘 다 없으면 101
+        var selected = await SelectScheduleTargetAsync(userId, dto.scheduleSeq!.Value, now, ct).ConfigureAwait(false);
         if (selected is null)
             return new DepartureComputation { Code = 101, Result = null, Target = null, DayType = string.Empty, Now = now };
 
         var plan = selected.Plan;
         // 계획이 있으면 계획의 날짜, 없으면 오늘 날짜다
-        var date = plan?.PickupDate ?? DateOnly.FromDateTime(now);
+        var date = plan?.PickupDate ?? today;
 
         // 4) 요일 유형 — 그해 공휴일이 적재되지 않았으면 공휴일이 아닌 것으로 본다
         var holiday = await _pickupRepository.GetHolidayAsync(date, ct).ConfigureAwait(false);
@@ -387,21 +405,39 @@ public partial class PickupService : IPickupService
                 shiftMin = (int)Math.Ceiling((shiftedSlot - childArrival).TotalMinutes)
             });
 
-        // 7) 차량 소요 시간 — 앱이 보낸 값이 없으면 직선 거리로 추정한다
-        if (dto.driveMin is not null)
+        // 7) 차량 경로 — 현재 위치 → 픽업 장소 → 집을 카카오모빌리티 자동차 길찾기 한 번으로 구한다(실패하면 직선 거리 추정).
+        //    집 좌표가 없으면 현재 위치 → 픽업 장소 한 구간이다
+        var points = new List<(decimal Lat, decimal Lng)>
         {
-            result.driveMin = dto.driveMin.Value;
-            result.driveSource = DriveSourceNavi;
-        }
-        else
+            (dto.currentLat!.Value, dto.currentLng!.Value),
+            (pickup.lat, pickup.lng)
+        };
+        var pointNames = new List<string> { LegCurrentName, pickup.spotName ?? LegPickupName };
+        if (home is { DestLat: { } homeLat, DestLng: { } homeLng })
         {
-            var meters = GeoDistance.Meters(dto.currentLat!.Value, dto.currentLng!.Value, pickup.lat, pickup.lng);
-            result.driveMin = DepartureGuideCalculator.EstimateMinutes(meters, _options.DriveKmh, _options.RoadFactor);
-            result.driveSource = DriveSourceEstimate;
+            points.Add((homeLat, homeLng));
+            pointNames.Add(LegHomeName);
         }
 
-        // 8) 추천 출발 시각과 남은 여유. 계획이 있으면 배정 시각 기준이다(명세서 P-01 "배정 시각 − ETA − 여유")
-        var departure = DepartureGuideCalculator.Departure(slotDt ?? childArrival, result.driveMin.Value, _options.BufferMin);
+        var route = await DriveRouteAsync(points, pointNames, new int?[points.Count - 1], ct).ConfigureAwait(false);
+        result.driveRoute = new DepartureGuideDriveRouteDto
+        {
+            driveMin = route.driveMin,
+            distanceM = route.distanceM,
+            source = route.source,
+            legs = route.legs.Select(l => new DepartureGuideDriveLegDto
+            {
+                from = l.from,
+                to = l.to,
+                driveMin = l.driveMin,
+                distanceM = l.distanceM
+            }).ToList()
+        };
+        var driveMin = route.legs[0].driveMin;
+
+        // 8) 추천 출발 시각과 남은 여유. 하원 시각보다 ArriveBeforeEndMin분 먼저 픽업 장소에 닿는 것이 목표다
+        var targetArrival = DepartureGuideCalculator.TargetArrival(date, target.EndTime, _options.ArriveBeforeEndMin);
+        var departure = DepartureGuideCalculator.Departure(targetArrival, driveMin);
         result.departureDt = departure;
         result.slackMin = DepartureGuideCalculator.SlackMinutes(departure, now);
 
@@ -417,7 +453,30 @@ public partial class PickupService : IPickupService
         else
             result.enforcement = new DepartureGuideEnforcementDto { status = EnforcementClear };
 
-        return new DepartureComputation { Code = 200, Result = result, Target = target, DayType = dayType, IsHoliday = holiday.IsHoliday, Now = now };
+        return new DepartureComputation
+        {
+            Code = 200, Result = result, Target = target, DayType = dayType, IsHoliday = holiday.IsHoliday, Now = now,
+            TargetArrival = targetArrival, DriveMin = driveMin
+        };
+    }
+
+    // 픽업 장소·집 도착 예상 시각(혼잡 보정까지 끝난 출발 시각 기준). 여유가 있으면 도착 목표 시각 그대로, 늦었으면 지금 출발해 닿는 시각이다.
+    // 집 도착은 아이를 태울 수 있는 시각(배정 시각, 계획이 없으면 아이 도착 시각)과 픽업 장소 도착 중 늦은 쪽에서 집 구간 시간을 더한다
+    private static void ApplyArrivalTimes(DepartureComputation computation)
+    {
+        var result = computation.Result;
+        if (result?.departureDt is not { } departureDt || computation.TargetArrival is not { } targetArrival)
+            return;
+
+        var start = computation.Now > departureDt ? computation.Now : departureDt;
+        var pickupArrival = CeilToMinute(start + (targetArrival - departureDt));
+        result.pickupArrivalDt = pickupArrival;
+
+        if (result.driveRoute is { legs.Count: > 1 } driveRoute && (result.slotDt ?? result.childArrivalDt) is { } ready)
+        {
+            var boarding = pickupArrival > ready ? pickupArrival : ready;
+            result.homeArrivalDt = boarding + TimeSpan.FromMinutes(driveRoute.legs[1].driveMin);
+        }
     }
 
     // 진행 중 계획을 대상 픽업 행으로 옮긴다. 학원 이름·좌표는 계획 학원의 현재 값, 학원가(AREA_ID)와 하원 시각은 계획에 복사해 둔 값이다

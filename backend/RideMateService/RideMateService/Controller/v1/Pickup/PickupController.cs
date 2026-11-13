@@ -30,6 +30,10 @@ public class PickupController : ApiControllerBase
     /// <summary>
     /// 출발 안내 계산
     /// </summary>
+    /// <remarks>
+    /// 요청: scheduleSeq(시간표 ID)·dayOfWeek(1월~7일)·currentLat·currentLng 필수, pickupSpotSeq 또는 pickupLat·pickupLng 선택(함께 보낼 수 없음).
+    /// 응답 code: 101 dayOfWeek가 서버의 오늘 요일이 아니거나 그 일정의 오늘 픽업 없음, 200 정상, 400 잘못된 입력, 401 인증 실패·계정 없음, 500 서버 처리 실패
+    /// </remarks>
     [Produces("application/json")]
     [HttpGet]
     [Route("v1/Pickup/M/sign/DetailDepartureGuide")]
@@ -103,7 +107,8 @@ public class PickupController : ApiControllerBase
     /// 대기 장소 추천 목록
     /// </summary>
     /// <remarks>
-    /// 응답 code: 101 오늘 남은 픽업 없음, 200 정상, 400 잘못된 입력, 401 인증 실패, 500 서버 처리 실패
+    /// 요청은 출발 안내와 같다: scheduleSeq(시간표 ID)·dayOfWeek(1월~7일)·currentLat·currentLng 필수, pickupSpotSeq 또는 pickupLat·pickupLng 선택(함께 보낼 수 없음).
+    /// 응답 code: 101 dayOfWeek가 서버의 오늘 요일이 아니거나 그 일정의 오늘 픽업 없음, 200 정상, 400 잘못된 입력, 401 인증 실패·계정 없음, 500 서버 처리 실패
     /// </remarks>
     [Produces("application/json")]
     [HttpGet]

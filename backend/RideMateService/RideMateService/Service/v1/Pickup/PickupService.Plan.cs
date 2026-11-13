@@ -879,6 +879,28 @@ public partial class PickupService
         return pickup is null ? null : new PickupTarget(null, pickup);
     }
 
+    // 한 일정(시간표)의 대상 픽업 고르기. 출발 안내·대기 장소가 쓴다.
+    // 1) 그 일정의 진행 중 계획(서버 시각 now 기준)이 있으면 그것. 다른 일정의 계획은 보지 않는다
+    // 2) 없으면 now 날짜의 오늘 픽업 중 그 일정의 행. 하원 뒤 시간 창은 걸지 않는다. 둘 다 없으면 null
+    private async Task<PickupTarget?> SelectScheduleTargetAsync(int userId, int timetableId, DateTime now,
+        CancellationToken cancellationToken)
+    {
+        var date = DateOnly.FromDateTime(now);
+        var livePlan = await _pickupRepository.GetLivePlanByTimetableAsync(userId, timetableId, date, now,
+            cancellationToken).ConfigureAwait(false);
+        if (livePlan is not null)
+            return new PickupTarget(livePlan, null);
+
+        var todays = await _pickupRepository.GetTodayPickupsAsync(userId, date,
+            DepartureGuideCalculator.DayOfWeek(date), cancellationToken).ConfigureAwait(false);
+        var pickup = todays
+            .Where(t => t.TimetableId == timetableId)
+            .OrderBy(t => t.TimetableDayId)
+            .FirstOrDefault();
+
+        return pickup is null ? null : new PickupTarget(null, pickup);
+    }
+
     // 기본 지점 배정(설계 6.1 "기본 지점 배정 순서"). 우리 픽업 장소(preferredSpotId)가 후보면 맨 앞에, 나머지는 PRIORITY 순으로 보며(USE_YN = 0은 조회에서 빠진다) [ADR-0025]
     // 아이 도착 시각이 금지 시간 [시작, 종료)에 걸리면 건너뛴다. 남은 지점마다 시작 시각 = max(아이 도착, notBefore)부터
     // SlotShiftMaxMin까지 1분씩 늦춰 정원이 남은 첫 시각을 쓴다. 늦춘 시각은 금지 시간을 다시 보지 않는다. 없으면 null

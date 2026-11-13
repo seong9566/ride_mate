@@ -192,6 +192,13 @@ public interface IPickupRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 로그인한 부모의 한 시간표(TIMETABLE_ID)에 대한 진행 중 계획(그날 PICKUP_DATE, 끝나지 않은 STATUS, EXPIRE_DT > now) 중
+    /// 배정 시각(없으면 그날 하원 시각)이 가장 이른 하나를 잠금 없이 조회한다. 없으면 null
+    /// </summary>
+    Task<LivePlanRow?> GetLivePlanByTimetableAsync(int userId, int timetableId, DateOnly date, DateTime now,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 오늘 계획 한 건을 상태와 상관없이 조회한다(응답 만들기용). 없으면 null
     /// </summary>
     Task<LivePlanRow?> GetPlanByIdAsync(int pickupPlanId, IDbTransaction? transaction,
