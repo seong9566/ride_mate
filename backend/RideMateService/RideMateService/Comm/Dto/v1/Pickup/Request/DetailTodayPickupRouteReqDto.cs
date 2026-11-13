@@ -78,6 +78,12 @@ public class TodayPickupWaypointReqDto
     public decimal? lng { get; set; }
 
     /// <summary>
+    /// 경유지 이름(예: 강남우체국). 구간의 from·to에 쓴다. 빠지면 주소, 주소도 없으면 '경유지 n'이다. 앞뒤 공백을 지운 뒤 100자까지
+    /// </summary>
+    [TrimmedMaxLength(100)]
+    public string? name { get; set; }
+
+    /// <summary>
     /// 주소(예: 강남구 개포로 619). 좌표가 없으면 서버가 카카오 주소 검색으로 좌표를 찾는다. 앞뒤 공백을 지운 뒤 200자까지
     /// </summary>
     [TrimmedMaxLength(200)]

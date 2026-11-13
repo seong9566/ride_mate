@@ -3067,6 +3067,10 @@
             "format": "double",
             "nullable": true
           },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
           "address": {
             "type": "string",
             "nullable": true
@@ -3715,8 +3719,8 @@
             },
             "nullable": true
           },
-          "homeDrive": {
-            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_TodayPickupHomeDriveDto"
+          "driveRoute": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_TodayPickupDriveRouteDto"
           }
         },
         "additionalProperties": false
@@ -4102,7 +4106,7 @@
         },
         "additionalProperties": false
       },
-      "RideMateService_Comm_Dto_v1_Pickup_Response_TodayPickupHomeDriveDto": {
+      "RideMateService_Comm_Dto_v1_Pickup_Response_TodayPickupDriveRouteDto": {
         "type": "object",
         "properties": {
           "driveMin": {
@@ -4175,6 +4179,10 @@
       "RideMateService_Comm_Dto_v1_Pickup_Response_TodayPickupWaypointDto": {
         "type": "object",
         "properties": {
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
           "address": {
             "type": "string",
             "nullable": true
