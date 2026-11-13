@@ -52,7 +52,7 @@
   - 서버는 응답에 전화번호·계정 ID·사용 시각을 넣지 않고, 클라이언트(IPv4 주소, IPv6는 /64)마다 1분에 30번으로 제한한다(넘으면 429 + `Retry-After`).
   - 프록시 뒤에 배포하면 `UseForwardedHeaders`(신뢰할 프록시만, `KnownProxies`/`KnownNetworks`)를 먼저 설정해야 제한이 클라이언트별로 동작한다. 설정하지 않으면 모든 요청이 프록시 주소 하나로 묶인다.
 - 차량 로그인 토큰은 access와 refresh 둘이다. 발급은 `POST /api/v1/Auth/M/Token`(`api.md`)이다. [ADR-0013]
-- 개발 전용 `POST /api/v1/Auth/M/DevToken`(`{"userId":25}`)은 인증번호·QR 없이 그 계정의 차량 세션을 만들어 `Token`과 같은 본문을 준다. `Development` 환경에서만 동작하고 그 밖(배포 서버는 `Production`)은 404다. 기기 ID를 비우면 `swagger-dev`라 실제 차량 세션은 끝내지 않는다. 같은 환경에서만 Swagger가 Authorize 값을 새로고침 뒤에도 유지한다.
+- 개발 전용 `POST /api/v1/Auth/M/DevToken`(`{"userId":25}`)은 인증번호·QR 없이 그 계정의 차량 세션을 만들어 `Token`과 같은 본문을 준다. 개발 단계라 배포 서버(`Production`)에서도 동작한다(사용자 결정 2026-11-13). 계정 ID만 알면 누구나 토큰을 받으므로 출시 전에 막는다. 기기 ID를 비우면 `swagger-dev`라 실제 차량 세션은 끝내지 않는다. 같은 환경에서만 Swagger가 Authorize 값을 새로고침 뒤에도 유지한다.
 
 ### 휴대폰 웹 세션
 

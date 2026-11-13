@@ -13,20 +13,18 @@ public class DevAuthController : ApiControllerBase
 {
     private readonly ILogService _logService;
     private readonly IAuthService _authService;
-    private readonly IWebHostEnvironment _environment;
 
-    public DevAuthController(ILogService logService, IAuthService authService, IWebHostEnvironment environment)
+    public DevAuthController(ILogService logService, IAuthService authService)
     {
         this._logService = logService;
         this._authService = authService;
-        this._environment = environment;
     }
 
     /// <summary>
     /// 개발 전용 토큰 발급
     /// </summary>
     /// <remarks>
-    /// Development 환경에서만 동작한다. 그 밖의 환경(배포 서버)은 404다.
+    /// 개발 단계라 배포 서버(Production)에서도 동작한다. 출시 전에 막는다.
     /// 인증번호·QR 없이 계정 ID로 로그인과 같은 차량 세션을 만들고 `Auth/M/Token`과 같은 본문을 돌려준다.
     /// 받은 access_token을 Swagger의 Authorize에 넣는다. device_id를 비우면 swagger-dev이고, 같은 기기 ID의 그 계정 차량 세션은 끝난다.
     /// 없는 계정이면 400 `invalid_grant`다.
@@ -40,9 +38,6 @@ public class DevAuthController : ApiControllerBase
     [ProducesResponseType(typeof(TokenAuthErrorDto), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> DevToken([FromBody] AddDevTokenDto dto, CancellationToken cancellationToken)
     {
-        if (!_environment.IsDevelopment())
-            return NotFound();
-
         try
         {
             var model = await _authService.AddDevTokenService(dto, cancellationToken).ConfigureAwait(false);
