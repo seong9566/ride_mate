@@ -691,15 +691,6 @@
             }
           },
           {
-            "name": "currentDt",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "date-time"
-            }
-          },
-          {
             "name": "currentLat",
             "in": "query",
             "required": true,
@@ -846,15 +837,6 @@
             }
           },
           {
-            "name": "currentDt",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "date-time"
-            }
-          },
-          {
             "name": "currentLat",
             "in": "query",
             "required": true,
@@ -965,15 +947,6 @@
               "minimum": 1,
               "type": "integer",
               "format": "int32"
-            }
-          },
-          {
-            "name": "currentDt",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "date-time"
             }
           }
         ],
@@ -3918,14 +3891,6 @@
             "type": "number",
             "format": "double"
           },
-          "guideText": {
-            "type": "string",
-            "nullable": true
-          },
-          "photoUrl": {
-            "type": "string",
-            "nullable": true
-          },
           "note": {
             "type": "string",
             "nullable": true
@@ -3934,21 +3899,7 @@
             "type": "integer",
             "format": "int32"
           },
-          "walkPath": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_GeoPointDto"
-            },
-            "nullable": true
-          },
-          "distanceM": {
-            "type": "integer",
-            "format": "int32"
-          },
           "recommended": {
-            "type": "boolean"
-          },
-          "preferred": {
             "type": "boolean"
           },
           "available": {

@@ -103,7 +103,7 @@ public partial class PickupService : IPickupService
                 return new ResponseModel<DetailDepartureGuideDto> { message = "잘못된 요청입니다.", data = null, code = 401 };
 
             // 2) 입력 검증 — 필수값이 없거나 픽업 좌표가 한쪽만 오면 거절한다
-            if (dto?.currentDt is null || dto.currentLat is null || dto.currentLng is null
+            if (dto?.currentLat is null || dto.currentLng is null
                 || (dto.pickupLat is null) != (dto.pickupLng is null)
                 || dto.pickupSpotSeq is < 1
                 || (dto.pickupSpotSeq is not null && (dto.pickupLat is not null || dto.pickupLng is not null)))
@@ -274,17 +274,17 @@ public partial class PickupService : IPickupService
     private async Task<DepartureComputation> ComputeDepartureAsync(int userId, DepartureGuideQueryDto dto,
         CancellationToken ct)
     {
-        // 필수값(currentDt·currentLat·currentLng) 검증은 호출자가 끝냈다
-        var now = dto.currentDt!.Value;
+        // 필수값(currentLat·currentLng) 검증은 호출자가 끝냈다. 기준 시각은 서버 현재 시각이다
+        var now = DateTime.Now;
 
-        // 3) 대상 픽업(설계 3절, 계획 API와 같은 규칙). 진행 중 계획은 서버 현재 시각으로 보고,
-        //    계획이 없으면 currentDt의 날짜로 하원 뒤 창(PickupWindowHours)이 지나지 않은 것 중 하원이 가장 이른 것
-        var selected = await SelectPickupTargetAsync(userId, DateTime.Now, now, ct).ConfigureAwait(false);
+        // 3) 대상 픽업(설계 3절, 계획 API와 같은 규칙). 진행 중 계획이 있으면 그 계획,
+        //    없으면 오늘 날짜로 하원 뒤 창(PickupWindowHours)이 지나지 않은 것 중 하원이 가장 이른 것
+        var selected = await SelectPickupTargetAsync(userId, now, ct).ConfigureAwait(false);
         if (selected is null)
             return new DepartureComputation { Code = 101, Result = null, Target = null, DayType = string.Empty, Now = now };
 
         var plan = selected.Plan;
-        // 계획이 있으면 계획의 날짜, 없으면 currentDt의 날짜다
+        // 계획이 있으면 계획의 날짜, 없으면 오늘 날짜다
         var date = plan?.PickupDate ?? DateOnly.FromDateTime(now);
 
         // 4) 요일 유형 — 그해 공휴일이 적재되지 않았으면 공휴일이 아닌 것으로 본다

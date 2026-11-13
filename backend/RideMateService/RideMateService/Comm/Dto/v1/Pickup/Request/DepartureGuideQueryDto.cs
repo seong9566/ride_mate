@@ -14,12 +14,6 @@ public class DepartureGuideQueryDto : IValidatableObject
     public int? pickupSpotSeq { get; set; }
 
     /// <summary>
-    /// 앱의 현재 시각(KST, 오프셋 없는 로컬 시각)
-    /// </summary>
-    [Required]
-    public DateTime? currentDt { get; set; }
-
-    /// <summary>
     /// 차량 현재 위도
     /// </summary>
     [Required]
@@ -51,22 +45,8 @@ public class DepartureGuideQueryDto : IValidatableObject
     [Range(-180.0, 180.0)]
     public decimal? pickupLng { get; set; }
 
-    /// <summary>
-    /// currentDt 검증. 픽업 장소 후보 목록 요청도 같은 규칙을 쓴다
-    /// </summary>
-    public static IEnumerable<ValidationResult> ValidateCurrentDt(DateTime? currentDt)
-    {
-        // 쿼리 바인딩은 Z·오프셋이 붙은 값을 UTC로 바꿔 시각이 밀린다. 오프셋 없는 로컬 시각(Unspecified)만 받는다
-        if (currentDt is { Kind: not DateTimeKind.Unspecified })
-            yield return new ValidationResult("currentDt는 오프셋 없는 로컬 시각이어야 합니다.",
-                new[] { nameof(currentDt) });
-    }
-
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
-        foreach (var result in ValidateCurrentDt(currentDt))
-            yield return result;
-
         if (pickupSpotSeq is not null && (pickupLat is not null || pickupLng is not null))
             yield return new ValidationResult("pickupSpotSeq와 픽업 좌표는 함께 보낼 수 없습니다.",
                 new[] { nameof(pickupSpotSeq), nameof(pickupLat), nameof(pickupLng) });
