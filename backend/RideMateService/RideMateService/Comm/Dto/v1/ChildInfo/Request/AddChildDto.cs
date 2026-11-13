@@ -26,4 +26,11 @@ public class AddChildDto
     [Required]
     [RegularExpression("^(SMS|ALIMTALK)$")]
     public string? sendChannel { get; set; }
+
+    /// <summary>
+    /// 생년월일. 화면 입력 그대로 yyyy.MM.dd (예: 2010.05.14). 없는 날짜나 오늘 이후 날짜는 400이다(Service에서 검사)
+    /// </summary>
+    [Required]
+    [RegularExpression(@"^[0-9]{4}\.[0-9]{2}\.[0-9]{2}$")]
+    public string? birthDate { get; set; }
 }

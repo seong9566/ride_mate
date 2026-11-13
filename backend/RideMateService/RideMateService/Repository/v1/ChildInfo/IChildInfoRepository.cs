@@ -19,7 +19,7 @@ public interface IChildInfoRepository
     /// 살아 있는 아이의 바뀐 칸만 쓴다. null인 인자는 그 칸을 그대로 둔다(phoneEnc·phoneHash는 번호를 바꿀 때 함께 준다). 같은 번호의 다른 살아 있는 아이가 있으면 MySQL 중복 키 예외(1062)를 로그 없이 올려보낸다. 바뀐 행이 없으면 false다.
     /// </summary>
     Task<bool> UpdateChildAsync(int childId, string? childName, byte[]? phoneEnc, string? phoneHash, string? sendChannel,
-        DateTime updateDt, string updateUser, CancellationToken cancellationToken = default);
+        DateTime? birthDate, DateTime updateDt, string updateUser, CancellationToken cancellationToken = default);
 
     // ====== Dapper
 

@@ -24,4 +24,9 @@ public class AddChildResultDto
     /// 링크를 보내는 방법. SMS 또는 ALIMTALK
     /// </summary>
     public string sendChannel { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 생년월일 yyyy.MM.dd (예: 2010.05.14). 생년월일을 받기 전에 등록한 아이는 null
+    /// </summary>
+    public string? birthDate { get; set; }
 }
