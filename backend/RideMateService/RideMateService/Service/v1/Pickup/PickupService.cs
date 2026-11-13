@@ -468,7 +468,9 @@ public partial class PickupService : IPickupService
         if (result?.departureDt is not { } departureDt || computation.TargetArrival is not { } targetArrival)
             return;
 
-        var start = computation.Now > departureDt ? computation.Now : departureDt;
+        // DateTime.Now는 Kind가 Local이라 그대로 쓰면 응답에 오프셋이 붙는다. 다른 시각 칸처럼 Kind를 Unspecified로 맞춘다
+        var now = DateTime.SpecifyKind(computation.Now, DateTimeKind.Unspecified);
+        var start = now > departureDt ? now : departureDt;
         var pickupArrival = CeilToMinute(start + (targetArrival - departureDt));
         result.pickupArrivalDt = pickupArrival;
 
