@@ -73,7 +73,8 @@ services:
       Sms__Solapi__ApiSecret: "${SOLAPI_API_SECRET:-}"
       Sms__Solapi__Sender: "${SOLAPI_SENDER:-}"
       QrLogin__VerificationUri: "${PUBLIC_BASE_URL:-http://localhost:3000}/qr"
-      PickupLink__BaseUrl: "${PUBLIC_BASE_URL:-http://localhost:3000}/p"
+      # 아이 휴대폰 웹은 API와 다른 도메인(vercel)에 있다. 링크는 BaseUrl + "/" + 토큰
+      PickupLink__BaseUrl: "${CHILD_WEB_BASE_URL:-https://ride-mate-child-web.vercel.app}"
 volumes:
   ridemate-mysql-data:
   n8n-data:

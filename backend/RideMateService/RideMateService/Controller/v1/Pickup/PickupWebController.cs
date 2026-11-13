@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Cors;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
@@ -13,6 +14,7 @@ namespace RideMateService.Controller.v1.Pickup;
 
 [Route("api")]
 [ApiController]
+[EnableCors(ChildWebCors.PolicyName)]
 public class PickupWebController : ApiControllerBase
 {
     private readonly JsonSerializerSettings _jsonSettings;
