@@ -22,7 +22,7 @@ public partial class PickupService
                 return new ResponseModel<WaitingPlaceListDto> { message = "잘못된 요청입니다.", data = null, code = 401 };
 
             // 2) 입력 검증 — 필수값이 없거나 픽업 좌표가 한쪽만 오면 거절한다
-            if (dto?.currentDt is null || dto.currentLat is null || dto.currentLng is null
+            if (dto?.currentLat is null || dto.currentLng is null
                 || (dto.pickupLat is null) != (dto.pickupLng is null))
                 return new ResponseModel<WaitingPlaceListDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
 

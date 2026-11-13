@@ -25,12 +25,13 @@ public partial class PickupService
             if (!int.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("sub"), out var userId))
                 return new ResponseModel<PickupSpotListDto> { message = "잘못된 요청입니다.", data = null, code = 401 };
 
-            // 2) 입력 검증 — 필수값이 없거나 범위 밖이면 거절한다. currentDt의 Kind 검증은 요청 DTO가 한다
-            if (dto?.scheduleSeq is not >= 1 || dto.currentDt is null)
+            // 2) 입력 검증 — 필수값이 없거나 범위 밖이면 거절한다
+            if (dto?.scheduleSeq is not >= 1)
                 return new ResponseModel<PickupSpotListDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
 
-            // 3) 평가 날짜는 currentDt의 날짜. 소유한 살아 있는 시간표가 아니면 찾을 수 없다
-            var date = DateOnly.FromDateTime(dto.currentDt.Value);
+            // 3) 평가 날짜는 서버 현재 시각의 날짜. 소유한 살아 있는 시간표가 아니면 찾을 수 없다
+            var now = DateTime.Now;
+            var date = DateOnly.FromDateTime(now);
             var target = await _pickupRepository.GetPickupSpotTargetAsync(userId, dto.scheduleSeq.Value, date,
                 DepartureGuideCalculator.DayOfWeek(date), cancellationToken).ConfigureAwait(false);
             if (target is null)
@@ -73,7 +74,6 @@ public partial class PickupService
                 excludePlanId = await _pickupRepository.GetLivePlanIdByTimetableDayAsync(timetableDayId, date, null,
                     cancellationToken).ConfigureAwait(false);
 
-            var now = DateTime.Now;
             var items = new List<PickupSpotItemDto>(spots.Count);
             foreach (var spot in spots)
             {
@@ -84,14 +84,8 @@ public partial class PickupService
                     spotName = spot.SpotName,
                     lat = spot.Lat,
                     lng = spot.Lng,
-                    guideText = spot.GuideText,
-                    photoUrl = spot.PhotoUrl,
                     note = spot.Note,
                     walkMin = spot.WalkMin,
-                    walkPath = ParseLineString(spot.WalkPathWkt),
-                    distanceM = (int)Math.Round(GeoDistance.Meters(academyLat, academyLng, spot.Lat, spot.Lng),
-                        MidpointRounding.AwayFromZero),
-                    preferred = target.PreferredSpotId == spot.PickupSpotId,
                     available = true
                 };
 

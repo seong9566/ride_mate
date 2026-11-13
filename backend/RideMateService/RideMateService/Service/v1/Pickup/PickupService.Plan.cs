@@ -69,7 +69,7 @@ public partial class PickupService
             var driveMin = dto.driveMin.Value;
 
             // 3) 대상 픽업 — 진행 중 계획이 있으면 그 계획을 시작한다
-            var target = await SelectPickupTargetAsync(userId, now, now, cancellationToken).ConfigureAwait(false);
+            var target = await SelectPickupTargetAsync(userId, now, cancellationToken).ConfigureAwait(false);
             if (target is null)
                 return new ResponseModel<PickupPlanDto> { message = "요청이 정상 처리되었습니다.", data = null, code = 101 };
 
@@ -114,7 +114,7 @@ public partial class PickupService
         var leadTime = TimeSpan.FromHours(_planOptions.CreateLeadHours);
 
         // 1) 대상 픽업 — 진행 중 계획이 있으면 그것을 시작한다(잠금 없이 읽는다)
-        var target = await SelectPickupTargetAsync(userId, now, now, cancellationToken).ConfigureAwait(false);
+        var target = await SelectPickupTargetAsync(userId, now, cancellationToken).ConfigureAwait(false);
 
         // 2) 진행 중 계획도 오늘 남은 픽업도 없다
         if (target is null)
@@ -855,8 +855,8 @@ public partial class PickupService
 
     // 대상 픽업 고르기(설계 3절). 출발 안내와 계획 API가 같은 규칙을 쓴다.
     // 1) 진행 중 계획(서버 시각 now 기준)이 있으면 그것. 여럿이면 배정 시각(없으면 하원 시각)이 가장 이른 것
-    // 2) 없으면 windowNow 날짜의 오늘 픽업 중 하원 + PickupWindowHours가 windowNow보다 늦은 것에서 하원이 가장 이른 것
-    private async Task<PickupTarget?> SelectPickupTargetAsync(int userId, DateTime now, DateTime windowNow,
+    // 2) 없으면 now 날짜의 오늘 픽업 중 하원 + PickupWindowHours가 now보다 늦은 것에서 하원이 가장 이른 것
+    private async Task<PickupTarget?> SelectPickupTargetAsync(int userId, DateTime now,
         CancellationToken cancellationToken)
     {
         var livePlan = await _pickupRepository.GetLivePlanAsync(userId, DateOnly.FromDateTime(now), now,
@@ -864,14 +864,14 @@ public partial class PickupService
         if (livePlan is not null)
             return new PickupTarget(livePlan, null);
 
-        var date = DateOnly.FromDateTime(windowNow);
+        var date = DateOnly.FromDateTime(now);
         var todays = await _pickupRepository.GetTodayPickupsAsync(userId, date,
             DepartureGuideCalculator.DayOfWeek(date), cancellationToken).ConfigureAwait(false);
 
         var dayStart = date.ToDateTime(TimeOnly.MinValue);
         var window = TimeSpan.FromHours(_options.PickupWindowHours);
         var pickup = todays
-            .Where(t => dayStart + t.EndTime + window > windowNow)
+            .Where(t => dayStart + t.EndTime + window > now)
             .OrderBy(t => t.EndTime)
             .ThenBy(t => t.TimetableDayId)
             .FirstOrDefault();

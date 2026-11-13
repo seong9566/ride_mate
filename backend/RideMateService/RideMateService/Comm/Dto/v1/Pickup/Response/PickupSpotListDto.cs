@@ -67,16 +67,6 @@ public class PickupSpotItemDto
     public decimal lng { get; set; }
 
     /// <summary>
-    /// 찾는 법. 없으면 null
-    /// </summary>
-    public string? guideText { get; set; }
-
-    /// <summary>
-    /// 현장 사진 주소. 없으면 null
-    /// </summary>
-    public string? photoUrl { get; set; }
-
-    /// <summary>
     /// 학원 기준 지점 한 줄 안내. 없으면 null
     /// </summary>
     public string? note { get; set; }
@@ -87,24 +77,9 @@ public class PickupSpotItemDto
     public int walkMin { get; set; }
 
     /// <summary>
-    /// 학원에서 지점까지 도보 경로. 없으면 null
-    /// </summary>
-    public List<GeoPointDto>? walkPath { get; set; }
-
-    /// <summary>
-    /// 학원에서 지점까지 직선 거리(m)
-    /// </summary>
-    public int distanceM { get; set; }
-
-    /// <summary>
     /// 추천 지점이면 true. 많아야 한 곳
     /// </summary>
     public bool recommended { get; set; }
-
-    /// <summary>
-    /// 우리 픽업 장소(부모가 고른 기본 지점)이면 true
-    /// </summary>
-    public bool preferred { get; set; }
 
     /// <summary>
     /// 그 시각에 쓸 수 있으면 true
