@@ -77,6 +77,11 @@ public interface IScheduleRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 그 계정의 집과 살아 있는 아이 한 명(CHILD_ID가 가장 작은 아이)을 돌려준다. 계정이 없거나 지워졌으면 null이다.
+    /// </summary>
+    Task<ScheduleHomeRow?> GetScheduleHomeRowAsync(int userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 그 아이의 살아 있는 시간표에 속한 살아 있는 요일 한 건을 돌려준다. 없거나 남의 것이면 null이다.
     /// </summary>
     Task<ScheduleDayDto?> GetLiveScheduleDayAsync(int childId, int scheduleDaySeq, IDbTransaction transaction,

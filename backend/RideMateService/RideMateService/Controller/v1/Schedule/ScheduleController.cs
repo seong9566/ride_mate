@@ -83,6 +83,36 @@ public class ScheduleController : ApiControllerBase
     }
 
     /// <summary>
+    /// 이번 주 스케줄 조회
+    /// </summary>
+    [Produces("application/json")]
+    [HttpGet]
+    [Route("v1/Schedule/M/sign/DetailWeeklySchedule")]
+    [SwaggerOperation(Summary = "이번 주 스케줄 조회(아이·집·요일별 시간표)")]
+    [ProducesResponseType(typeof(ResponseModel<DetailWeeklyScheduleDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> DetailWeeklySchedule(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _scheduleService.DetailWeeklyScheduleService(cancellationToken).ConfigureAwait(false);
+            return ToActionResult(model);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // 앱이 요청을 끊었다. 오류로 기록하지 않는다
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
+
+    /// <summary>
     /// 요일별 픽업 스위치 변경
     /// </summary>
     [Produces("application/json")]

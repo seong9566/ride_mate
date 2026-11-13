@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json.Linq;
 using RideMateService.Comm.Logger;
@@ -70,6 +71,70 @@ public class KakaoAddressClient : IAddressClient
             _logService.LogMessage($"Kakao coord2address failed: {ex.GetType().Name}");
             return null;
         }
+    }
+
+    /// <summary>
+    /// 카카오 로컬 주소 검색 API(GET /v2/local/search/address.json)로 주소를 좌표로 바꾼다.
+    /// 실패 사유는 로그에 남기되 주소·좌표·키·URL·응답 본문은 남기지 않는다.
+    /// </summary>
+    public async Task<AddressSearchResult> SearchAddressAsync(string address, CancellationToken cancellationToken = default)
+    {
+        var apiKey = _options.RestApiKey;
+        if (string.IsNullOrWhiteSpace(apiKey))
+            return new AddressSearchResult(AddressSearchStatus.Failed);
+
+        try
+        {
+            var uri = $"v2/local/search/address.json?query={Uri.EscapeDataString(address.Trim())}&size=1";
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            request.Headers.TryAddWithoutValidation("Authorization", $"KakaoAK {apiKey}");
+
+            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logService.LogMessage($"Kakao address search failed: HTTP {(int)response.StatusCode}");
+                return new AddressSearchResult(AddressSearchStatus.Failed);
+            }
+
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            return ParseSearch(body);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            // HttpClient.Timeout 초과
+            _logService.LogMessage("Kakao address search failed: TIMEOUT");
+            return new AddressSearchResult(AddressSearchStatus.Failed);
+        }
+        catch (HttpRequestException ex)
+        {
+            _logService.LogMessage($"Kakao address search failed: {ex.HttpRequestError}");
+            return new AddressSearchResult(AddressSearchStatus.Failed);
+        }
+        catch (Exception ex)
+        {
+            // 응답 해석 실패 등. 메시지에 응답 내용이 섞일 수 있어 예외 형식만 남긴다
+            _logService.LogMessage($"Kakao address search failed: {ex.GetType().Name}");
+            return new AddressSearchResult(AddressSearchStatus.Failed);
+        }
+    }
+
+    // documents[0]의 x(경도)·y(위도)는 문자열이다. documents가 비었으면 NotFound. 모양이 다르면 예외를 던지고 호출한 쪽이 Failed로 바꾼다
+    private static AddressSearchResult ParseSearch(string body)
+    {
+        var root = JObject.Parse(body);
+        var documents = root["documents"] as JArray ?? throw new FormatException("documents");
+        if (documents.Count == 0)
+            return new AddressSearchResult(AddressSearchStatus.NotFound);
+
+        var document = documents[0];
+        var lng = decimal.Parse(document["x"]?.Value<string>() ?? throw new FormatException("x"), CultureInfo.InvariantCulture);
+        var lat = decimal.Parse(document["y"]?.Value<string>() ?? throw new FormatException("y"), CultureInfo.InvariantCulture);
+        return new AddressSearchResult(AddressSearchStatus.Found, lat, lng);
     }
 
     // documents[0]에서 도로명 주소의 건물 이름 → 도로명 주소 → 지번 주소 순으로 고른다. 결과가 없으면 null

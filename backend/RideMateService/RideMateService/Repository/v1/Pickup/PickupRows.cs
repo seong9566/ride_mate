@@ -367,3 +367,28 @@ public class SpotRequestScheduleRow
     /// </summary>
     public int? AreaId { get; set; }
 }
+
+/// <summary>
+/// 오늘의 픽업 경로에 쓰는 시간표 요일 한 건. EndTime은 TIME_CHANGE 예외를 반영한 하원 시각이다
+/// </summary>
+public class TodayPickupRouteRow
+{
+    public string ChildName { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public TimeSpan EndTime { get; set; }
+    public string? AreaName { get; set; }
+    public string AcademyName { get; set; } = string.Empty;
+    public string AcademyAddress { get; set; } = string.Empty;
+    public decimal? AcademyLat { get; set; }
+    public decimal? AcademyLng { get; set; }
+}
+
+/// <summary>
+/// 계정의 저장된 집. 집을 저장하지 않았으면 DestAddress가 null이다
+/// </summary>
+public class UserHomeRow
+{
+    public string? DestAddress { get; set; }
+    public decimal? DestLat { get; set; }
+    public decimal? DestLng { get; set; }
+}
