@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -17,6 +18,7 @@ public class ChildInfoService : IChildInfoService
 {
     private const string AuditUser = "PARENT";
     private const int ChildNameMaxLength = 10;
+    private const string BirthDateFormat = "yyyy.MM.dd";
     private const int DeadlockMaxAttempts = 3;
 
     private readonly IChildInfoRepository _childInfoRepository;
@@ -59,7 +61,8 @@ public class ChildInfoService : IChildInfoService
             // 1) 입력 검증 — API 모델 검증을 거치지 않은 호출도 같은 규칙으로 거절한다
             var childName = dto?.childName?.Trim();
             if (dto is null || childName is null || !IsValidChildName(childName)
-                || !IsValidPhone(dto.phone) || !IsValidSendChannel(dto.sendChannel))
+                || !IsValidPhone(dto.phone) || !IsValidSendChannel(dto.sendChannel)
+                || !TryParseBirthDate(dto.birthDate, out var birthDate))
                 return Fail(400, "잘못된 요청입니다.");
 
             // 2) 인증 확인 — 번호 비교에 쓸 부모 번호 해시가 필요해 트랜잭션 전에 읽는다
@@ -106,7 +109,8 @@ public class ChildInfoService : IChildInfoService
                         childSeq = existingChild.ChildId,
                         childName = existingChild.ChildName,
                         phoneMasked = MaskStoredPhone(existingChild.PhoneEnc),
-                        sendChannel = existingChild.SendChannel
+                        sendChannel = existingChild.SendChannel,
+                        birthDate = FormatBirthDate(existingChild.BirthDate)
                     },
                     code = 409
                 };
@@ -128,6 +132,7 @@ public class ChildInfoService : IChildInfoService
                 PhoneEnc = _phoneCryptoService.Encrypt(phoneDigits),
                 PhoneHash = phoneHash,
                 SendChannel = dto.sendChannel!,
+                BirthDate = birthDate,
                 CreateDt = thisTime,
                 CreateUser = AuditUser,
                 UpdateDt = thisTime,
@@ -161,7 +166,8 @@ public class ChildInfoService : IChildInfoService
                     childSeq = child.ChildId,
                     childName = child.ChildName,
                     phoneMasked = phoneMasked,
-                    sendChannel = child.SendChannel
+                    sendChannel = child.SendChannel,
+                    birthDate = FormatBirthDate(child.BirthDate)
                 },
                 code = 200
             };
@@ -188,16 +194,24 @@ public class ChildInfoService : IChildInfoService
     {
         try
         {
-            // 1) 입력 검증 — 보낸 필드만 형식을 보고, 셋 다 없으면 바꿀 것이 없어 거절한다
+            // 1) 입력 검증 — 보낸 필드만 형식을 보고, 넷 다 없으면 바꿀 것이 없어 거절한다
             if (dto?.childSeq is null)
                 return Fail(400, "잘못된 요청입니다.");
 
             var newName = dto.childName?.Trim();
-            if ((dto.childName is null && dto.phone is null && dto.sendChannel is null)
+            DateTime? newBirthDate = null;
+            if ((dto.childName is null && dto.phone is null && dto.sendChannel is null && dto.birthDate is null)
                 || (newName is not null && !IsValidChildName(newName))
                 || (dto.phone is not null && !IsValidPhone(dto.phone))
                 || (dto.sendChannel is not null && !IsValidSendChannel(dto.sendChannel)))
                 return Fail(400, "잘못된 요청입니다.");
+
+            if (dto.birthDate is not null)
+            {
+                if (!TryParseBirthDate(dto.birthDate, out var parsedBirthDate))
+                    return Fail(400, "잘못된 요청입니다.");
+                newBirthDate = parsedBirthDate;
+            }
 
             // 2) 인증 확인 — 번호 비교에 쓸 부모 번호 해시가 필요해 트랜잭션 전에 읽는다
             var loginUser = await GetLoginUserAsync(cancellationToken).ConfigureAwait(false);
@@ -234,16 +248,18 @@ public class ChildInfoService : IChildInfoService
             var nameChanged = newName is not null && !string.Equals(newName, child.ChildName, StringComparison.Ordinal);
             var channelChanged = dto.sendChannel is not null
                                  && !string.Equals(dto.sendChannel, child.SendChannel, StringComparison.Ordinal);
+            var birthDateChanged = newBirthDate is not null && newBirthDate != child.BirthDate;
 
             var storedName = nameChanged ? newName! : child.ChildName;
             var storedChannel = channelChanged ? dto.sendChannel! : child.SendChannel;
+            var storedBirthDate = birthDateChanged ? newBirthDate : child.BirthDate;
             var phoneMasked = phoneChanged ? MaskPhone(dto.phone!) : MaskStoredPhone(child.PhoneEnc); // 커밋 뒤에 실패하지 않도록 미리 만든다
 
-            if (!phoneChanged && !nameChanged && !channelChanged)
+            if (!phoneChanged && !nameChanged && !channelChanged && !birthDateChanged)
             {
                 // 바꿀 것이 없다 — 쓰지 않고(UPDATE_DT·UPDATE_USER도 그대로) 저장된 값을 돌려준다
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return OkResult(child.ChildId, storedName, phoneMasked, storedChannel);
+                return OkResult(child.ChildId, storedName, phoneMasked, storedChannel, storedBirthDate);
             }
 
             if (phoneChanged)
@@ -272,6 +288,7 @@ public class ChildInfoService : IChildInfoService
                         phoneChanged ? _phoneCryptoService.Encrypt(dto.phone!) : null,
                         phoneChanged ? newPhoneHash : null,
                         channelChanged ? dto.sendChannel : null,
+                        birthDateChanged ? newBirthDate : null,
                         thisTime, AuditUser, cancellationToken).ConfigureAwait(false))
                 {
                     await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -288,7 +305,7 @@ public class ChildInfoService : IChildInfoService
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
             // 8) 응답 — 저장된 값을 돌려준다
-            return OkResult(child.ChildId, storedName, phoneMasked, storedChannel);
+            return OkResult(child.ChildId, storedName, phoneMasked, storedChannel, storedBirthDate);
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested && !IsDeadlock(ex)) // 요청 취소·교착은 그대로 올려보낸다
         {
@@ -298,7 +315,7 @@ public class ChildInfoService : IChildInfoService
     }
 
     private static ResponseModel<AddChildResultDto> OkResult(int childSeq, string childName, string phoneMasked,
-        string sendChannel)
+        string sendChannel, DateTime? birthDate)
     {
         return new ResponseModel<AddChildResultDto>
         {
@@ -308,10 +325,24 @@ public class ChildInfoService : IChildInfoService
                 childSeq = childSeq,
                 childName = childName,
                 phoneMasked = phoneMasked,
-                sendChannel = sendChannel
+                sendChannel = sendChannel,
+                birthDate = FormatBirthDate(birthDate)
             },
             code = 200
         };
+    }
+
+    // 화면 입력 형식 yyyy.MM.dd만 받고, 없는 날짜(2010.02.30)와 오늘 이후 날짜는 거절한다
+    private static bool TryParseBirthDate(string? value, out DateTime birthDate)
+    {
+        return DateTime.TryParseExact(value, BirthDateFormat, CultureInfo.InvariantCulture, DateTimeStyles.None,
+                   out birthDate)
+               && birthDate <= DateTime.Today;
+    }
+
+    private static string? FormatBirthDate(DateTime? birthDate)
+    {
+        return birthDate?.ToString(BirthDateFormat, CultureInfo.InvariantCulture);
     }
 
     // 보낸 번호가 저장된 번호와 다른지 본다. 해시가 있으면 해시끼리, 해시가 NULL인 옛 행은 복호화한 번호와 비교한다(복호화 실패는 다른 번호로 본다)

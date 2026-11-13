@@ -180,7 +180,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `CONSENT_DT` | DATETIME | N | 동의한 시각 |
 
 - 지금 동의 상태는 그 계정·종류의 가장 최근 행이다. 이 테이블이 정본이다. `USER_INFO.ARRIVAL_LOG_YN`은 화면이 빨리 읽기 위한 사본이고 `ARRIVAL_LOG` 행을 넣는 트랜잭션에서 함께 바꾼다.
-- 초기 설정의 보호자 동의(`GUARDIAN`·`CHILD_INFO`·`ARRIVAL_LOG` 3행)는 그 번호의 가장 최근 `GUARDIAN` 인증번호 행이 인증에 성공한 지 10분 안일 때만 넣는다. 선택 항목에 동의하지 않아도 `ARRIVAL_LOG` 행을 `AGREE_YN = 0`으로 넣는다.
+- 초기 설정의 보호자 동의(`GUARDIAN`·`CHILD_INFO`·`ARRIVAL_LOG` 3행)는 그 번호의 가장 최근 `GUARDIAN` 인증번호 행이 인증에 성공한 지 10분 안일 때만 넣는다. 단, MVP 테스트 기간에는 이 검사를 하지 않아 인증 없이도 넣고(인증 행이 없으면 `GUARDIAN` 행의 인증 ID는 NULL), 아이 등록·수정도 `CHILD_INFO` 동의를 보지 않는다(T80). 조건은 추후 다시 넣는다. 선택 항목에 동의하지 않아도 `ARRIVAL_LOG` 행을 `AGREE_YN = 0`으로 넣는다.
 - 인덱스: `(USER_ID, CONSENT_TYPE, CONSENT_ID)`
 
 ## 아이·시간표
@@ -195,6 +195,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `PHONE_ENC` | VARBINARY(255) | N | 휴대폰 번호(숫자만). 암호화해서 저장한다 |
 | `PHONE_HASH` | CHAR(64) | Y | 휴대폰 번호의 HMAC. 같은 번호가 이미 등록됐는지, 부모 번호와 같은지 비교한다. NULL은 이 칸을 넣기 전에 만든 행이거나 삭제한 행이다 |
 | `SEND_CHANNEL` | VARCHAR(20) | N | `SMS`, `ALIMTALK`. 처음 값 `SMS` |
+| `BIRTH_DATE` | DATE | Y | 생년월일. API는 화면 입력 그대로 `yyyy.MM.dd`(예: `2010.05.14`)로 주고받는다. 등록 때 필수이고 없는 날짜·오늘 이후 날짜는 거절한다. NULL은 이 칸을 넣기 전에 만든 행이다 |
 
 - 살아 있는 행 UNIQUE: `(PHONE_HASH, ACTIVE_FLAG)`. 값이 NULL인 행은 걸리지 않는다.
 - 부모 한 명이 아이를 여러 명 둘 수 있는 구조다. 명세서의 화면은 아이 1명 흐름이다.
@@ -203,7 +204,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 - 아이 번호가 부모 번호와 같으면 등록을 거절한다. 같은지는 `PHONE_HASH`끼리 Service에서 비교한다.
 - 화면에 내려줄 때는 Service에서 복호화한 뒤 가운데 자리를 가린다.
 - 아이 등록은 트랜잭션 첫 문장에서 `USER_INFO`를 `FOR UPDATE`로 잠그고 그 뒤에 기존 아이·번호를 조회한다. 계정당 살아 있는 아이 1명은 DB 제약이 아니라 이 잠금으로 지킨다. 아이를 추가하는 다른 경로도 같은 잠금을 먼저 잡는다.
-- 아이 정보 수정(`UpdateChild`)도 트랜잭션 첫 문장에서 `USER_INFO`를 먼저 잠근 뒤, 아이 정보 동의(`CHILD_INFO`)를 다시 확인하고(없으면 101) 그 계정의 살아 있는 아이를 확인한다. 바뀐 칸만 쓰고 `UPDATE_DT`·`UPDATE_USER`를 갱신하며, 바뀐 것이 없으면 아무것도 쓰지 않는다. 번호를 바꾸면 `PHONE_ENC`와 `PHONE_HASH`를 함께 바꾼다. 지금 번호와 같은 번호는 바꾸지 않은 것으로 보아 부모 번호·중복 판정을 건너뛴다. `PHONE_HASH`가 NULL인 옛 행은 `PHONE_ENC`를 복호화해 숫자를 비교하고(해시를 채우지 않는다), 복호화에 실패하면 바뀐 것으로 본다. 진행 중 픽업이 있어도 막지 않는다. `PICKUP_*`에는 번호를 저장하지 않으므로 이후 발송부터 새 번호로 나간다.
+- 아이 정보 수정(`UpdateChild`)도 트랜잭션 첫 문장에서 `USER_INFO`를 먼저 잠근 뒤, 그 계정의 살아 있는 아이를 확인한다. 바뀐 칸만 쓰고 `UPDATE_DT`·`UPDATE_USER`를 갱신하며, 바뀐 것이 없으면 아무것도 쓰지 않는다. 번호를 바꾸면 `PHONE_ENC`와 `PHONE_HASH`를 함께 바꾼다. 지금 번호와 같은 번호는 바꾸지 않은 것으로 보아 부모 번호·중복 판정을 건너뛴다. `PHONE_HASH`가 NULL인 옛 행은 `PHONE_ENC`를 복호화해 숫자를 비교하고(해시를 채우지 않는다), 복호화에 실패하면 바뀐 것으로 본다. 진행 중 픽업이 있어도 막지 않는다. `PICKUP_*`에는 번호를 저장하지 않으므로 이후 발송부터 새 번호로 나간다.
 - 삭제는 아래 "아이·계정 삭제" 순서를 따른다. 복구는 할 수 없다.
 
 ### ACADEMY — 학원

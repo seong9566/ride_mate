@@ -87,7 +87,8 @@ public partial class ChildInfoRepository
                        t.CHILD_NAME AS ChildName,
                        t.PHONE_ENC AS PhoneEnc,
                        t.PHONE_HASH AS PhoneHash,
-                       t.SEND_CHANNEL AS SendChannel
+                       t.SEND_CHANNEL AS SendChannel,
+                       t.BIRTH_DATE AS BirthDate
                 FROM CHILD AS t
                 WHERE t.USER_ID = @userId
                   AND t.DELETE_YN = FALSE
