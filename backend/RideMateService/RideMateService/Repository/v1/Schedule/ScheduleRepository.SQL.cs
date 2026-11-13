@@ -100,6 +100,45 @@ public partial class ScheduleRepository
     }
 
     /// <summary>
+    /// 그 계정의 집과 살아 있는 아이 한 명(CHILD_ID가 가장 작은 아이)을 돌려준다. 계정이 없거나 지워졌으면 null이다.
+    /// </summary>
+    public async Task<ScheduleHomeRow?> GetScheduleHomeRowAsync(int userId,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("userId", userId);
+
+            var sql = @"
+                SELECT t.DEST_ADDRESS AS DestAddress,
+                       t.DEST_LAT AS DestLat,
+                       t.DEST_LNG AS DestLng,
+                       c.CHILD_ID AS ChildId,
+                       c.CHILD_NAME AS ChildName
+                FROM USER_INFO AS t
+                LEFT JOIN CHILD AS c
+                       ON c.CHILD_ID = (SELECT MIN(c2.CHILD_ID)
+                                        FROM CHILD AS c2
+                                        WHERE c2.USER_ID = t.USER_ID
+                                          AND c2.DELETE_YN = FALSE)
+                WHERE t.USER_ID = @userId
+                  AND t.DELETE_YN = FALSE";
+
+            return await _dapper.QueryFirstOrDefaultAsync<ScheduleHomeRow>(
+                new CommandDefinition(sql, dp, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
     /// 그 아이의 살아 있는 시간표에 속한 살아 있는 요일 한 건을 돌려준다. 없거나 남의 것이면 null이다.
     /// </summary>
     public async Task<ScheduleDayDto?> GetLiveScheduleDayAsync(int childId, int scheduleDaySeq,
