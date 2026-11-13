@@ -108,6 +108,14 @@ public static class InfrastructureExtensions
                     Window = TimeSpan.FromMinutes(1),
                     QueueLimit = 0
                 }));
+            options.AddPolicy(DevTokenRateLimit.PolicyName, context => RateLimitPartition.GetFixedWindowLimiter(
+                LoginSessionListRateLimit.PartitionKey(context.Connection.RemoteIpAddress),
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = DevTokenRateLimit.PermitLimit,
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueLimit = 0
+                }));
 
             options.AddPolicy(PickupPositionRateLimit.PolicyName, context =>
                 context.User.FindFirstValue("sub") is { } userId

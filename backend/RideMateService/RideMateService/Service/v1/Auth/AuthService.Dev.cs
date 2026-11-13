@@ -5,7 +5,7 @@ using RideMateService.Comm.Dto.v1.Auth.Response;
 
 namespace RideMateService.Service.v1.Auth;
 
-// 개발 전용 로그인 — 인증번호·QR 없이 계정 ID로 차량 토큰을 낸다. Development 환경에서만 Controller가 부른다
+// 개발 전용 로그인 — 인증번호·QR 없이 계정 ID로 차량 토큰을 낸다. 출시 전까지 배포 서버에서도 열려 있다
 public partial class AuthService
 {
     private const string DevTokenDefaultDeviceId = "swagger-dev";
