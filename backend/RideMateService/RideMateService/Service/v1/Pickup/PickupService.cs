@@ -279,7 +279,7 @@ public partial class PickupService : IPickupService
 
         // 3) 대상 픽업(설계 3절, 계획 API와 같은 규칙). 진행 중 계획이 있으면 그 계획,
         //    없으면 오늘 날짜로 하원 뒤 창(PickupWindowHours)이 지나지 않은 것 중 하원이 가장 이른 것
-        var selected = await SelectPickupTargetAsync(userId, now, now, ct).ConfigureAwait(false);
+        var selected = await SelectPickupTargetAsync(userId, now, ct).ConfigureAwait(false);
         if (selected is null)
             return new DepartureComputation { Code = 101, Result = null, Target = null, DayType = string.Empty, Now = now };
 
