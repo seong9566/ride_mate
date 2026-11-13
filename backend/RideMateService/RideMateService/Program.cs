@@ -204,6 +204,9 @@ app.UseSwaggerUI(c =>
 {
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "RideMate v1");
     c.RoutePrefix = "swagger";
+    if (app.Environment.IsDevelopment())
+        c.EnablePersistAuthorization(); // 개발 중 Authorize에 넣은 토큰을 새로고침해도 유지한다
+
 });
 #endregion
 

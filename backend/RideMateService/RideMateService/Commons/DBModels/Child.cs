@@ -39,6 +39,11 @@ public partial class Child
     public string SendChannel { get; set; } = null!;
 
     /// <summary>
+    /// 생년월일. NULL은 이 칸을 넣기 전에 만든 행이다
+    /// </summary>
+    public DateTime? BirthDate { get; set; }
+
+    /// <summary>
     /// 생성 일시
     /// </summary>
     public DateTime CreateDt { get; set; }

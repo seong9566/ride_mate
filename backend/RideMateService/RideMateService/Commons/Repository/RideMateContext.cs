@@ -265,6 +265,10 @@ public partial class RideMateContext : DbContext
             entity.Property(e => e.ActiveFlag)
                 .HasComment("살아 있는 행 표시 (UNIQUE용)")
                 .HasColumnName("ACTIVE_FLAG");
+            entity.Property(e => e.BirthDate)
+                .HasComment("생년월일. NULL은 이 칸을 넣기 전에 만든 행이다")
+                .HasColumnType("date")
+                .HasColumnName("BIRTH_DATE");
             entity.Property(e => e.ChildName)
                 .HasMaxLength(50)
                 .HasComment("아이 이름")
