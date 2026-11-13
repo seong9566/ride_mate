@@ -1991,19 +1991,19 @@
         ]
       }
     },
-    "/api/v1/Schedule/M/sign/DetailHome": {
+    "/api/v1/Schedule/M/sign/DetailWeeklySchedule": {
       "get": {
         "tags": [
           "Schedule"
         ],
-        "summary": "홈 화면 조회(아이·집·요일별 시간표)",
+        "summary": "이번 주 스케줄 조회(아이·집·요일별 시간표)",
         "responses": {
           "200": {
             "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Schedule_Response_DetailHomeDto"
+                  "$ref": "#/components/schemas/RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Schedule_Response_DetailWeeklyScheduleDto"
                 }
               }
             }
@@ -4245,109 +4245,19 @@
         },
         "additionalProperties": false
       },
-      "RideMateService_Comm_Dto_v1_Schedule_Response_DetailHomeDto": {
+      "RideMateService_Comm_Dto_v1_Schedule_Response_DetailWeeklyScheduleDto": {
         "type": "object",
         "properties": {
           "child": {
-            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Schedule_Response_HomeChildDto"
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Schedule_Response_WeeklyChildDto"
           },
           "home": {
-            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Schedule_Response_HomeLocationDto"
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Schedule_Response_WeeklyHomeDto"
           },
           "week": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Schedule_Response_HomeWeekDayDto"
-            },
-            "nullable": true
-          }
-        },
-        "additionalProperties": false
-      },
-      "RideMateService_Comm_Dto_v1_Schedule_Response_HomeChildDto": {
-        "type": "object",
-        "properties": {
-          "childSeq": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "childName": {
-            "type": "string",
-            "nullable": true
-          }
-        },
-        "additionalProperties": false
-      },
-      "RideMateService_Comm_Dto_v1_Schedule_Response_HomeLocationDto": {
-        "type": "object",
-        "properties": {
-          "address": {
-            "type": "string",
-            "nullable": true
-          },
-          "lat": {
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
-          "lng": {
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          }
-        },
-        "additionalProperties": false
-      },
-      "RideMateService_Comm_Dto_v1_Schedule_Response_HomeScheduleDto": {
-        "type": "object",
-        "properties": {
-          "scheduleSeq": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "displayName": {
-            "type": "string",
-            "nullable": true
-          },
-          "academyName": {
-            "type": "string",
-            "nullable": true
-          },
-          "address": {
-            "type": "string",
-            "nullable": true
-          },
-          "lat": {
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
-          "lng": {
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
-          "endTime": {
-            "type": "string",
-            "nullable": true
-          },
-          "pickupYn": {
-            "type": "boolean"
-          }
-        },
-        "additionalProperties": false
-      },
-      "RideMateService_Comm_Dto_v1_Schedule_Response_HomeWeekDayDto": {
-        "type": "object",
-        "properties": {
-          "dayOfWeek": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Schedule_Response_HomeScheduleDto"
+              "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Schedule_Response_WeeklyDayDto"
             },
             "nullable": true
           }
@@ -4474,6 +4384,96 @@
           },
           "pickupSpot": {
             "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Schedule_Response_SchedulePickupSpotDto"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Schedule_Response_WeeklyChildDto": {
+        "type": "object",
+        "properties": {
+          "childSeq": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "childName": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Schedule_Response_WeeklyDayDto": {
+        "type": "object",
+        "properties": {
+          "dayOfWeek": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Schedule_Response_WeeklyScheduleItemDto"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Schedule_Response_WeeklyHomeDto": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "lat": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "lng": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Schedule_Response_WeeklyScheduleItemDto": {
+        "type": "object",
+        "properties": {
+          "scheduleSeq": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "displayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "academyName": {
+            "type": "string",
+            "nullable": true
+          },
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "lat": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "lng": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "endTime": {
+            "type": "string",
+            "nullable": true
+          },
+          "pickupYn": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -4973,7 +4973,7 @@
         },
         "additionalProperties": false
       },
-      "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Schedule_Response_DetailHomeDto": {
+      "RideMateService_Comm_ResponseModel_RideMateService_Comm_Dto_v1_Schedule_Response_DetailWeeklyScheduleDto": {
         "type": "object",
         "properties": {
           "message": {
@@ -4981,7 +4981,7 @@
             "nullable": true
           },
           "data": {
-            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Schedule_Response_DetailHomeDto"
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Schedule_Response_DetailWeeklyScheduleDto"
           },
           "code": {
             "type": "integer",

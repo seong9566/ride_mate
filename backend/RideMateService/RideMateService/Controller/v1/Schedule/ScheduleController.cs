@@ -83,18 +83,18 @@ public class ScheduleController : ApiControllerBase
     }
 
     /// <summary>
-    /// 홈 화면 조회
+    /// 이번 주 스케줄 조회
     /// </summary>
     [Produces("application/json")]
     [HttpGet]
-    [Route("v1/Schedule/M/sign/DetailHome")]
-    [SwaggerOperation(Summary = "홈 화면 조회(아이·집·요일별 시간표)")]
-    [ProducesResponseType(typeof(ResponseModel<DetailHomeDto>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> DetailHome(CancellationToken cancellationToken)
+    [Route("v1/Schedule/M/sign/DetailWeeklySchedule")]
+    [SwaggerOperation(Summary = "이번 주 스케줄 조회(아이·집·요일별 시간표)")]
+    [ProducesResponseType(typeof(ResponseModel<DetailWeeklyScheduleDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> DetailWeeklySchedule(CancellationToken cancellationToken)
     {
         try
         {
-            var model = await _scheduleService.DetailHomeService(cancellationToken).ConfigureAwait(false);
+            var model = await _scheduleService.DetailWeeklyScheduleService(cancellationToken).ConfigureAwait(false);
             return ToActionResult(model);
         }
         catch (Exception) when (cancellationToken.IsCancellationRequested)

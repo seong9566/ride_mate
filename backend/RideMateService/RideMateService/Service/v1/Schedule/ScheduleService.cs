@@ -241,21 +241,21 @@ public class ScheduleService : IScheduleService
     }
 
     /// <summary>
-    /// 홈 화면 조회
+    /// 이번 주 스케줄 조회
     /// </summary>
-    public async Task<ResponseModel<DetailHomeDto>> DetailHomeService(CancellationToken cancellationToken = default)
+    public async Task<ResponseModel<DetailWeeklyScheduleDto>> DetailWeeklyScheduleService(CancellationToken cancellationToken = default)
     {
         try
         {
             // 1) 인증 확인 — sub 클레임이 없거나 계정이 없으면 거절한다
             var loginUserId = GetLoginUserId();
             if (loginUserId is null)
-                return Fail<DetailHomeDto>(401, "잘못된 요청입니다.");
+                return Fail<DetailWeeklyScheduleDto>(401, "잘못된 요청입니다.");
 
             var row = await _scheduleRepository.GetScheduleHomeRowAsync(loginUserId.Value, cancellationToken)
                 .ConfigureAwait(false);
             if (row is null)
-                return Fail<DetailHomeDto>(401, "잘못된 요청입니다.");
+                return Fail<DetailWeeklyScheduleDto>(401, "잘못된 요청입니다.");
 
             // 2) 아이가 있으면 시간표 목록과 같은 조회로 읽는다. 아이가 없으면 시간표도 없다
             var items = row.ChildId is null
@@ -265,13 +265,13 @@ public class ScheduleService : IScheduleService
 
             // 3) 월~일 7칸으로 묶는다 — 시간표가 없는 요일도 빈 칸으로 넣고, 칸 안은 하원 시각 순이다
             var week = Enumerable.Range(1, 7)
-                .Select(dayOfWeek => new HomeWeekDayDto
+                .Select(dayOfWeek => new WeeklyDayDto
                 {
                     dayOfWeek = dayOfWeek,
                     items = items
                         .SelectMany(item => item.days
                             .Where(day => day.dayOfWeek == dayOfWeek)
-                            .Select(day => new HomeScheduleDto
+                            .Select(day => new WeeklyScheduleItemDto
                             {
                                 scheduleSeq = item.scheduleSeq,
                                 displayName = item.displayName,
@@ -288,17 +288,17 @@ public class ScheduleService : IScheduleService
                 })
                 .ToList();
 
-            return new ResponseModel<DetailHomeDto>
+            return new ResponseModel<DetailWeeklyScheduleDto>
             {
                 message = "요청이 정상 처리되었습니다.",
-                data = new DetailHomeDto
+                data = new DetailWeeklyScheduleDto
                 {
                     child = row.ChildId is null
                         ? null
-                        : new HomeChildDto { childSeq = row.ChildId.Value, childName = row.ChildName ?? string.Empty },
+                        : new WeeklyChildDto { childSeq = row.ChildId.Value, childName = row.ChildName ?? string.Empty },
                     home = string.IsNullOrEmpty(row.DestAddress)
                         ? null
-                        : new HomeLocationDto { address = row.DestAddress, lat = row.DestLat, lng = row.DestLng },
+                        : new WeeklyHomeDto { address = row.DestAddress, lat = row.DestLat, lng = row.DestLng },
                     week = week
                 },
                 code = 200
@@ -307,7 +307,7 @@ public class ScheduleService : IScheduleService
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 그대로 올려보낸다
         {
             LogServiceException(ex);
-            return Fail<DetailHomeDto>(500, "서버에서 요청을 처리하지 못하였습니다.");
+            return Fail<DetailWeeklyScheduleDto>(500, "서버에서 요청을 처리하지 못하였습니다.");
         }
     }
 
