@@ -186,11 +186,11 @@
 - 계획이 있으면 `pickupSpotSeq`도 무시한다. 응답 `areaName`은 대상 학원의 학원가 이름이며 계획이 있으면 계획의 학원가 이름이다. 없으면 null이다. 대기 장소 추천 DTO는 변경하지 않는다.
 
 - 주소는 `GET /api/v1/Pickup/M/sign/DetailDepartureGuide`다. 인증 구간 `sign`이 있어 Bearer가 필요하고, 사용자는 JWT의 `sub`에서 꺼낸다.
-- 요청 값은 query다(`currentDt`·`currentLat`·`currentLng`는 필수, `driveMin`·`pickupLat`·`pickupLng`는 선택). `pickupLat`와 `pickupLng`는 함께 보내야 하며 한쪽만 오면 `ProblemDetails` 400이 나간다.
+- 요청 값은 query다(`currentLat`·`currentLng`는 필수, `driveMin`·`pickupLat`·`pickupLng`는 선택). 기준 시각은 서버 현재 시각(KST)이다. 앱 시각(`currentDt`)은 받지 않는다(2026-11-13 T86, 보내도 무시). `pickupLat`와 `pickupLng`는 함께 보내야 하며 한쪽만 오면 `ProblemDetails` 400이 나간다.
 - 계산 전용이라 DB에 쓰지 않는다. 대상 픽업은 아래 "오늘 픽업 계획"의 계획 API와 같은 규칙으로 고른다.
-  1. 로그인한 계정에 오늘 진행 중 계획(`STATUS`가 `PLANNED`·`STARTED`·`WAITING`·`STOPPED`·`LOOPING`이고 `EXPIRE_DT`가 서버 현재 시각보다 뒤)이 있으면 그 계획의 픽업이다. 1시간 창·픽업 스위치·`SKIP` 예외와 상관없다. 여럿이면 `SLOT_DT`(없으면 하원 시각)가 가장 이른 것이다. 진행 중인지는 `currentDt`가 아니라 서버 현재 시각으로 본다.
-  2. 없으면 `currentDt`의 날짜·요일로 고른다: 로그인한 계정의 살아 있는 아이 시간표 중 오늘 `PICKUP_YN = 1`이고 `LAST_PICKUP_DATE`가 오늘이 아닌 것에서 오늘 `SKIP` 예외를 빼고(`TIME_CHANGE`는 바뀐 하원 시각), 하원 시각 + 1시간이 `currentDt`보다 늦은 것 중 하원 시각이 가장 이른 하나다.
-- 계획이 있으면 계획이 정답이다. 앱이 보낸 `pickupLat`·`pickupLng`는 무시하고(장소 바꾸기는 `UpdatePickupPlanLocation`) 카카오를 부르지 않는다. `pickup`은 계획의 장소(기본 지점이면 지점·저장된 도보 경로, 임의 좌표면 계획에 저장된 좌표·장소 이름(`spotName`)·도보 경로)이고 `walkSource`는 `STORED`, 도보 시간은 계획의 값이다. 추천 출발은 `slotDt − driveMin − 여유`이고 `childArrivalDt`는 지금처럼 하원 + 정리 + 도보다. 남은 여유(`slackMin`)는 계획이 있어도 `currentDt` 기준이다. 계획에 배정 장소가 없으면 `pickup`과 계산 필드가 null이고 `reasons`는 `NO_SPOT_AVAILABLE` 하나다.
+  1. 로그인한 계정에 오늘 진행 중 계획(`STATUS`가 `PLANNED`·`STARTED`·`WAITING`·`STOPPED`·`LOOPING`이고 `EXPIRE_DT`가 서버 현재 시각보다 뒤)이 있으면 그 계획의 픽업이다. 1시간 창·픽업 스위치·`SKIP` 예외와 상관없다. 여럿이면 `SLOT_DT`(없으면 하원 시각)가 가장 이른 것이다.
+  2. 없으면 서버 현재 시각의 날짜·요일로 고른다: 로그인한 계정의 살아 있는 아이 시간표 중 오늘 `PICKUP_YN = 1`이고 `LAST_PICKUP_DATE`가 오늘이 아닌 것에서 오늘 `SKIP` 예외를 빼고(`TIME_CHANGE`는 바뀐 하원 시각), 하원 시각 + 1시간이 서버 현재 시각보다 늦은 것 중 하원 시각이 가장 이른 하나다.
+- 계획이 있으면 계획이 정답이다. 앱이 보낸 `pickupLat`·`pickupLng`는 무시하고(장소 바꾸기는 `UpdatePickupPlanLocation`) 카카오를 부르지 않는다. `pickup`은 계획의 장소(기본 지점이면 지점·저장된 도보 경로, 임의 좌표면 계획에 저장된 좌표·장소 이름(`spotName`)·도보 경로)이고 `walkSource`는 `STORED`, 도보 시간은 계획의 값이다. 추천 출발은 `slotDt − driveMin − 여유`이고 `childArrivalDt`는 지금처럼 하원 + 정리 + 도보다. 남은 여유(`slackMin`)는 계획이 있어도 서버 현재 시각 기준이다. 계획에 배정 장소가 없으면 `pickup`과 계산 필드가 null이고 `reasons`는 `NO_SPOT_AVAILABLE` 하나다.
 - 계획이 있으면 학원 좌표가 없어도 `NO_ACADEMY_LOCATION`을 내지 않고 계획의 장소로 계산한다. 이때는 학원 앞 단속 근거(`ACADEMY_FRONT_RESTRICTED`) 판정만 빠진다.
 - 응답에 `pickupPlanSeq`(계획 ID)·`slotDt`(계획의 배정 시각)·`planStatus`(계획 상태)가 있다. 계획이 없으면 셋 다 null이고, 계획에 배정 장소가 없으면 `slotDt`만 null이다. 계획의 배정 시각이 아이 도착 시각보다 늦으면(정원·차 도착 예상·늦은 출발, 출발한 뒤 장소를 바꿔도 앞당기지 않음 등으로 미룸) `reasons`에 `SLOT_SHIFTED`가 들어가고 `shiftMin`에 미룬 분이 들어간다. 계획이 임의 좌표면 `CUSTOM_LOCATION`이다.
 - 대기 장소 추천(`GET /api/v1/Pickup/M/sign/GetWaitingPlaceList`)은 같은 계산을 쓰므로 진행 중 계획이 있으면 계획의 장소와 배정 시각 기준의 `slackMin`·`reasons`(`SLOT_SHIFTED` 포함)를 쓴다. 한계: 주차장 운영 시간은 계획이 있어도 배정 시각이 아니라 하원 시각까지 운영하는지로 본다.
@@ -199,11 +199,11 @@
 |---|---|---|
 | 200 | 계산했다. 쓸 수 있는 기본 지점이 없으면 `pickup`과 계산 필드가 null이고 `reasons`에 `NO_SPOT_AVAILABLE`이 들어간다. 계획이 없을 때 학원 좌표가 없으면 `pickup`과 계산 필드가 null이고 `reasons`에 `NO_ACADEMY_LOCATION`이 들어간다(앱이 `pickupLat`·`pickupLng`를 보내도 같다) | 200 |
 | 101 | 오늘 남은 픽업이 없다. `data`는 null이다 | 200 |
-| 400 | 필수 값이 없거나 범위를 벗어났거나 픽업 좌표가 한쪽만 왔거나 형식이 틀린 값(해석할 수 없는 `currentDt`나 숫자)이나 `Z`·오프셋이 붙은 `currentDt`가 왔다 | 400 (`ProblemDetails`) |
+| 400 | 필수 값이 없거나 범위를 벗어났거나 픽업 좌표가 한쪽만 왔거나 형식이 틀린 값(해석할 수 없는 숫자)이 왔다 | 400 (`ProblemDetails`) |
 | 401 | 인증 실패 | 401 |
 
 - 101은 오류가 아닌 정상 상태라 `message`가 `요청이 정상 처리되었습니다.`다. 앱은 `code`로 나눈다.
-- 한계: 하원 시각 + 1시간이 자정을 넘는 픽업(하원 23:30 등)은 00:00이 지나면 101이 나온다. 아이 도착 시각이 자정을 넘으면 요일 유형은 오늘 것으로 판정한다. `currentDt`는 오프셋 없는 KST 로컬 시각(`2026-11-11T21:14:00`)이어야 하며 `Z`·`+09:00`을 붙이면 400 `ProblemDetails`다(서버가 UTC로 바꿔 시각이 밀리기 때문).
+- 한계: 하원 시각 + 1시간이 자정을 넘는 픽업(하원 23:30 등)은 00:00이 지나면 101이 나온다. 아이 도착 시각이 자정을 넘으면 요일 유형은 오늘 것으로 판정한다.
 - 필드·`reasons` 코드·계산식은 Notion "[차량] 출발 안내 계산" 페이지(https://app.notion.com/p/415aa638eaf8819eac85f85d0a5f1836)가 정본이다.
 
 ## 단속 구역 목록
@@ -229,14 +229,13 @@
 
 고른 지점은 출발 안내·경로 시작·장소 바꾸기의 `pickupSpotSeq`로 보낸다.
 
-- 주소는 `GET /api/v1/Pickup/M/sign/GetPickupSpotList`다. 인증 구간 `sign`이 있어 Bearer가 필요하고, 사용자는 JWT의 `sub`에서 꺼낸다. 요청 query는 `scheduleSeq`(필수, 1 이상)와 `currentDt`(필수, 오프셋 없는 KST 로컬 시각)다.
-- 조회 전용이라 DB에 쓰지 않는다. 시간표의 학원에 등록된 후보(살아 있는 `ACADEMY_PICKUP_SPOT` 중 지점이 살아 있고 `USE_YN = 1`)를 평가 날짜(`currentDt`의 날짜)와 요일 유형(`WEEKDAY`·`SAT`·`HOLIDAY`, 출발 안내와 같은 방식)으로 평가해 준다. 하원 시각은 시간표 `END_TIME`이고, 그 날짜 요일의 요일 행에 `TIME_CHANGE` 예외가 있으면 바뀐 시각이다(`endTime`으로 내려준다).
-- 응답 `data`는 `{ scheduleSeq, academyName, endTime, areaName, reason, academyFrontRestricted, spots }`다. `spots` 항목은 `{ pickupSpotSeq, spotName, lat, lng, guideText, photoUrl, note, walkMin, walkPath, distanceM, recommended, preferred, available, unavailableReason, blockReason, blockStartTime, blockEndTime, busy }`다. 값이 없는 필드도 null로 나간다.
+- 주소는 `GET /api/v1/Pickup/M/sign/GetPickupSpotList`다. 인증 구간 `sign`이 있어 Bearer가 필요하고, 사용자는 JWT의 `sub`에서 꺼낸다. 요청 query는 `scheduleSeq`(필수, 1 이상)뿐이다. 평가 날짜는 서버 현재 시각(KST)의 날짜다(앱 시각 `currentDt`는 2026-11-13 T86부터 받지 않는다).
+- 조회 전용이라 DB에 쓰지 않는다. 시간표의 학원에 등록된 후보(살아 있는 `ACADEMY_PICKUP_SPOT` 중 지점이 살아 있고 `USE_YN = 1`)를 평가 날짜(서버 현재 시각의 날짜)와 요일 유형(`WEEKDAY`·`SAT`·`HOLIDAY`, 출발 안내와 같은 방식)으로 평가해 준다. 하원 시각은 시간표 `END_TIME`이고, 그 날짜 요일의 요일 행에 `TIME_CHANGE` 예외가 있으면 바뀐 시각이다(`endTime`으로 내려준다).
+- 응답 `data`는 `{ scheduleSeq, academyName, endTime, areaName, reason, academyFrontRestricted, spots }`다. `spots` 항목은 `{ pickupSpotSeq, spotName, lat, lng, note, walkMin, recommended, available, unavailableReason, blockReason, blockStartTime, blockEndTime, busy }`다. 찾는 법·사진·도보 경로는 경로 시작 응답의 `pickup`에서 받는다. 값이 없는 필드도 null로 나간다.
 - 아이 도착 시각 = 평가 날짜 + 하원 시각 + 정리 시간 + `walkMin`이다.
   - `available`/`unavailableReason`: 도착 시각이 그 지점의 금지 시간 [시작, 종료)에 들면 `false`/`BLOCKED`이고 `blockReason`·`blockStartTime`·`blockEndTime`(`HH:mm`)을 채운다. 금지가 아니어도 도착 시각부터 `PickupPlan:SlotShiftMaxMin`까지 1분씩 늦춘 모든 시각에서 진행 중 계획 수(끝나지 않은 `STATUS`, `EXPIRE_DT` > 서버 현재 시각, 앞뒤 `PickupPlan:SlotWindowMin`)가 지점 정원 이상이면 `false`/`FULL`이다. 그 밖에는 `true`/null이다.
   - `busy`: 도착 시각 그대로의 진행 중 계획 수가 정원 이상이면 true("22시 붐빔"). 금지 시간인 지점은 false다. 이 시간표의 오늘 진행 중 계획은 세지 않는다.
-  - `preferred`: 이 시간표의 우리 픽업 장소(`TIMETABLE.PICKUP_SPOT_ID`)면 true다.
-  - `distanceM`: 학원 좌표에서 지점 좌표까지 직선 거리(m, 반올림). `walkPath`는 도보 경로 점 목록이고 없으면 null이다. `note`는 학원 기준 지점 한 줄 안내다.
+  - `note`는 학원 기준 지점 한 줄 안내다.
   - `recommended`는 많아야 한 곳이다. 우리 픽업 장소를 맨 앞에 둔 뒤 `PRIORITY` 순으로 보며 `available && !busy`인 첫 지점, 없으면 `available`인 첫 지점, 그것도 없으면 추천이 없다. [ADR-0025]
   - `spots` 순서는 추천 지점이 맨 앞이고 나머지는 위 순서(우리 픽업 장소, `PRIORITY`)다.
 - `academyFrontRestricted`: 출발 안내의 `ACADEMY_FRONT_RESTRICTED` 판정과 같은 데이터·같은 시각(하원 + 정리 시간)으로 학원 좌표가 단속 구역 안이면 true, 아니면 false다. 학원가에 구역 데이터가 없거나 공휴일 연도가 적재되지 않아 판정할 수 없으면 null이다.
@@ -245,7 +244,7 @@
 | code | 상황 | HTTP |
 |---|---|---|
 | 200 | 목록이다. 학원 좌표나 학원가가 없으면 `reason`이 `NO_ACADEMY_LOCATION`, 후보 지점이 없으면 `NO_SPOT_CANDIDATE`이고 `spots`는 빈 배열이다 | 200 |
-| 400 | 필수 값이 없거나 `scheduleSeq`가 1보다 작거나 형식이 틀린 값(해석할 수 없는 `currentDt`)이나 `Z`·오프셋이 붙은 `currentDt`가 왔다 | 400 (`ProblemDetails`) |
+| 400 | 필수 값이 없거나 `scheduleSeq`가 1보다 작거나 형식이 틀린 값이 왔다 | 400 (`ProblemDetails`) |
 | 401 | 인증 실패 | 401 |
 | 404 | 시간표가 없거나, 로그인한 계정 아이의 시간표가 아니거나, 이미 지웠다. `data`는 null이다 | 404 |
 
