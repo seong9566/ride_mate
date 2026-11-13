@@ -4050,6 +4050,14 @@
           "confirmOverlap": {
             "type": "boolean",
             "nullable": true
+          },
+          "pickupOffDays": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32"
+            },
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -4147,6 +4155,14 @@
           },
           "confirmOverlap": {
             "type": "boolean",
+            "nullable": true
+          },
+          "pickupOffDays": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32"
+            },
             "nullable": true
           },
           "scheduleSeq": {

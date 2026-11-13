@@ -89,6 +89,36 @@ public partial class ScheduleRepository
     }
 
     /// <summary>
+    /// 시간표의 살아 있는 요일 행 픽업 스위치를 pickupOffDays에 든 요일은 끄고 나머지는 켠다. 값이 바뀌는 행만 쓴다.
+    /// </summary>
+    public async Task SetScheduleDaysPickupAsync(int timetableId, IReadOnlyCollection<int> pickupOffDays,
+        DateTime updateDt, string updateUser, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var offDays = pickupOffDays.Select(x => (sbyte)x).ToList();
+            // 지금 값이 원하는 값과 다른 행(켜진 끌 요일, 꺼진 켤 요일)만 고른다
+            await _context.TimetableDays
+                .Where(x => x.TimetableId == timetableId
+                            && x.DeleteYn == false
+                            && x.PickupYn == offDays.Contains(x.DayOfWeek))
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.PickupYn, x => !offDays.Contains(x.DayOfWeek))
+                    .SetProperty(x => x.UpdateDt, updateDt)
+                    .SetProperty(x => x.UpdateUser, updateUser), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw; // Service가 500으로 바꾼다
+        }
+    }
+
+    /// <summary>
     /// 시간표의 우리 픽업 장소(PICKUP_SPOT_ID)와 수정 감사 컬럼만 바꾼다. null이면 지운다. 바뀐 행이 없으면 false를 돌려준다.
     /// </summary>
     public async Task<bool> UpdateSchedulePickupSpotAsync(int timetableId, int? pickupSpotId, DateTime updateDt,
