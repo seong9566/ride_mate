@@ -274,12 +274,13 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `TIMETABLE_DAY_ID` | INT | N | PK |
 | `TIMETABLE_ID` | INT | N | FK → TIMETABLE |
 | `DAY_OF_WEEK` | TINYINT | N | 1(월)~7(일) |
-| `PICKUP_YN` | TINYINT(1) | N | 그 요일의 픽업 스위치. 처음 값 1 |
+| `PICKUP_YN` | TINYINT(1) | N | 그 요일의 픽업 스위치. 처음 값 1(등록 때 `pickupOffDays`에 든 요일은 0) |
 | `LAST_PICKUP_DATE` | DATE | Y | 탑승이나 만료로 끝난 마지막 픽업 날짜 |
 
 - 살아 있는 행 UNIQUE: `(TIMETABLE_ID, DAY_OF_WEEK, ACTIVE_FLAG)`
 - CHECK: `DAY_OF_WEEK BETWEEN 1 AND 7`
 - 스위치가 켜진 행마다 그 요일에 픽업이 하나씩 생긴다. 하루에 여러 건이 될 수 있다.
+- 시간표 편집(`UpdateSchedule`)은 `pickupOffDays`를 보내면 남은 요일 전체의 스위치를 그 목록대로 맞춘다(든 요일 0, 나머지 1, 되살린 요일 포함). 안 보내면 지금 스위치를 그대로 두고 새로 넣은 요일만 1이다(T81).
 - `LAST_PICKUP_DATE`가 만들려는 계획의 `PICKUP_DATE`와 같으면 계획을 다시 만들지 않는다. 끝난 계획은 이 행을 가리키는 참조가 비워져 UNIQUE로는 막을 수 없기 때문이다. 취소로 끝난 계획은 이 값을 바꾸지 않으므로 다시 시작할 수 있다.
 
 ### TIMETABLE_EXCEPTION — 날짜별 예외

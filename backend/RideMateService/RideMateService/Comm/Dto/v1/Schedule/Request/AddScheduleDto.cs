@@ -36,6 +36,12 @@ public class AddScheduleDto
     /// 같은 요일에 시간이 가까운 시간표가 있다는 경고(103)를 본 뒤 그래도 저장할 때 true. 빠지면 false
     /// </summary>
     public bool? confirmOverlap { get; set; }
+
+    /// <summary>
+    /// 픽업을 끌 요일. days 안의 값만, 중복 없음(Service에서 검사). 빠지면 등록은 모든 요일을 켜고, 편집은 지금 스위치를 그대로 둔다.
+    /// 보내면 편집도 이 요일은 끄고 나머지 요일은 켠다. 빈 배열이면 모두 켠다
+    /// </summary>
+    public List<int>? pickupOffDays { get; set; }
 }
 
 /// <summary>

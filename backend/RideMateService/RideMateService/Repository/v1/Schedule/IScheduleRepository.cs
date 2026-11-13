@@ -30,6 +30,12 @@ public interface IScheduleRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 시간표의 살아 있는 요일 행 픽업 스위치를 pickupOffDays(1~7)에 든 요일은 끄고 나머지는 켠다. 값이 바뀌는 행만 수정 감사 컬럼과 함께 쓴다.
+    /// </summary>
+    Task SetScheduleDaysPickupAsync(int timetableId, IReadOnlyCollection<int> pickupOffDays, DateTime updateDt,
+        string updateUser, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 시간표의 우리 픽업 장소(PICKUP_SPOT_ID)와 수정 감사 컬럼만 바꾼다. null이면 지운다. 바뀐 행이 없으면 false를 돌려준다.
     /// </summary>
     Task<bool> UpdateSchedulePickupSpotAsync(int timetableId, int? pickupSpotId, DateTime updateDt, string updateUser,
