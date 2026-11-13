@@ -90,4 +90,9 @@ public interface IAuthService
     /// 500행 묶음을 대상이 없을 때까지 반복해 정리한 행 수를 돌려준다. 묶음 하나의 오류는 로그만 남기고 그 회차를 끝낸다. HTTP 요청 밖(주기 작업)에서 부른다
     /// </summary>
     Task<int> CleanupPhoneVerificationsService(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 개발 전용 토큰 발급. 인증번호·QR 없이 계정 ID로 로그인과 같은 차량 세션을 만든다. Development 환경에서만 부른다
+    /// </summary>
+    Task<ResponseModel<TokenAuthResultDto>> AddDevTokenService(AddDevTokenDto dto, CancellationToken cancellationToken = default);
 }
