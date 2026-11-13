@@ -62,7 +62,6 @@ public class ChildInfoController : ApiControllerBase
     ///
     /// 응답 code
     /// - 200: 수정 완료. data에 저장된 값
-    /// - 101: 아이 정보 동의가 없음
     /// - 102: 아이 번호가 부모 번호와 같음
     /// - 103: 다른 계정에 이미 등록된 번호
     /// - 400: 잘못된 요청 (형식 오류, 바꿀 값 없음)

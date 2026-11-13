@@ -16,7 +16,6 @@ namespace RideMateService.Service.v1.ChildInfo;
 public class ChildInfoService : IChildInfoService
 {
     private const string AuditUser = "PARENT";
-    private const string ConsentTypeChildInfo = "CHILD_INFO";
     private const int ChildNameMaxLength = 10;
     private const int DeadlockMaxAttempts = 3;
 
@@ -84,14 +83,7 @@ public class ChildInfoService : IChildInfoService
                 return Fail(401, "잘못된 요청입니다.");
             }
 
-            // 4) 가장 최근 아이 정보 동의가 동의(AGREE_YN = 1)인지 본다
-            var childInfoAgree = await _childInfoRepository.GetLatestConsentAgreeAsync(lockedUserId.Value,
-                ConsentTypeChildInfo, transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
-            if (childInfoAgree != true)
-            {
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return Fail(101, "필수 항목에 동의해 주세요.");
-            }
+            // 4) MVP 테스트 기간에는 아이 정보 동의(CHILD_INFO)를 검사하지 않는다 — 조건은 추후 다시 넣는다
 
             // 5) 부모 번호와 같은지 해시로 비교한다 — 같은 HMAC 함수라 복호화가 필요 없다
             if (string.Equals(phoneHash, loginUser.PhoneHash, StringComparison.Ordinal))
@@ -226,14 +218,7 @@ public class ChildInfoService : IChildInfoService
                 return Fail(401, "잘못된 요청입니다.");
             }
 
-            // 4) 가장 최근 아이 정보 동의가 동의(AGREE_YN = 1)인지 본다 — 동의를 철회했다면 수정도 막는다
-            var childInfoAgree = await _childInfoRepository.GetLatestConsentAgreeAsync(lockedUserId.Value,
-                ConsentTypeChildInfo, transaction.GetDbTransaction(), cancellationToken).ConfigureAwait(false);
-            if (childInfoAgree != true)
-            {
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return Fail(101, "필수 항목에 동의해 주세요.");
-            }
+            // 4) MVP 테스트 기간에는 아이 정보 동의(CHILD_INFO)를 검사하지 않는다 — 조건은 추후 다시 넣는다
 
             // 5) 이 계정의 살아 있는 아이가 요청한 아이인지 본다 — 없거나 다른 아이면 404
             var child = await _childInfoRepository.GetLiveChildAsync(lockedUserId.Value,

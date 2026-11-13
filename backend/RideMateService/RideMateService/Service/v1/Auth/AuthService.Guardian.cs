@@ -175,21 +175,17 @@ public partial class AuthService
                 return new ResponseModel<bool> { message = "잘못된 요청입니다.", data = false, code = 401 };
             }
 
-            // 4) 가장 최근 보호자 인증이 성공했고 허용 시간 안인지 본다 — 새 번호를 받아 아직 확인 전이면 그 행이 최근 행이라 거절된다
+            // 4) MVP 테스트 기간에는 보호자 인증 여부·허용 시간을 검사하지 않는다 — 조건은 추후 다시 넣는다.
+            //    인증 행이 있으면 동의 기록에 그 번호를 남기고, 없으면 비워 둔다
             var verification = verificationId is null
                 ? null
                 : await _authRepository.GetPhoneVerificationAsync(verificationId.Value, cancellationToken).ConfigureAwait(false);
-            if (verification?.VerifyDt is not { } verifyDt || verifyDt < thisTime.AddMinutes(-GuardianConsentValidMinutes))
-            {
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return new ResponseModel<bool> { message = "보호자 인증이 필요합니다.", data = false, code = 101 };
-            }
 
             // 5) 동의 기록 — 쌓기만 한다
             var arrivalLogYn = dto.arrivalLogYn.Value;
             var consents = new[]
             {
-                CreateConsent(lockedUserId.Value, "GUARDIAN", true, "PHONE_OTP", verification.PhoneVerificationId, thisTime),
+                CreateConsent(lockedUserId.Value, "GUARDIAN", true, "PHONE_OTP", verification?.PhoneVerificationId, thisTime),
                 CreateConsent(lockedUserId.Value, "CHILD_INFO", true, "CHECK", null, thisTime),
                 CreateConsent(lockedUserId.Value, "ARRIVAL_LOG", arrivalLogYn, "CHECK", null, thisTime)
             };
