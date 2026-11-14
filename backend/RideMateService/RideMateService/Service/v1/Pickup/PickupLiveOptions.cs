@@ -6,9 +6,14 @@ namespace RideMateService.Service.v1.Pickup;
 public class PickupLiveOptions
 {
     /// <summary>
-    /// 차 위치를 신선하다고 보는 시간(초)
+    /// 차 위치를 신선하다고 보는 시간(초). 정차한 계획은 이 시간이 지나도 위치를 보여 준다
     /// </summary>
     public int VehicleStaleSec { get; set; } = 30;
+
+    /// <summary>
+    /// 정차 뒤 차 위치를 메모리에 두는 최대 시간(분). 계획이 끝나면 그 전에 지운다
+    /// </summary>
+    public int VehicleParkedMaxMin { get; set; } = 60;
 
     /// <summary>
     /// 한 계획의 위치 보고 최소 간격(초)

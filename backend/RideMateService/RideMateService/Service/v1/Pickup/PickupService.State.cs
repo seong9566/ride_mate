@@ -231,8 +231,18 @@ public partial class PickupService
                 return new ResponseModel<PickupPlanDto> { message = "서버에서 요청을 처리하지 못하였습니다.", data = null, code = 500 };
             }
 
+            // 정차 위치는 커밋 전, 계획 행 잠금을 쥔 채 허브에 둔다. 탑승·취소·만료도 같은 행을 먼저 잠그므로
+            // 종료 알림(NotifyPlanEnded)은 항상 이 저장 뒤에 와서 끝난 계획에 정차 위치가 남지 않는다. 신호는 커밋 뒤에 보낸다.
+            // 상한 기준 parkedSince는 계획에 남은 STOP_DT다. 처음 정차한 시각에서 바뀌지 않으므로 재정차해도 첫 정차 기준이다.
+            // 커밋이 실패하면 정차하지 않은 계획에 정차 표시 위치가 남지만, 조회는 DB stopDt가 없으면 30초 규칙을 쓰므로 오래 보이지 않고 계획 종료나 상한 때 지워진다
+            if (_liveOptions.VehiclePositionEnabled)
+                _liveHub.SetParkedVehiclePosition(pickupPlanId, new VehiclePosition(lat, lng, null, NowToSecond()), entity.StopDt!.Value);
             await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+            // 계획 변경을 먼저 알린다. 아이 스트림은 다시 읽은 계획(stopDt)으로 차 위치 이벤트를 만들므로,
+            // 위치를 먼저 알리면 그 사이 깨어난 스트림이 정차 전 값(SLOT)으로 도착 시각을 한 번 보낼 수 있다
             SignalPlanChanged(pickupPlanId);
+            if (_liveOptions.VehiclePositionEnabled)
+                _liveHub.NotifyVehicleMoved(pickupPlanId);
 
             var result = await BuildPlanDtoAsync(pickupPlanId, false, null, cancellationToken).ConfigureAwait(false);
             result.stopCheck = stopCheck;

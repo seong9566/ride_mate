@@ -700,7 +700,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 **차량 이벤트로 상태 바꾸기.** 대기 장소 도착(`UpdatePickupPlanWait`), 정차(`UpdatePickupPlanStop`), 탑승(`UpdatePickupPlanBoard`), 부모 취소(`DeletePickupPlan`)는 위 "상태 바꾸기" 순서를 따른다. 재배정이 없어 `AREA`를 잠그지 않고, 첫 문장이 계획 행 PK 잠금이다. 탑승·취소는 계획을 끝내므로 그다음 `TIMETABLE_DAY`를 잠근다(계획 PK → `TIMETABLE_DAY` → 계획 UPDATE).
 
 - `EVENT_DT`와 시각 컬럼(`WAIT_START_DT`·`STOP_DT`·`BOARD_DT`)에는 차량이 보낸 `eventDt`를 쓴다. 취소는 차량 시각을 받지 않아 `CANCELED` 이벤트의 `EVENT_DT`가 서버 시각이다. `CLOSE_DT`는 끝낸 서버 시각이라 탑승의 `EVENT_DT`(`eventDt`)가 `CLOSE_DT`보다 앞일 수 있다.
-- 정차는 배정 장소(기본 지점 좌표, 임의 좌표면 그 좌표)에서 `PickupPlan:StopRadiusM`(기본 30m, 1 미만이면 기동 실패) 안이면 `STOPPED`, 밖이면 `WRONG_STOP` 이벤트다. 배정 장소가 없는 계획은 `STOPPED`다. 어느 쪽이든 `STATUS`는 `STOPPED`다. 정차 좌표와 거리는 판정에만 쓰고 저장하지 않는다.
+- 정차는 배정 장소(기본 지점 좌표, 임의 좌표면 그 좌표)에서 `PickupPlan:StopRadiusM`(기본 30m, 1 미만이면 기동 실패) 안이면 `STOPPED`, 밖이면 `WRONG_STOP` 이벤트다. 배정 장소가 없는 계획은 `STOPPED`다. 어느 쪽이든 `STATUS`는 `STOPPED`다. 정차 좌표와 거리는 판정에만 쓰고 DB에 저장하지 않는다. 정차 좌표는 아이 화면에 정차한 차를 보여 주려고 서버 메모리 허브에만 둔다(T95, `docs/api.md` 아이 픽업 안내 `vehicle`).
 - 취소의 취소 문자 대상(아이 번호·부모 이름)은 익명화 전에 같은 트랜잭션에서 읽어 두고, 문자는 커밋한 뒤 잠금 밖에서 보낸다. 결과는 이벤트로 남기지 않는다(`api.md` "상태 바꾸기").
 
 **끝난 계획의 재요청.** 계획이 끝나면 `USER_ID`가 비어 소유를 확인할 수 없다. 응답을 못 받은 차량이나 오프라인 대기열이 같은 요청을 다시 보낼 수 있으므로, 위 네 API는 `PICKUP_EVENT`에 같은 계획·같은 `CLIENT_EVENT_ID`의 이벤트가 있고 그 유형이 그 API의 유형(대기 `WAIT_STARTED`, 정차 `STOPPED`·`WRONG_STOP`, 탑승 `BOARDED`, 취소 `CANCELED`)이면 처음 요청이 반영된 것으로 보고 200을 돌려준다. 이 확인은 `PLAN_CLOSED` 같은 409 판정보다 먼저이고 잠근 뒤에도 같다. 그 밖의 끝난 계획은 404다. 이 조회는 `PICKUP_EVENT`의 UNIQUE `(PICKUP_PLAN_ID, CLIENT_EVENT_ID)`를 쓰고 `DELETE_YN` 조건을 붙이지 않는다.

@@ -275,7 +275,7 @@ public static class InfrastructureExtensions
     /// Kakao:RestApiKey와 PublicData:ServiceKey가 비어 있어도 기동은 하며, 이때 해당 클라이언트는 외부 API를 부르지 않고 null을 돌려준다.
     /// PickupLink:BaseUrl이 http(s) 절대 URI가 아니거나 PickupLink:MaxAttempts·InFlightTimeoutSec·LeaveSoonMin·LeaveMaxAheadMin이 1보다 작으면 기동할 때 InvalidOperationException을 던진다.
     /// PickupPlan:CreateLeadHours·ExpireAfterHours·ExpireIntervalSec·StopRadiusM이 1보다 작거나 SlotWindowMin·SlotShiftMaxMin이 0보다 작거나 ExpireAfterHours가 DepartureGuide:PickupWindowHours보다 작아도 같다.
-    /// PickupLive:VehicleStaleSec·PositionMinIntervalSec·HeartbeatSec·StreamMaxLifetimeMin·MaxStreamsPerPlan이 1보다 작아도 같다.
+    /// PickupLive:VehicleStaleSec·VehicleParkedMaxMin·PositionMinIntervalSec·HeartbeatSec·StreamMaxLifetimeMin·MaxStreamsPerPlan이 1보다 작아도 같다.
     /// </summary>
     public static IServiceCollection AddMapInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
@@ -323,6 +323,8 @@ public static class InfrastructureExtensions
         var pickupLiveOptions = pickupLive.Get<PickupLiveOptions>() ?? new PickupLiveOptions();
         if (pickupLiveOptions.VehicleStaleSec < 1)
             throw new InvalidOperationException("PickupLive:VehicleStaleSec 설정은 1 이상이어야 합니다.");
+        if (pickupLiveOptions.VehicleParkedMaxMin < 1)
+            throw new InvalidOperationException("PickupLive:VehicleParkedMaxMin 설정은 1 이상이어야 합니다.");
         if (pickupLiveOptions.PositionMinIntervalSec < 1)
             throw new InvalidOperationException("PickupLive:PositionMinIntervalSec 설정은 1 이상이어야 합니다.");
         if (pickupLiveOptions.HeartbeatSec < 1)

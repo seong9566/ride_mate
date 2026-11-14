@@ -11,6 +11,7 @@ public partial class PickupService
     private const string LinkStatusClosed = "CLOSED";
     private const string ArrivalSourceSlot = "SLOT";
     private const string ArrivalSourceNavi = "NAVI";
+    private const string ArrivalSourceStop = "STOP";
 
     /// <summary>
     /// 아이 픽업 안내 조회
@@ -88,7 +89,7 @@ public partial class PickupService
             var events = await _pickupRepository.GetLeaveEventsAsync(plan.PickupPlanId, null,
                 cancellationToken).ConfigureAwait(false);
             var summary = ChildLeaveState.Summarize(events, now, _linkOptions.LeaveSoonMin);
-            var vehicle = ResolveVehicle(plan.PickupPlanId, plan.SlotDt, now);
+            var vehicle = ResolveVehicle(plan.PickupPlanId, plan.SlotDt, plan.StopDt, now);
             return (plan.PickupPlanId, new ChildPickupDto
             {
                 linkStatus = linkStatus,
@@ -130,13 +131,22 @@ public partial class PickupService
         }
     }
 
-    private (ChildPickupVehicleDto? Vehicle, DateTime? ArrivalDt, string? ArrivalSource) ResolveVehicle(
-        int pickupPlanId, DateTime? slotDt, DateTime now)
+    // 위치 나이 검사를 면제하는 정차 기준. 조회·스트림이 함께 쓴다. stopDt는 차량 eventDt라 시계 오차만큼 상한이 밀린다
+    private bool IsParkedWithinLimit(DateTime? stopDt, DateTime now)
     {
+        return stopDt is { } stopped && (now - stopped).TotalMinutes <= _liveOptions.VehicleParkedMaxMin;
+    }
+
+    private (ChildPickupVehicleDto? Vehicle, DateTime? ArrivalDt, string? ArrivalSource) ResolveVehicle(
+        int pickupPlanId, DateTime? slotDt, DateTime? stopDt, DateTime now)
+    {
+        // 정차한 계획(stopDt가 있는 살아 있는 계획)의 도착 시각은 정차 시각이다. 차가 픽업 장소에 서 있으므로
+        // 첫 정차 뒤 VehicleParkedMaxMin 안에서는 위치가 오래돼도 채운다. 조회와 스트림이 이 한 곳의 기준을 함께 쓴다
+        var stopped = stopDt is not null;
         ChildPickupVehicleDto? vehicle = null;
         if (_liveOptions.VehiclePositionEnabled
             && _liveHub.GetVehiclePosition(pickupPlanId) is { } position
-            && (now - position.ReceivedDt).TotalSeconds <= _liveOptions.VehicleStaleSec)
+            && (IsParkedWithinLimit(stopDt, now) || (now - position.ReceivedDt).TotalSeconds <= _liveOptions.VehicleStaleSec))
         {
             vehicle = new ChildPickupVehicleDto
             {
@@ -144,9 +154,11 @@ public partial class PickupService
                 lng = position.Lng,
                 reportedDt = position.ReceivedDt
             };
-            if (position.EtaSec is { } etaSec)
+            if (!stopped && position.EtaSec is { } etaSec)
                 return (vehicle, position.ReceivedDt.AddSeconds(etaSec), ArrivalSourceNavi);
         }
+        if (stopped)
+            return (vehicle, stopDt, ArrivalSourceStop);
         return (vehicle, slotDt, slotDt is null ? null : ArrivalSourceSlot);
     }
 

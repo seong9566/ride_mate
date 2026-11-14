@@ -34,7 +34,7 @@ public partial class PickupService
                 return PositionSuccess();
 
             _liveHub.TrySetVehiclePosition(planId.Value,
-                new VehiclePosition(dto.lat!.Value, dto.lng!.Value, dto.etaSec, now));
+                new VehiclePosition(dto.lat!.Value, dto.lng!.Value, dto.etaSec, now), plan.StopDt);
             return PositionSuccess();
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 그대로 올려보낸다
