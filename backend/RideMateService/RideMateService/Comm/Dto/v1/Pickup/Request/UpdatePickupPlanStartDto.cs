@@ -3,10 +3,17 @@ using System.ComponentModel.DataAnnotations;
 namespace RideMateService.Comm.Dto.v1.Pickup.Request;
 
 /// <summary>
-/// 경로 시작 요청. 오늘 계획이 없으면 만들면서 시작한다
+/// 경로 시작 요청. 그 일정의 오늘 계획이 없으면 만들면서 시작한다
 /// </summary>
 public class UpdatePickupPlanStartDto
 {
+    /// <summary>
+    /// 경로를 시작할 시간표 ID(이번 주 스케줄의 scheduleSeq). 그 시간표의 진행 중 계획을 시작하거나 오늘 픽업으로 계획을 만든다
+    /// </summary>
+    [Required]
+    [Range(1, int.MaxValue)]
+    public int? scheduleSeq { get; set; }
+
     /// <summary>
     /// 오늘 고른 후보 지점. 픽업 좌표와 함께 보낼 수 없다
     /// </summary>

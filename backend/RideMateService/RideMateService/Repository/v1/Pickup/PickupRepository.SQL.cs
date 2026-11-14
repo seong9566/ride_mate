@@ -22,6 +22,7 @@ public partial class PickupRepository
 
             var sql = @"
                 SELECT td.TIMETABLE_DAY_ID AS TimetableDayId,
+                       t.TIMETABLE_ID AS TimetableId,
                        a.ACADEMY_ID AS AcademyId,
                        a.AREA_ID AS AreaId,
                        (SELECT ar.AREA_NAME FROM AREA ar WHERE ar.AREA_ID = a.AREA_ID AND ar.DELETE_YN = FALSE) AS AreaName,
@@ -902,21 +903,23 @@ public partial class PickupRepository
                        ON a.ACADEMY_ID = p.ACADEMY_ID";
 
     /// <summary>
-    /// 로그인한 부모의 진행 중 계획(그날 PICKUP_DATE, 끝나지 않은 STATUS, EXPIRE_DT > now) 중
+    /// 로그인한 부모의 한 시간표(TIMETABLE_ID)에 대한 진행 중 계획(그날 PICKUP_DATE, 끝나지 않은 STATUS, EXPIRE_DT > now) 중
     /// 배정 시각(없으면 그날 하원 시각)이 가장 이른 하나를 잠금 없이 조회한다. 없으면 null
     /// </summary>
-    public async Task<LivePlanRow?> GetLivePlanAsync(int userId, DateOnly date, DateTime now,
+    public async Task<LivePlanRow?> GetLivePlanByTimetableAsync(int userId, int timetableId, DateOnly date, DateTime now,
         CancellationToken cancellationToken = default)
     {
         try
         {
             var dp = new DynamicParameters();
             dp.Add("userId", userId);
+            dp.Add("timetableId", timetableId);
             dp.Add("date", date.ToDateTime(TimeOnly.MinValue), DbType.Date);
             dp.Add("now", now);
 
             var sql = LivePlanSelectSql + $@"
                 WHERE p.USER_ID = @userId
+                  AND td.TIMETABLE_ID = @timetableId
                   AND p.PICKUP_DATE = @date
                   AND p.STATUS IN ({LivePlanStatuses})
                   AND p.EXPIRE_DT > @now

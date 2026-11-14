@@ -12,10 +12,16 @@ public static class DepartureGuideCalculator
         => date.ToDateTime(TimeOnly.MinValue) + endTime + TimeSpan.FromMinutes(tidyUpMin + walkMin);
 
     /// <summary>
-    /// 추천 출발 시각 = 아이 도착 시각 − 차량 소요 시간 − 여유 시간
+    /// 픽업 장소 도착 목표 시각 = 날짜 + 하원 시각 − 하원 전 도착 시간
     /// </summary>
-    public static DateTime Departure(DateTime childArrival, int driveMin, int bufferMin)
-        => childArrival - TimeSpan.FromMinutes(driveMin + bufferMin);
+    public static DateTime TargetArrival(DateOnly date, TimeSpan endTime, int arriveBeforeEndMin)
+        => date.ToDateTime(TimeOnly.MinValue) + endTime - TimeSpan.FromMinutes(arriveBeforeEndMin);
+
+    /// <summary>
+    /// 추천 출발 시각 = 도착 목표 시각 − 차량 소요 시간
+    /// </summary>
+    public static DateTime Departure(DateTime targetArrival, int driveMin)
+        => targetArrival - TimeSpan.FromMinutes(driveMin);
 
     /// <summary>
     /// 남은 여유(분) = 추천 출발 시각 − 현재 시각을 분 단위로 내림. 음수면 늦었다

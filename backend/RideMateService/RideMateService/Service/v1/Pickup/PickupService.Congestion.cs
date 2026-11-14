@@ -9,12 +9,12 @@ public partial class PickupService
         var result = computation.Result;
         if (!_options.Congestion.Enabled
             || result?.departureDt is null
-            || result.driveSource != DriveSourceNavi
+            || result.driveRoute?.source != DriveRouteSourceRoute
             || computation.IsHoliday
             || computation.Target?.AreaId is not { } areaId)
             return;
 
-        var tPlan = result.slotDt ?? result.childArrivalDt;
+        var tPlan = computation.TargetArrival;
         if (tPlan is null || computation.Now.Date != tPlan.Value.Date)
             return;
 

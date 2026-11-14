@@ -31,17 +31,12 @@ public class DetailDepartureGuideDto
     public DateTime? childArrivalDt { get; set; }
 
     /// <summary>
-    /// 계산에 쓴 차량 소요 시간(분)
+    /// 현재 위치 → 픽업 장소 → 집 차량 경로. 자기 계획이 대기 중이면 첫 구간 출발지 이름만 대기 중인 주차장 이름이고, 시간은 요청의 현재 위치 기준으로 구한다. 집 좌표가 없으면 첫 구간뿐이다. pickup이 null이면 null
     /// </summary>
-    public int? driveMin { get; set; }
+    public DepartureGuideDriveRouteDto? driveRoute { get; set; }
 
     /// <summary>
-    /// 차량 소요 시간 출처 (NAVI, ESTIMATE)
-    /// </summary>
-    public string? driveSource { get; set; }
-
-    /// <summary>
-    /// 추천 출발 시각
+    /// 추천 출발 시각. 하원 시각보다 기본 10분 먼저 픽업 장소에 닿도록 구한다. pickup이 null이면 null
     /// </summary>
     public DateTime? departureDt { get; set; }
 
@@ -49,6 +44,16 @@ public class DetailDepartureGuideDto
     /// 남은 여유(분). 음수면 늦었다
     /// </summary>
     public int? slackMin { get; set; }
+
+    /// <summary>
+    /// 픽업 장소 도착 예상 시각. 여유가 있으면 도착 목표 시각, 늦었으면 지금 출발해 닿는 시각. pickup이 null이면 null
+    /// </summary>
+    public DateTime? pickupArrivalDt { get; set; }
+
+    /// <summary>
+    /// 집 도착 예상 시각. 아이를 태운 뒤 집까지 간다고 본다. 집 구간이 없으면 null
+    /// </summary>
+    public DateTime? homeArrivalDt { get; set; }
 
     /// <summary>
     /// 픽업 장소의 단속 구역 판정
@@ -74,6 +79,114 @@ public class DetailDepartureGuideDto
     /// 계획 상태 (PLANNED, STARTED, WAITING, STOPPED, LOOPING). 계획이 없으면 null
     /// </summary>
     public string? planStatus { get; set; }
+
+    /// <summary>
+    /// 자기 계획이 대기 중(WAITING)일 때 기다리는 주차장. 아니면 null
+    /// </summary>
+    public DepartureGuideWaitingPlaceDto? waitingPlace { get; set; }
+}
+
+/// <summary>
+/// 출발 안내의 대기 중인 주차장
+/// </summary>
+public class DepartureGuideWaitingPlaceDto
+{
+    /// <summary>
+    /// 주차장 ID
+    /// </summary>
+    public int parkingLotSeq { get; set; }
+
+    /// <summary>
+    /// 주차장 이름
+    /// </summary>
+    public string name { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 주차장 위도
+    /// </summary>
+    public decimal lat { get; set; }
+
+    /// <summary>
+    /// 주차장 경도
+    /// </summary>
+    public decimal lng { get; set; }
+
+    /// <summary>
+    /// 기본 요금 시간(분)
+    /// </summary>
+    public int baseMin { get; set; }
+
+    /// <summary>
+    /// 기본 요금(원)
+    /// </summary>
+    public int baseFee { get; set; }
+
+    /// <summary>
+    /// 추가 요금 단위 시간(분). 없으면 null
+    /// </summary>
+    public int? addUnitMin { get; set; }
+
+    /// <summary>
+    /// 추가 요금 단위 금액(원). 없으면 null
+    /// </summary>
+    public int? addFee { get; set; }
+
+    /// <summary>
+    /// 1일 주차권 요금(원). 없으면 null
+    /// </summary>
+    public int? dayPassFee { get; set; }
+}
+
+/// <summary>
+/// 출발 안내의 차량 경로
+/// </summary>
+public class DepartureGuideDriveRouteDto
+{
+    /// <summary>
+    /// 전체 차량 소요 시간(분). legs의 driveMin 합이라 구간 시간을 더한 값과 같다. 지금 출발 기준
+    /// </summary>
+    public int driveMin { get; set; }
+
+    /// <summary>
+    /// 전체 경로 거리(m). source가 ESTIMATE면 null
+    /// </summary>
+    public int? distanceM { get; set; }
+
+    /// <summary>
+    /// ROUTE(카카오모빌리티 자동차 길찾기), ESTIMATE(직선 거리 추정)
+    /// </summary>
+    public string source { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 구간별 결과. 현재 위치 → 픽업 장소 → 집 순서이고(자기 계획이 대기 중이면 첫 출발지 이름만 대기 중인 주차장) 집 좌표가 없으면 첫 구간뿐이다
+    /// </summary>
+    public List<DepartureGuideDriveLegDto> legs { get; set; } = new();
+}
+
+/// <summary>
+/// 출발 안내 차량 경로의 한 구간
+/// </summary>
+public class DepartureGuideDriveLegDto
+{
+    /// <summary>
+    /// 출발지 이름. 첫 구간은 '현재 위치'(자기 계획이 대기 중이면 대기 중인 주차장 이름), 둘째 구간은 픽업 장소 이름(없으면 '픽업 장소')
+    /// </summary>
+    public string from { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 도착지 이름. 첫 구간은 픽업 장소 이름(없으면 '픽업 장소'), 둘째 구간은 '집'
+    /// </summary>
+    public string to { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 구간 소요 시간(분, 올림)
+    /// </summary>
+    public int driveMin { get; set; }
+
+    /// <summary>
+    /// 구간 거리(m). source가 ESTIMATE면 null
+    /// </summary>
+    public int? distanceM { get; set; }
 }
 
 /// <summary>
@@ -110,11 +223,6 @@ public class DepartureGuidePickupDto
     /// 도보 시간 출처 (STORED, ROUTE, ESTIMATE)
     /// </summary>
     public string walkSource { get; set; } = string.Empty;
-
-    /// <summary>
-    /// 학원 → 픽업 장소 도보 경로 선. 경로가 없거나 ESTIMATE면 null
-    /// </summary>
-    public List<GeoPointDto>? walkPath { get; set; }
 }
 
 /// <summary>

@@ -31,7 +31,7 @@ public class WaitingPlaceListDto
     public DepartureGuidePickupDto? pickup { get; set; }
 
     /// <summary>
-    /// 남은 여유(분). 계산할 수 없으면 null
+    /// 남은 여유(분). 출발 안내의 slackMin과 같다(혼잡 보정 포함). 계산할 수 없으면 null
     /// </summary>
     public int? slackMin { get; set; }
 
@@ -75,6 +75,31 @@ public class WaitingPlaceDto
     /// 현재 위치에서 대기 장소까지 차량 소요 시간(분)
     /// </summary>
     public int driveMin { get; set; }
+
+    /// <summary>
+    /// 현재 위치에서 대기 장소까지 거리(m). 직선 거리에 도로 보정을 곱한 추정값
+    /// </summary>
+    public int distanceM { get; set; }
+
+    /// <summary>
+    /// 기본 요금 시간(분)
+    /// </summary>
+    public int baseMin { get; set; }
+
+    /// <summary>
+    /// 기본 요금(원)
+    /// </summary>
+    public int baseFee { get; set; }
+
+    /// <summary>
+    /// 추가 요금 단위 시간(분). 없으면 null
+    /// </summary>
+    public int? addUnitMin { get; set; }
+
+    /// <summary>
+    /// 추가 요금 단위 금액(원). 없으면 null
+    /// </summary>
+    public int? addFee { get; set; }
 
     /// <summary>
     /// 예상 주차 요금(원). 계산할 수 없으면 null

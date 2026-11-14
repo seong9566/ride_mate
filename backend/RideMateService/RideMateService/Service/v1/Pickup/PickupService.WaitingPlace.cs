@@ -21,12 +21,14 @@ public partial class PickupService
             if (!int.TryParse(_httpContextAccessor.HttpContext?.User.FindFirstValue("sub"), out var userId))
                 return new ResponseModel<WaitingPlaceListDto> { message = "잘못된 요청입니다.", data = null, code = 401 };
 
-            // 2) 입력 검증 — 필수값이 없거나 픽업 좌표가 한쪽만 오면 거절한다
-            if (dto?.currentLat is null || dto.currentLng is null
-                || (dto.pickupLat is null) != (dto.pickupLng is null))
+            // 2) 입력 검증 — 출발 안내와 같다. 필수값이 없거나 픽업 좌표가 한쪽만 오면 거절한다
+            if (!IsValidDepartureQuery(dto))
                 return new ResponseModel<WaitingPlaceListDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
 
-            var computation = await ComputeDepartureAsync(userId, dto, cancellationToken).ConfigureAwait(false);
+            var computation = await ComputeDepartureAsync(userId, dto!, cancellationToken).ConfigureAwait(false);
+            if (computation.Code == 401) // 계정이 없거나 지워졌다
+                return new ResponseModel<WaitingPlaceListDto> { message = "잘못된 요청입니다.", data = null, code = 401 };
+
             if (computation.Code == 101)
             {
                 return new ResponseModel<WaitingPlaceListDto>
@@ -36,6 +38,9 @@ public partial class PickupService
                     code = 101
                 };
             }
+
+            // 학원가 진입 혼잡 보정은 출발 안내와 같다. 남은 여유(slackMin)·대기 시간·예상 요금이 출발 안내의 추천 출발과 맞는다
+            await ApplyCongestionAsync(computation, cancellationToken).ConfigureAwait(false);
 
             var departure = computation.Result!;
             var target = computation.Target!;
@@ -89,9 +94,8 @@ public partial class PickupService
 
         foreach (var row in rows)
         {
-            var driveToLot = DepartureGuideCalculator.EstimateMinutes(
-                GeoDistance.Meters(dto.currentLat!.Value, dto.currentLng!.Value, row.Lat, row.Lng),
-                _options.DriveKmh, _options.RoadFactor);
+            var toLotMeters = GeoDistance.Meters(dto.currentLat!.Value, dto.currentLng!.Value, row.Lat, row.Lng);
+            var driveToLot = DepartureGuideCalculator.EstimateMinutes(toLotMeters, _options.DriveKmh, _options.RoadFactor);
             var lotToPickup = DepartureGuideCalculator.EstimateMinutes(
                 GeoDistance.Meters(row.Lat, row.Lng, pickup.lat, pickup.lng),
                 _options.DriveKmh, _options.RoadFactor);
@@ -99,7 +103,7 @@ public partial class PickupService
                 continue;
 
             var waitMin = WaitingPlaceCalculator.WaitMinutes(departure.slackMin!.Value,
-                departure.driveMin!.Value, driveToLot, lotToPickup);
+                computation.DriveMin!.Value, driveToLot, lotToPickup);
             if (waitMin <= 0)
                 continue;
 
@@ -112,6 +116,7 @@ public partial class PickupService
             {
                 Row = row,
                 DriveToLot = driveToLot,
+                DistanceM = (int)Math.Round(toLotMeters * _options.RoadFactor),
                 WaitMin = waitMin
             });
         }
@@ -188,6 +193,11 @@ public partial class PickupService
                 lat = candidate.Row.Lat,
                 lng = candidate.Row.Lng,
                 driveMin = candidate.DriveToLot,
+                distanceM = candidate.DistanceM,
+                baseMin = candidate.Row.BaseMin,
+                baseFee = candidate.Row.BaseFee,
+                addUnitMin = candidate.Row.AddUnitMin,
+                addFee = candidate.Row.AddFee,
                 fee = fee,
                 feeText = fee is null
                     ? WaitingPlaceCalculator.FeeText(candidate.Row.BaseMin, candidate.Row.BaseFee)
@@ -224,6 +234,7 @@ public partial class PickupService
     {
         public ParkingLotRow Row { get; init; } = null!;
         public int DriveToLot { get; init; }
+        public int DistanceM { get; init; }
         public int WaitMin { get; init; }
         public int? RealtimeAvailable { get; set; }
         public bool RealtimeMissing { get; set; }
