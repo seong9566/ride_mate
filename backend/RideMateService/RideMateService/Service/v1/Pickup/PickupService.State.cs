@@ -746,10 +746,11 @@ public partial class PickupService
     }
 
     // 취소 문자 대상인지(설계 4.4). LINK_SENT 중 하나라도 성공했거나, 결과가 없거나(진행 중), 도착했는지 모르는 실패(TIMEOUT·ERROR)면
-    // 아이가 링크를 받았을 수 있다. 사업자가 거절한 실패만 있거나 링크 발송이 없으면 false. 개발 전용 발급(결과 코드 DEV)은 문자를 보내지 않았으므로 세지 않는다
+    // 아이가 링크를 받았을 수 있다. 사업자가 거절한 실패만 있거나 링크 발송이 없으면 false. 개발 전용 발급(결과 코드 DEV_LINK)은 문자를 보내지 않았으므로 세지 않는다.
+    // 다시 보내기·다시 알림은 접수된 LINK_SENT가 있어야 보내므로 보통은 LINK_SENT로 판정이 끝난다. LINK_SENT가 개발 전용 발급뿐이면 그 뒤의 실제 발송을 본다
     private static bool ChildMayHaveLink(IReadOnlyList<LinkEventRow> events)
     {
-        foreach (var row in events.Where(e => e.EventType == EventLinkSent))
+        foreach (var row in events.Where(e => e.EventType is EventLinkSent or EventLinkResent or EventRemindSent))
         {
             var detail = PickupLinkSendState.ParseDetail(row.Detail);
             if (detail?.resultCode == DevLinkResultCode)

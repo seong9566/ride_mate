@@ -9,7 +9,7 @@ namespace RideMateService.Service.v1.Pickup;
 
 public partial class PickupService
 {
-    private const string DevLinkResultCode = "DEV";
+    private const string DevLinkResultCode = "DEV_LINK";
     // 개발 전용 링크는 끝나지 않게 계획 만료 시각을 DATETIME 최대값으로 둔다
     private static readonly DateTime DevLinkExpireDt = new(9999, 12, 31, 23, 59, 59);
 
