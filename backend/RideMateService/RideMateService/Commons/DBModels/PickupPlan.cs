@@ -79,6 +79,26 @@ public partial class PickupPlan
     public string? CustomName { get; set; }
 
     /// <summary>
+    /// 장소를 바꾸기 직전 장소가 기본 지점이면 그 지점
+    /// </summary>
+    public int? PrevPickupSpotId { get; set; }
+
+    /// <summary>
+    /// 직전 장소가 부모가 고른 임의 좌표면 그 위도
+    /// </summary>
+    public decimal? PrevCustomLat { get; set; }
+
+    /// <summary>
+    /// 직전 장소가 부모가 고른 임의 좌표면 그 경도
+    /// </summary>
+    public decimal? PrevCustomLng { get; set; }
+
+    /// <summary>
+    /// 직전 임의 좌표의 장소 이름
+    /// </summary>
+    public string? PrevCustomName { get; set; }
+
+    /// <summary>
     /// 계획 만료 일시
     /// </summary>
     public DateTime ExpireDt { get; set; }
@@ -156,6 +176,8 @@ public partial class PickupPlan
     public virtual PickupSession? PickupSession { get; set; }
 
     public virtual PickupSpot? PickupSpot { get; set; }
+
+    public virtual PickupSpot? PrevPickupSpot { get; set; }
 
     public virtual TimetableDay? TimetableDay { get; set; }
 

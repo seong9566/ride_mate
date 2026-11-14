@@ -712,6 +712,27 @@
 
 - 필드·예시는 Notion "[차량] 픽업 장소 추가 요청"(https://app.notion.com/p/416aa638eaf88103976be46141bd3b8d) 페이지가 정본이다.
 
+## 픽업 완료 기록
+
+차량 앱이 집에 도착해 "오늘 픽업 완료!" 화면에서 「저장할게요」를 누르면 그날 기록을 저장하고, 같은 일정·요일의 다음 픽업에서 읽어 쓴다. 시간표 요일마다 살아 있는 기록은 한 건이다. [ADR-0027]
+
+- 저장은 `POST /api/v1/Pickup/M/sign/AddPickupRecord`, 조회는 `GET /api/v1/Pickup/M/sign/DetailPickupRecord?scheduleSeq=&dayOfWeek=`다. 인증 구간 `sign`이 있어 Bearer가 필요하고, 사용자는 JWT의 `sub`에서 꺼낸다.
+- 저장 본문은 모두 필수다: `scheduleSeq`(1 이상)·`dayOfWeek`(1~7)·`arriveDt`(집 도착 시각, 오프셋 없는 KST)·`totalMin`·`waitMin`(0~1440)·`departName`·`boardName`(앞뒤 공백을 지운 뒤 1~100자)·`departLat`·`boardLat`(-90~90)·`departLng`·`boardLng`(-180~180)·`departDt`·`boardDt`·`autoSave`(다음부터 묻지 않고 저장). 범위·형식 오류는 `ProblemDetails` 400이다.
+- 서비스 검증(`data` null 400): `waitMin > totalMin`, 시각 순서가 `departDt ≤ boardDt ≤ arriveDt`가 아님, `arriveDt`가 서버 현재 시각 + 1분보다 뒤, `arriveDt`가 서버 현재 시각 − 24시간보다 앞.
+- 시간표 요일을 찾지 못하면(내 시간표가 아님·삭제됨·그 요일 없음) 404다. 살아 있는 기록이 있으면 그 행을 덮어쓰고(`UPDATE_DT` 갱신) 없으면 새로 넣는다. 같은 요일의 동시 저장은 `USER_INFO` → `TIMETABLE_DAY` 순으로 `FOR UPDATE` 잠가 직렬화한다(시간표 삭제·편집과 같은 순서). 끝난 픽업 계획은 읽지도 잇지도 않는다.
+- 응답 `data`(저장·조회 공통): `{ scheduleSeq, dayOfWeek, arriveDt, totalMin, waitMin, depart: { name, lat, lng, dt }, board: { name, lat, lng, dt }, autoSave, updateDt }`. `updateDt`는 마지막 저장 시각이다.
+- 시간표 삭제·편집으로 요일이 빠지면 그 요일의 기록은 삭제 표시되고 장소 이름은 빈 문자열, 좌표는 NULL이 된다.
+
+| code | 상황 | HTTP |
+|---|---|---|
+| 101 | (조회) 시간표 요일은 있으나 살아 있는 기록이 없다. `data`는 null | 200 |
+| 200 | 저장했다·조회했다 | 200 |
+| 400 | 서비스 검증 실패. `data`는 null. 형식·범위 오류는 `ProblemDetails`다 | 400 |
+| 401 | 인증 실패이거나 계정이 없다 | 401 |
+| 404 | 내 시간표가 아니거나 삭제됐거나 그 요일이 없다. `data`는 null | 404 |
+
+- 200·101의 `message`는 `요청이 정상 처리되었습니다.`, 400·401·404는 `잘못된 요청입니다.`다.
+
 ## 커서 페이징
 
 - 목록은 오프셋 페이징을 쓰지 않고 `CursorResult<T>`(`items`·`lastCursor`·`hasMore`)로 돌려준다.

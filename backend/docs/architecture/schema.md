@@ -58,7 +58,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 - 아이·시간표: `CHILD`, `ACADEMY`, `TIMETABLE`, `TIMETABLE_DAY`, `TIMETABLE_EXCEPTION`
 - 기준 데이터: `AREA`, `PICKUP_SPOT`, `PICKUP_SPOT_REQUEST`, `PICKUP_SPOT_BLOCK`, `ACADEMY_PICKUP_SPOT`, `LOOP_ROUTE`, `RESTRICTED_ZONE`, `PARKING_LOT`, `HOLIDAY`
 - 도로 소통 수집: `TRAFFIC_LINK`, `TRAFFIC_COLLECT_RUN`, `TRAFFIC_SPEED`, `TRAFFIC_HOURLY_SPEED`, `TRAFFIC_PROFILE`
-- 픽업 진행: `PICKUP_PLAN`, `PICKUP_SESSION`, `PICKUP_EVENT`
+- 픽업 진행: `PICKUP_PLAN`, `PICKUP_SESSION`, `PICKUP_EVENT`, `PICKUP_RECORD`
 
 ## 계정·인증
 
@@ -257,12 +257,12 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
   4. 일반 조회보다 먼저 `FOR SHARE` 잠금 읽기로 학원가를 다시 읽는다. 학원 행에 공유 잠금이 걸려 그사이 다른 계정이 학원가를 채우지 못하고, 학원을 바꾸는 편집은 `USER_INFO`를 잠그므로 커밋까지 값이 바뀌지 않는다. 1 뒤에 다른 계정의 등록이 학원가를 채웠거나 같은 계정의 편집이 학원을 다른 학원가로 옮겼으면 이때 그 `AREA`를 잠근다(순서가 어긋나 드물게 교착할 수 있고, 교착은 재시도한다. 재시도 때는 1이 새 값을 읽는다).
   5. 일반 조회로 소유(살아 있는 아이의 살아 있는 시간표)를 확인하고 요일 ID를 모두 읽는다.
   6. 그 요일들을 가리키는 진행 중 계획을 일반 조회로 찾고, 있으면 그 계획들만 PK 순서로 `FOR UPDATE` 잠가 최신 `STATUS`·`TIMETABLE_DAY_ID`로 다시 확인한다. 남은 것이 있으면 거절한다. `AREA` 잠금 때문에 새 계획은 생기지 않고, 그사이 끝난 계획은 잠금 읽기에서 빠진다.
-  7. `TIMETABLE_EXCEPTION` → `TIMETABLE_DAY` → `TIMETABLE` 순으로 지운다.
+  7. `TIMETABLE_EXCEPTION` → `PICKUP_RECORD`(그 시간표 요일들의 기록: `DELETE_YN`을 켜고 `DEPART_NAME`·`BOARD_NAME`을 빈 문자열로, 좌표를 NULL로) → `TIMETABLE_DAY` → `TIMETABLE` 순으로 지운다.
 - 시간표 편집(T22)은 삭제의 1~6을 그대로 따르고 다음만 다르다.
   - 1·2에서 지금 학원의 학원가와 함께 요청 좌표를 담는 학원가도 트랜잭션 밖에서 고르고, 둘을 `AREA_ID` 순서로 잠근다. 새 학원 행을 넣거나 좌표를 채울 때 FK로 걸리는 그 학원가의 공유 잠금을 미리 잡아 그 학원가의 계획 생성과 순서를 맞춘다.
   - 4에서 다시 읽은 학원가가 2에서 잠근 두 학원가에 없을 때만 잠근다.
   - 6에서 진행 중 계획을 찾는 요일은 학원(`ACADEMY_ID`)이나 하원 시각이 바뀌면 그 시간표의 요일 전부, 아니면 빼는 요일뿐이다. 이름 변경과 요일 추가는 확인하지 않는다.
-  - 7 대신 뺀 요일의 `TIMETABLE_EXCEPTION` → 뺀 `TIMETABLE_DAY` → 되살릴 `TIMETABLE_DAY` → 새 `TIMETABLE_DAY` → `TIMETABLE` 순으로 쓴다.
+  - 7 대신 뺀 요일의 `TIMETABLE_EXCEPTION` → 뺀 요일의 `PICKUP_RECORD`(같은 비움) → 뺀 `TIMETABLE_DAY` → 되살릴 `TIMETABLE_DAY` → 새 `TIMETABLE_DAY` → `TIMETABLE` 순으로 쓴다.
 - 등록은 `USER_INFO` → (학원 FK) `AREA` 공유 잠금, 삭제·편집은 `AREA` → `USER_INFO` 순이라 같은 계정의 등록과 삭제·편집이 동시에 오면 교착할 수 있다. 세 API 모두 교착을 재시도한다. 경로 시작의 계획 생성(`AREA` → … → 계획 INSERT의 `USER_INFO` FK 공유 잠금)과 순서를 맞추는 쪽을 골랐다.
 - 편집으로 요일을 뺐다가 다시 넣으면 새 행을 만들지 않고 삭제 표시된 `TIMETABLE_DAY` 행을 되살린다. `LAST_PICKUP_DATE`가 이어진다. 되살린 행의 `PICKUP_YN`은 새 요일과 같이 1이고(편집에 `pickupOffDays`를 보내면 그 목록대로 — TIMETABLE_DAY 절), 뺄 때 지운 날짜별 예외는 되살리지 않는다.
 - 시간표를 지우고 같은 내용으로 다시 등록하면 새 시간표다. 그날 이미 탑승으로 끝났어도 계획이 다시 만들어질 수 있다. 감수한다.
@@ -310,6 +310,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | 0 | `AREA` 잠금 | 트랜잭션의 첫 문장으로, 그 아이들의 시간표가 가리키는 학원가의 `AREA` 행을 `AREA_ID` 순서로 `FOR UPDATE` 잠근다. 계획 생성이 같은 잠금을 기다리므로 삭제 도중에 새 계획이 끼어들지 못한다 |
 | 1 | 진행 중인 `PICKUP_PLAN` | 잠금 조회(`FOR UPDATE`)로 찾아 `PICKUP_PLAN_ID` 순서로 취소한다(상태 바꾸기와 익명화 절차 그대로). 보조 인덱스로 잠그지 않는다(`PICKUP_PLAN` 절 "상태 바꾸기"). 보낸 링크도 함께 끝난다 |
 | 2 | `TIMETABLE_EXCEPTION` | `DELETE_YN`을 켠다 |
+| 2-1 | `PICKUP_RECORD` | 그 시간표 요일들의 기록(계정 삭제는 그 계정의 기록 전부)에 `DELETE_YN`을 켜고 `DEPART_NAME`·`BOARD_NAME`을 빈 문자열로, 좌표 네 칸을 NULL로 바꾼다. 요일을 `DELETE_YN`으로 지우기 전에 한다 [ADR-0027] |
 | 3 | `TIMETABLE_DAY` | `DELETE_YN`을 켠다 |
 | 4 | `TIMETABLE` | `DELETE_YN`을 켜고 `DISPLAY_NAME`을 빈 문자열로 바꾼다 |
 | 5 | `CHILD` | `DELETE_YN`을 켜고 `CHILD_NAME`을 빈 문자열로, `PHONE_ENC`를 빈 값으로, `PHONE_HASH`를 NULL로 바꾼다 |
@@ -628,6 +629,9 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `CUSTOM_LAT`·`CUSTOM_LNG` | DECIMAL(10,7) | Y | 부모가 고른 픽업 좌표. 기본 지점이면 NULL. 끝나면 NULL |
 | `CUSTOM_NAME` | VARCHAR(100) | Y | 임의 좌표의 장소 이름(카카오 주소 변환 결과). 끝나면 NULL |
 | `CUSTOM_WALK_PATH` | LINESTRING SRID 4326 | Y | 학원에서 임의 좌표까지 도보 경로 선. 카카오 도보 경로가 실패했으면 NULL. 끝나면 NULL. 스캐폴드가 건너뛰므로 엔티티에 없고 읽기·쓰기는 Dapper로 한다 |
+| `PREV_PICKUP_SPOT_ID` | INT | Y | FK → PICKUP_SPOT. 장소를 바꾸기 직전 장소가 기본 지점이면 그 지점. 장소를 바꾼 적이 없으면 NULL. 끝나면 NULL |
+| `PREV_CUSTOM_LAT`·`PREV_CUSTOM_LNG` | DECIMAL(10,7) | Y | 직전 장소가 부모가 고른 임의 좌표면 그 좌표. 장소를 바꾼 적이 없거나 직전 장소가 기본 지점이면 NULL. 끝나면 NULL |
+| `PREV_CUSTOM_NAME` | VARCHAR(100) | Y | 직전 임의 좌표의 장소 이름. 끝나면 NULL |
 | `EXPIRE_DT` | DATETIME | N | 만료 시각. `SLOT_DT`(없으면 그날 하원 시각)에 설정값(기본 1시간)을 더한다. 재배정하거나 하원 시각이 바뀌면 다시 계산한다 |
 | `STATUS` | VARCHAR(20) | N | 아래 코드 |
 | `PARKING_LOT_ID` | INT | Y | FK → PARKING_LOT. 대기 장소에 도착했을 때(`UpdatePickupPlanWait`) 그 주차장. 다른 주차장으로 옮기면 바꾸고, 출발해도 비우지 않는다 |
@@ -651,12 +655,14 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 - 아이 화면의 "곧 도착"(도착 1분 전)은 상태로 저장하지 않는다. 배정 시각과 현재 시각으로 계산한다.
 - UNIQUE: `(TIMETABLE_DAY_ID, PICKUP_DATE)`. 진행 중에 같은 계획을 두 번 만들 수 없다. 끝난 계획은 `TIMETABLE_DAY_ID`가 NULL이라 걸리지 않으므로 `ACTIVE_FLAG`가 필요 없다. 중복 키 오류가 나면 이미 만들어진 계획을 시작한다(경로 시작).
 - 탑승이나 만료로 끝난 뒤 다시 만드는 것은 `TIMETABLE_DAY.LAST_PICKUP_DATE`로 막는다. 부모 취소(`DeletePickupPlan`)는 이 값을 바꾸지 않아 그날 다시 만들 수 있다.
-- 임의 좌표(`CUSTOM_*`)는 공유 지점이 아니라 정원 개념이 없다. 임의 좌표 계획은 `PICKUP_SPOT_ID`가 NULL이고, `CUSTOM_LAT`·`CUSTOM_LNG`·`CUSTOM_NAME`은 셋 다 있거나 셋 다 없다.
+- 임의 좌표(`CUSTOM_*`)는 공유 지점이 아니라 정원 개념이 없다. 임의 좌표 계획은 `PICKUP_SPOT_ID`가 NULL이고, `CUSTOM_LAT`·`CUSTOM_LNG`·`CUSTOM_NAME`은 셋 다 있거나 셋 다 없다. 장소를 바꾸면 바꾸기 직전 장소를 `PREV_*`에 남긴다(같은 장소로 다시 정하면 그대로 둔다).
 - CHECK:
   - `CK_PICKUP_PLAN_01`: `DELETE_YN = 1 OR (SLOT_DT IS NULL) = (PICKUP_SPOT_ID IS NULL AND CUSTOM_LAT IS NULL)` — 장소(지점 또는 임의 좌표)가 있으면 `SLOT_DT`가 있다. 익명화된 행은 장소 칸이 비어도 `SLOT_DT`가 남으므로 예외다
   - `CK_PICKUP_PLAN_02`: `(PICKUP_SPOT_ID IS NULL AND CUSTOM_LAT IS NULL) OR WALK_MIN IS NOT NULL OR DELETE_YN = 1` — 장소가 있으면 `WALK_MIN`이 있다. 익명화된 행은 예외다
   - `CK_PICKUP_PLAN_03`: `(CUSTOM_LAT IS NULL) = (CUSTOM_LNG IS NULL) AND (CUSTOM_LAT IS NULL) = (CUSTOM_NAME IS NULL)` — 임의 좌표 칸 셋은 함께 있거나 함께 없다
   - `CK_PICKUP_PLAN_04`: `PICKUP_SPOT_ID IS NULL OR CUSTOM_LAT IS NULL` — 지점과 임의 좌표는 동시에 있을 수 없다
+  - `CK_PICKUP_PLAN_05`: `(PREV_CUSTOM_LAT IS NULL) = (PREV_CUSTOM_LNG IS NULL) AND (PREV_CUSTOM_LAT IS NULL) = (PREV_CUSTOM_NAME IS NULL)` — 직전 임의 좌표 칸 셋은 함께 있거나 함께 없다
+  - `CK_PICKUP_PLAN_06`: `PREV_PICKUP_SPOT_ID IS NULL OR PREV_CUSTOM_LAT IS NULL` — 직전 장소가 지점과 임의 좌표 둘일 수 없다
 - 인덱스: `(PICKUP_SPOT_ID, SLOT_DT)`, `(USER_ID, PICKUP_DATE)`
 - 상태, 시각 컬럼, `PICKUP_EVENT`는 같은 일을 함께 적는다. 셋은 항상 같은 트랜잭션에서 쓴다.
 
@@ -701,11 +707,11 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 
 **익명화.** 계획이 `BOARDED`·`EXPIRED`·`CANCELED`가 되면 같은 트랜잭션에서 아래를 한다. [ADR-0008]
 
-1. `USER_ID`·`CHILD_ID`·`TIMETABLE_DAY_ID`·`ACADEMY_ID`·`END_TIME`·`WALK_MIN`과 `CUSTOM_LAT`·`CUSTOM_LNG`·`CUSTOM_NAME`·`CUSTOM_WALK_PATH`를 NULL로 바꾼다.
+1. `USER_ID`·`CHILD_ID`·`TIMETABLE_DAY_ID`·`ACADEMY_ID`·`END_TIME`·`WALK_MIN`과 `CUSTOM_LAT`·`CUSTOM_LNG`·`CUSTOM_NAME`·`CUSTOM_WALK_PATH`와 `PREV_PICKUP_SPOT_ID`·`PREV_CUSTOM_LAT`·`PREV_CUSTOM_LNG`·`PREV_CUSTOM_NAME`을 NULL로 바꾼다.
 2. 그 계획의 `END_TIME_CHANGED`·`LEAVE_SCHEDULED` 이벤트는 `DETAIL`을 NULL로 바꾼다. 하원 시각과 아이가 정한 출발 시각이 들어 있기 때문이다.
 3. `DELETE_YN`을 켠다. `PICKUP_SESSION`·`PICKUP_EVENT`도 함께 켠다.
 
-계획 행의 1과 3은 한 UPDATE로 한다. 나눠서 하면 `WALK_MIN`을 비우는 순간 CHECK에 걸린다. `CUSTOM_LAT`·`CUSTOM_LNG`·`CUSTOM_NAME`도 한 UPDATE에서 함께 비운다(`CK_PICKUP_PLAN_03`). 임의 좌표 계획은 `PICKUP_SPOT_ID`가 NULL이고 `SLOT_DT`가 남으므로, `DELETE_YN`을 켜지 않고 좌표만 비우면 `CK_PICKUP_PLAN_01`에 걸린다.
+계획 행의 1과 3은 한 UPDATE로 한다. 나눠서 하면 `WALK_MIN`을 비우는 순간 CHECK에 걸린다. `CUSTOM_LAT`·`CUSTOM_LNG`·`CUSTOM_NAME`도 한 UPDATE에서 함께 비운다(`CK_PICKUP_PLAN_03`). `PREV_CUSTOM_LAT`·`PREV_CUSTOM_LNG`·`PREV_CUSTOM_NAME`도 마찬가지다(`CK_PICKUP_PLAN_05`). 임의 좌표 계획은 `PICKUP_SPOT_ID`가 NULL이고 `SLOT_DT`가 남으므로, `DELETE_YN`을 켜지 않고 좌표만 비우면 `CK_PICKUP_PLAN_01`에 걸린다.
 
 끝난 뒤 남는 값은 `AREA_ID`, `PICKUP_DATE`, `PICKUP_SPOT_ID`, `SLOT_DT`, `EXPIRE_DT`, `STATUS`, `PARKING_LOT_ID`, 시각 컬럼 다섯, 그리고 이벤트 이력이다. 임의 좌표 칸(`CUSTOM_*` 넷)은 남기지 않는다. 끝난 계획에 남는 장소 정보는 지점 ID뿐이다.
 
@@ -785,6 +791,33 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 - `BOARDED`·`CANCELED`의 `CLIENT_EVENT_ID`는 차량 요청의 값이다. 만료로 끝난 `EXPIRED`는 NULL이다.
 - 이벤트의 순서와 "여기부터 새 이벤트" 기준은 `PICKUP_EVENT_ID`다. `EVENT_DT`는 차량 시각이고 늦게 도착할 수 있어 순서 기준으로 쓰지 않는다. 화면은 `PICKUP_PLAN_ID = ? AND PICKUP_EVENT_ID > ?`로 새 이벤트를 읽는다. 이벤트를 넣을 때 계획 행을 잠그므로 번호 순서와 커밋 순서가 같다.
 - 인덱스는 위 UNIQUE 하나로 충분하다. `PICKUP_PLAN_ID`가 맨 앞이라 FK 인덱스를 겸한다. 새 이벤트 조회는 그 계획의 이벤트를 훑어 번호로 거른다. 계획 하나의 이벤트는 수십 건이라 따로 인덱스를 두지 않는다.
+
+### PICKUP_RECORD — 픽업 완료 기록
+
+집에 도착해 앱이 픽업 완료를 보내면 그날 이동 기록을 시간표 요일마다 하나 저장한다. 같은 일정·요일의 다음 픽업에서 앱이 바로 읽어 쓴다. [ADR-0027]
+
+| 컬럼 | 타입 | NULL | 설명 |
+|---|---|---|---|
+| `PICKUP_RECORD_ID` | INT | N | PK |
+| `USER_ID` | INT | N | FK → USER_INFO |
+| `TIMETABLE_DAY_ID` | INT | N | FK → TIMETABLE_DAY |
+| `ARRIVE_DT` | DATETIME | N | 집 도착 시각 |
+| `TOTAL_MIN` | INT | N | 총 소요 분 |
+| `WAIT_MIN` | INT | N | 대기 분 |
+| `DEPART_NAME` | VARCHAR(100) | N | 출발 장소 이름. 지우면 빈 문자열 |
+| `DEPART_LAT`·`DEPART_LNG` | DECIMAL(10,7) | Y | 출발 장소 좌표. 지우면 NULL |
+| `DEPART_DT` | DATETIME | N | 출발 시각 |
+| `BOARD_NAME` | VARCHAR(100) | N | 탑승 장소 이름. 지우면 빈 문자열 |
+| `BOARD_LAT`·`BOARD_LNG` | DECIMAL(10,7) | Y | 탑승 장소 좌표. 지우면 NULL |
+| `BOARD_DT` | DATETIME | N | 탑승 시각 |
+| `AUTO_SAVE_YN` | TINYINT(1) | N | 다음부터 묻지 않고 저장 |
+
+- 살아 있는 행 UNIQUE: `(TIMETABLE_DAY_ID, ACTIVE_FLAG)`. 시간표 요일마다 살아 있는 기록은 하나이고, 다시 저장하면 그 행을 덮어쓴다. 앱은 계정의 요일로 읽으므로 이 UNIQUE가 조회 인덱스와 `TIMETABLE_DAY_ID` FK 인덱스를 겸한다.
+- 인덱스: `IX_PICKUP_RECORD_01 (USER_ID)`. `USER_ID` FK 인덱스이고 계정 삭제가 쓴다.
+- CHECK: `TOTAL_MIN >= 0 AND WAIT_MIN >= 0 AND WAIT_MIN <= TOTAL_MIN`, 출발·탑승 좌표 쌍은 각각 `(LAT IS NULL) = (LNG IS NULL)`. 시각 순서(출발 ≤ 탑승 ≤ 도착)는 Service에서 확인한다.
+- 끝난 계획(`PICKUP_PLAN`)과 잇지 않는다. 칸도 FK도 없다. 이으면 익명화한 계획이 다시 계정으로 이어진다.
+- 이 테이블의 `DELETE_YN`은 일반 규칙이다. 조회에 `DELETE_YN = FALSE`를 붙인다.
+- 시간표·요일·계정을 지우면 `DELETE_YN`을 켜고 장소 이름을 빈 문자열로, 좌표를 NULL로 비운다("아이·계정 삭제"의 2-1, "시간표 삭제").
 
 ## DDL을 적용해 확인한 것
 

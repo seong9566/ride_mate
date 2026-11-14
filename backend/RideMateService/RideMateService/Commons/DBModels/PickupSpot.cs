@@ -84,7 +84,9 @@ public partial class PickupSpot
 
     public virtual ICollection<LoopRoute> LoopRoutes { get; set; } = new List<LoopRoute>();
 
-    public virtual ICollection<PickupPlan> PickupPlans { get; set; } = new List<PickupPlan>();
+    public virtual ICollection<PickupPlan> PickupPlanPickupSpots { get; set; } = new List<PickupPlan>();
+
+    public virtual ICollection<PickupPlan> PickupPlanPrevPickupSpots { get; set; } = new List<PickupPlan>();
 
     public virtual ICollection<PickupSpotBlock> PickupSpotBlocks { get; set; } = new List<PickupSpotBlock>();
 

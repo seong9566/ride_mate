@@ -203,9 +203,17 @@ public class LivePlanRow
     public DateTime? SlotDt { get; set; }
     public byte? WalkMin { get; set; }
     public DateTime ExpireDt { get; set; }
+    public DateTime? StopDt { get; set; }
     public decimal? CustomLat { get; set; }
     public decimal? CustomLng { get; set; }
     public string? CustomName { get; set; }
+    public int? PrevPickupSpotId { get; set; }
+    public string? PrevSpotName { get; set; }
+    public decimal? PrevSpotLat { get; set; }
+    public decimal? PrevSpotLng { get; set; }
+    public decimal? PrevCustomLat { get; set; }
+    public decimal? PrevCustomLng { get; set; }
+    public string? PrevCustomName { get; set; }
     public string? CustomWalkPathWkt { get; set; }
     public string? SpotName { get; set; }
     public decimal? SpotLat { get; set; }
@@ -392,4 +400,24 @@ public class UserHomeRow
     public string? DestAddress { get; set; }
     public decimal? DestLat { get; set; }
     public decimal? DestLng { get; set; }
+}
+
+/// <summary>
+/// 살아 있는 픽업 완료 기록 한 건
+/// </summary>
+public class PickupRecordRow
+{
+    public DateTime ArriveDt { get; set; }
+    public int TotalMin { get; set; }
+    public int WaitMin { get; set; }
+    public string DepartName { get; set; } = string.Empty;
+    public decimal DepartLat { get; set; }
+    public decimal DepartLng { get; set; }
+    public DateTime DepartDt { get; set; }
+    public string BoardName { get; set; } = string.Empty;
+    public decimal BoardLat { get; set; }
+    public decimal BoardLng { get; set; }
+    public DateTime BoardDt { get; set; }
+    public bool AutoSaveYn { get; set; }
+    public DateTime UpdateDt { get; set; }
 }

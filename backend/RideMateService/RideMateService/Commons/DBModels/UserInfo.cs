@@ -116,5 +116,7 @@ public partial class UserInfo
 
     public virtual ICollection<PickupPlan> PickupPlans { get; set; } = new List<PickupPlan>();
 
+    public virtual ICollection<PickupRecord> PickupRecords { get; set; } = new List<PickupRecord>();
+
     public virtual ICollection<QrLogin> QrLogins { get; set; } = new List<QrLogin>();
 }

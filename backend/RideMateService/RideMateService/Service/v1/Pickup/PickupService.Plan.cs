@@ -464,6 +464,10 @@ public partial class PickupService
             // 5-4) 재배정. STARTED면 늦은 출발 결과를 지키려고 지금 배정 시각보다 앞당기지 않는다
             var date = locked.PickupDate;
             var notBefore = locked.Status == PlanStatusStarted ? locked.SlotDt : null;
+            var oldSpotId = entity.PickupSpotId;
+            var oldCustomLat = entity.CustomLat;
+            var oldCustomLng = entity.CustomLng;
+            var oldCustomName = entity.CustomName;
             if (custom is not null)
             {
                 var arrival = DepartureGuideCalculator.ChildArrival(date, endTime, _options.TidyUpMin, custom.WalkMin);
@@ -498,6 +502,26 @@ public partial class PickupService
                 entity.CustomLat = null;
                 entity.CustomLng = null;
                 entity.CustomName = null;
+            }
+
+            // 직전 장소. 새 장소가 지금 장소와 다를 때만, 덮어쓰기 전의 장소를 남긴다(지금 장소가 없으면 그대로 둔다).
+            // 지점은 ID로, 임의 좌표는 DB 정밀도(소수 7자리)로 맞춘 좌표로 비교한다. 장소 이름은 주소 조회 결과에 따라 달라질 수 있어 보지 않는다
+            var placeChanged = oldSpotId != entity.PickupSpotId
+                               || RoundToDbScale(oldCustomLat) != RoundToDbScale(entity.CustomLat)
+                               || RoundToDbScale(oldCustomLng) != RoundToDbScale(entity.CustomLng);
+            if (placeChanged && oldSpotId is { } prevSpotId)
+            {
+                entity.PrevPickupSpotId = prevSpotId;
+                entity.PrevCustomLat = null;
+                entity.PrevCustomLng = null;
+                entity.PrevCustomName = null;
+            }
+            else if (placeChanged && oldCustomLat is not null)
+            {
+                entity.PrevPickupSpotId = null;
+                entity.PrevCustomLat = oldCustomLat;
+                entity.PrevCustomLng = oldCustomLng;
+                entity.PrevCustomName = oldCustomName;
             }
 
             entity.ExpireDt = (entity.SlotDt ?? date.ToDateTime(TimeOnly.MinValue) + endTime)
@@ -969,10 +993,45 @@ public partial class PickupService
             pickup = location,
             slotDt = location is null ? null : row.SlotDt,
             expireDt = row.ExpireDt,
+            stopDt = row.StopDt,
             reassigned = reassigned,
             // 대기 중(WAITING)일 때만 채운다. 출발하면 DB에는 마지막 주차장이 남지만 응답은 null이다
             parkingLotSeq = row.Status == PlanStatusWaiting ? row.ParkingLotId : null
         };
+    }
+
+    // 좌표를 PICKUP_PLAN의 DECIMAL(10,7) 정밀도로 맞춘다(MySQL은 저장할 때 소수 7자리로 반올림한다)
+    private static decimal? RoundToDbScale(decimal? value)
+        => value is { } v ? Math.Round(v, 7, MidpointRounding.AwayFromZero) : null;
+
+    // 직전 픽업 장소를 아이 응답에 옮긴다. 임의 좌표가 있으면 CUSTOM, 지점이 있으면 SPOT, 없으면 null
+    private static ChildPickupPreviousLocationDto? ToPreviousLocation(LivePlanRow row)
+    {
+        if (row is { PrevCustomLat: { } customLat, PrevCustomLng: { } customLng, PrevCustomName: { } customName })
+        {
+            return new ChildPickupPreviousLocationDto
+            {
+                locationType = LocationTypeCustom,
+                pickupSpotSeq = null,
+                name = customName,
+                lat = customLat,
+                lng = customLng
+            };
+        }
+
+        if (row is { PrevPickupSpotId: { } spotId, PrevSpotName: { } spotName, PrevSpotLat: { } spotLat, PrevSpotLng: { } spotLng })
+        {
+            return new ChildPickupPreviousLocationDto
+            {
+                locationType = LocationTypeSpot,
+                pickupSpotSeq = spotId,
+                name = spotName,
+                lat = spotLat,
+                lng = spotLng
+            };
+        }
+
+        return null;
     }
 
     // 계획의 픽업 장소를 임의 좌표 우선으로 응답에 옮긴다

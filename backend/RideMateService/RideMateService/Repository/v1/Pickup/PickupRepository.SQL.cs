@@ -158,6 +158,69 @@ public partial class PickupRepository
     }
 
     /// <summary>
+    /// 계획이 가리키는 살아 있는 아이의 이름을 돌려준다. 탑승 기록이 계획을 익명화하기 전에 읽는다. 없으면 null이다
+    /// </summary>
+    public async Task<string?> GetPlanChildNameAsync(int pickupPlanId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("pickupPlanId", pickupPlanId);
+
+            var sql = @"
+                SELECT c.CHILD_NAME
+                FROM PICKUP_PLAN AS p
+                INNER JOIN CHILD AS c
+                        ON c.CHILD_ID = p.CHILD_ID
+                       AND c.DELETE_YN = FALSE
+                WHERE p.PICKUP_PLAN_ID = @pickupPlanId";
+
+            return await _dapper.QueryFirstOrDefaultAsync<string?>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 로그인한 부모의 살아 있는 아이 한 명의 이름을 돌려준다(여럿이면 먼저 등록한 아이). 없으면 null이다
+    /// </summary>
+    public async Task<string?> GetUserChildNameAsync(int userId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("userId", userId);
+
+            var sql = @"
+                SELECT c.CHILD_NAME
+                FROM CHILD AS c
+                WHERE c.USER_ID = @userId
+                  AND c.DELETE_YN = FALSE
+                ORDER BY c.CHILD_ID
+                LIMIT 1";
+
+            return await _dapper.QueryFirstOrDefaultAsync<string?>(
+                new CommandDefinition(sql, dp, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
     /// 학원가의 살아 있는 대기 장소를 조회한다
     /// </summary>
     public async Task<List<ParkingLotRow>> GetParkingLotsAsync(int areaId,
@@ -874,9 +937,17 @@ public partial class PickupRepository
                        p.SLOT_DT AS SlotDt,
                        p.WALK_MIN AS WalkMin,
                        p.EXPIRE_DT AS ExpireDt,
+                       p.STOP_DT AS StopDt,
                        p.CUSTOM_LAT AS CustomLat,
                        p.CUSTOM_LNG AS CustomLng,
                        p.CUSTOM_NAME AS CustomName,
+                       p.PREV_PICKUP_SPOT_ID AS PrevPickupSpotId,
+                       ps.SPOT_NAME AS PrevSpotName,
+                       ps.LAT AS PrevSpotLat,
+                       ps.LNG AS PrevSpotLng,
+                       p.PREV_CUSTOM_LAT AS PrevCustomLat,
+                       p.PREV_CUSTOM_LNG AS PrevCustomLng,
+                       p.PREV_CUSTOM_NAME AS PrevCustomName,
                        ST_AsText(p.CUSTOM_WALK_PATH) AS CustomWalkPathWkt,
                        s.SPOT_NAME AS SpotName,
                        s.LAT AS SpotLat,
@@ -893,6 +964,9 @@ public partial class PickupRepository
                 LEFT JOIN PICKUP_SPOT AS s
                        ON s.PICKUP_SPOT_ID = p.PICKUP_SPOT_ID
                       AND s.DELETE_YN = FALSE
+                LEFT JOIN PICKUP_SPOT AS ps
+                       ON ps.PICKUP_SPOT_ID = p.PREV_PICKUP_SPOT_ID
+                      AND ps.DELETE_YN = FALSE
                 LEFT JOIN TIMETABLE_DAY AS td
                        ON td.TIMETABLE_DAY_ID = p.TIMETABLE_DAY_ID
                       AND td.DELETE_YN = FALSE
@@ -1417,7 +1491,7 @@ public partial class PickupRepository
                     new CommandDefinition(lockDaySql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
             }
 
-            // 3) 상태·끝난 시각·탑승 시각과 익명화(참조·하원 시각·도보 시간·임의 좌표 칸 NULL, DELETE_YN)를 한 UPDATE로 한다.
+            // 3) 상태·끝난 시각·탑승 시각과 익명화(참조·하원 시각·도보 시간·임의 좌표·직전 장소 칸 NULL, DELETE_YN)를 한 UPDATE로 한다.
             //    나누면 WALK_MIN·CUSTOM_*를 비우는 순간 CK_PICKUP_PLAN_01·02에 걸린다(schema.md 익명화)
             var closeSql = $@"
                 UPDATE PICKUP_PLAN
@@ -1434,6 +1508,10 @@ public partial class PickupRepository
                     CUSTOM_LNG = NULL,
                     CUSTOM_NAME = NULL,
                     CUSTOM_WALK_PATH = NULL,
+                    PREV_PICKUP_SPOT_ID = NULL,
+                    PREV_CUSTOM_LAT = NULL,
+                    PREV_CUSTOM_LNG = NULL,
+                    PREV_CUSTOM_NAME = NULL,
                     DELETE_YN = 1,
                     UPDATE_DT = @now,
                     UPDATE_USER = @updateUser

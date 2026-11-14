@@ -24,4 +24,16 @@ public class UpdatePickupPlanBoardDto
     /// </summary>
     [Required]
     public DateTime? eventDt { get; set; }
+
+    /// <summary>
+    /// 탑승한 차량의 현재 위도. 집까지 경로의 출발점이다. currentLng와 함께 보내고, 빼면 계획의 픽업 장소 좌표를 쓴다
+    /// </summary>
+    [Range(-90.0, 90.0)]
+    public decimal? currentLat { get; set; }
+
+    /// <summary>
+    /// 탑승한 차량의 현재 경도. currentLat와 함께 보낸다
+    /// </summary>
+    [Range(-180.0, 180.0)]
+    public decimal? currentLng { get; set; }
 }
