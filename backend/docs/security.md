@@ -55,7 +55,7 @@
   - 프록시 뒤에 배포하면 `UseForwardedHeaders`(신뢰할 프록시만, `KnownProxies`/`KnownNetworks`)를 먼저 설정해야 제한이 클라이언트별로 동작한다. 설정하지 않으면 모든 요청이 프록시 주소 하나로 묶인다.
 - 차량 로그인 토큰은 access와 refresh 둘이다. 발급은 `POST /api/v1/Auth/M/Token`(`api.md`)이다. [ADR-0013]
 - 개발 전용 `POST /api/v1/Auth/M/DevToken`(`{"userId":25}`)은 인증번호·QR 없이 그 계정의 차량 세션을 만들어 `Token`과 같은 본문을 준다. 개발 단계라 배포 서버(`Production`)에서도 동작한다(사용자 결정 2026-11-13). 계정 ID만 알면 누구나 토큰을 받으므로 출시 전에 막고, 그때 기기 ID가 `swagger-dev`인 차량 세션(refresh 90일)도 함께 끝낸다. 실제 기기 ID로 받은 세션은 일반 로그인과 구분되지 않아 남는다. 클라이언트(IP)마다 1분 30회다(넘으면 429). 프록시 뒤에서 `UseForwardedHeaders`가 없으면 모든 요청이 한 파티션으로 묶인다(T26). 기기 ID를 비우면 `swagger-dev`라 실제 차량 세션은 끝내지 않지만, 실제 기기 ID를 넣으면 그 기기의 그 계정 세션이 끝난다. Swagger가 Authorize 값을 새로고침 뒤에도 유지하는 것은 `Development`에서만이다.
-- 개발 전용 `POST /api/v1/Pickup/M/sign/DevPickupLink`(`{"pickupPlanSeq":n}`)는 아이 웹 테스트용 링크 토큰을 준다(T92). 문자를 보내지 않고, 로그인한 부모의 진행 중 계획에 링크 세션과 `LINK_SENT`(결과 코드 `DEV`)를 기록한 뒤 계획 `EXPIRE_DT`를 `9999-12-31 23:59:59`로 늦춘다. 그래서 탑승·취소로 끝나기 전까지 링크와 계획이 끝나지 않는다. 응답 토큰은 아이 위치를 볼 수 있는 원문이므로 `DevToken`과 함께 출시 전에 막는다. 재배정·장소 바꾸기·하원 시각 변경은 만료 시각을 다시 계산한다.
+- 개발 전용 `POST /api/v1/Pickup/M/sign/DevPickupLink`(`{"pickupPlanSeq":n}`)는 아이 웹 테스트용 링크 토큰을 준다(T92). 문자를 보내지 않고, 로그인한 부모의 진행 중 계획에 링크 세션과 `LINK_SENT`(결과 코드 `DEV`)를 기록한 뒤 계획 `EXPIRE_DT`를 `9999-12-31 23:59:59`로 늦춘다. 그래서 탑승·취소로 끝나기 전까지 링크와 계획이 끝나지 않는다. 응답 토큰은 아이 위치를 볼 수 있는 원문이므로 `DevToken`과 함께 출시 전에 막는다. 재배정·장소 바꾸기·하원 시각 변경은 만료 시각을 다시 계산한다. 날짜가 지나도 계획이 진행 중으로 남아 그 시간표의 삭제·학원·하원 시각 변경이 409가 되므로, 테스트가 끝나면 `DeletePickupPlan`으로 끝낸다. 취소 문자 판정(`ChildMayHaveLink`)은 결과 코드 `DEV`인 `LINK_SENT`를 세지 않아 이 취소는 문자를 보내지 않는다.
 
 ### 휴대폰 웹 세션
 
