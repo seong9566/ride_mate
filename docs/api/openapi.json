@@ -3509,6 +3509,9 @@
           "pickup": {
             "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_PickupPlanLocationDto"
           },
+          "previousPickup": {
+            "$ref": "#/components/schemas/RideMateService_Comm_Dto_v1_Pickup_Response_ChildPickupPreviousLocationDto"
+          },
           "walkPath": {
             "type": "array",
             "items": {
@@ -3525,6 +3528,11 @@
             "nullable": true
           },
           "slotDt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "stopDt": {
             "type": "string",
             "format": "date-time",
             "nullable": true
@@ -3578,6 +3586,33 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RideMateService_Comm_Dto_v1_Pickup_Response_ChildPickupPreviousLocationDto": {
+        "type": "object",
+        "properties": {
+          "locationType": {
+            "type": "string",
+            "nullable": true
+          },
+          "pickupSpotSeq": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "lat": {
+            "type": "number",
+            "format": "double"
+          },
+          "lng": {
+            "type": "number",
+            "format": "double"
           }
         },
         "additionalProperties": false
@@ -4081,6 +4116,11 @@
             "nullable": true
           },
           "expireDt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "stopDt": {
             "type": "string",
             "format": "date-time",
             "nullable": true
