@@ -65,6 +65,8 @@ public partial class TimetableDay
 
     public virtual ICollection<PickupPlan> PickupPlans { get; set; } = new List<PickupPlan>();
 
+    public virtual ICollection<PickupRecord> PickupRecords { get; set; } = new List<PickupRecord>();
+
     public virtual Timetable Timetable { get; set; } = null!;
 
     public virtual ICollection<TimetableException> TimetableExceptions { get; set; } = new List<TimetableException>();
