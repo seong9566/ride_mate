@@ -244,6 +244,43 @@ public class PickupController : ApiControllerBase
     }
 
     /// <summary>
+    /// 개발 전용 픽업 링크 발급
+    /// </summary>
+    /// <remarks>
+    /// 개발 단계라 배포 서버(Production)에서도 동작한다. 출시 전에 막는다. 아이 웹 테스트용이다.
+    /// 문자를 보내지 않는다. 로그인한 부모의 진행 중 계획(pickupPlanSeq)에 링크 세션을 만들고(있으면 같은 토큰), 접수된 LINK_SENT가 없으면 보낸 것으로 기록한다(결과 코드 DEV_LINK).
+    /// 계획 만료 시각을 9999-12-31 23:59:59로 늦춰 링크가 끝나지 않게 한다. 재배정·장소 바꾸기·하원 시각 변경은 만료 시각을 다시 계산하므로 그 뒤에는 다시 부른다. 탑승·취소로 계획이 끝나면 링크도 끝난다.
+    /// 계획이 만료되지 않으므로 날짜가 지나도 진행 중으로 남아 그 시간표의 삭제·학원·하원 시각 변경이 409가 된다. 테스트가 끝나면 DeletePickupPlan(pickupPlanSeq)으로 끝낸다(이 API로만 보낸 링크는 취소 문자를 보내지 않는다).
+    /// 응답 code: 200 정상(token·url·expireDt), 400 잘못된 입력, 401 인증 실패, 404 없거나 남의 계획·끝난 계획, 409 PLAN_CLOSED(끝났거나 만료 시각 지남)·NO_SPOT(만날 장소 없음), 500 서버 처리 실패
+    /// </remarks>
+    [Produces("application/json")]
+    [HttpPost]
+    [Route("v1/Pickup/M/sign/DevPickupLink")]
+    [SwaggerOperation(Summary = "개발 전용 픽업 링크 발급")]
+    [ProducesResponseType(typeof(ResponseModel<DevPickupLinkDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> DevPickupLink([FromBody] AddDevPickupLinkDto dto, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _pickupService.AddDevPickupLinkService(dto, cancellationToken).ConfigureAwait(false);
+            return ToActionResult(model);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // 앱이 요청을 끊었다. 오류로 기록하지 않는다
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
+
+    /// <summary>
     /// 정차 전 픽업 링크 다시 보내기
     /// </summary>
     [Produces("application/json")]
