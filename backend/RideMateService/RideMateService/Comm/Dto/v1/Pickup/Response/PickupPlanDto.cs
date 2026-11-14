@@ -74,6 +74,67 @@ public class PickupPlanDto
     /// 대기 중인 주차장 ID. 계획 상태가 WAITING일 때만 채우고 아니면 null(대기 뒤 출발하면 null)
     /// </summary>
     public int? parkingLotSeq { get; set; }
+
+    /// <summary>
+    /// 집으로 가는 길 화면 값. 탑승 기록(UpdatePickupPlanBoard) 응답에만 채우고 다른 API는 null
+    /// </summary>
+    public PickupHomeRouteDto? homeRoute { get; set; }
+}
+
+/// <summary>
+/// 탑승 기록 응답의 집으로 가는 길 화면 값
+/// </summary>
+public class PickupHomeRouteDto
+{
+    /// <summary>
+    /// 아이 이름. 읽지 못하면 null
+    /// </summary>
+    public string? childName { get; set; }
+
+    /// <summary>
+    /// 아이가 탑승한 시각(오프셋 없는 KST)
+    /// </summary>
+    public DateTime? boardedDt { get; set; }
+
+    /// <summary>
+    /// 탑승 장소 이름(기본 지점 이름 또는 임의 좌표의 장소 이름). 없으면 null
+    /// </summary>
+    public string? boardedPlaceName { get; set; }
+
+    /// <summary>
+    /// 집 주소. 집을 저장하지 않았으면 null
+    /// </summary>
+    public string? homeAddress { get; set; }
+
+    /// <summary>
+    /// 집 위도. 집을 저장하지 않았으면 null
+    /// </summary>
+    public decimal? homeLat { get; set; }
+
+    /// <summary>
+    /// 집 경도. 집을 저장하지 않았으면 null
+    /// </summary>
+    public decimal? homeLng { get; set; }
+
+    /// <summary>
+    /// 출발점에서 집까지 자동차로 걸리는 시간(분). 집 좌표나 출발점이 없으면 null
+    /// </summary>
+    public int? driveMin { get; set; }
+
+    /// <summary>
+    /// 출발점에서 집까지 거리(m). source가 ROUTE일 때만 채우고 ESTIMATE나 경로가 없으면 null
+    /// </summary>
+    public int? distanceM { get; set; }
+
+    /// <summary>
+    /// 집 도착 예정 시각(서버 현재 시각 + driveMin, 오프셋 없는 KST). driveMin이 null이면 null
+    /// </summary>
+    public DateTime? arrivalDt { get; set; }
+
+    /// <summary>
+    /// 경로 출처 (ROUTE: 카카오 자동차 길찾기, ESTIMATE: 직선 거리 추정). 경로가 없으면 null
+    /// </summary>
+    public string? source { get; set; }
 }
 
 /// <summary>

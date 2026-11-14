@@ -226,6 +226,7 @@ public class LivePlanRow
     public decimal? AcademyLng { get; set; }
     public int? ParkingLotId { get; set; }
     public int? PreferredSpotId { get; set; } // 계획 시간표의 우리 픽업 장소(TIMETABLE.PICKUP_SPOT_ID)
+    public DateTime? BoardDt { get; set; }
 }
 
 /// <summary>

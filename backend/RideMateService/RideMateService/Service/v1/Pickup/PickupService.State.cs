@@ -268,7 +268,8 @@ public partial class PickupService
                 return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 401 };
 
             // 2) 입력 검증 — 필수값, eventDt는 서버 현재 시각 + 1분을 넘지 않아야 한다. 과거 쪽은 계획을 읽은 뒤 계획의 픽업 날짜로 본다
-            if (dto?.pickupPlanSeq is null || dto.clientEventId is null || dto.eventDt is null)
+            if (dto?.pickupPlanSeq is null || dto.clientEventId is null || dto.eventDt is null
+                || (dto.currentLat is null) != (dto.currentLng is null))
                 return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
 
             var now = DateTime.Now;
@@ -282,7 +283,7 @@ public partial class PickupService
             // 3) 잠금 없이 소유·만료를 먼저 본다. 없거나 끝난 계획이면 같은 요청의 재전송인지 보고, 아니면 404
             var plan = await _pickupRepository.GetPlanByIdAsync(pickupPlanId, null, cancellationToken).ConfigureAwait(false);
             if (plan is null || plan.UserId is null || ClosedPlanStatuses.Contains(plan.Status))
-                return await TryReplayEndedAsync(plan, pickupPlanId, clientEventId, BoardEventTypes, cancellationToken)
+                return await TryReplayBoardAsync(plan, userId, dto, cancellationToken)
                            .ConfigureAwait(false)
                        ?? new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 404 };
 
@@ -291,8 +292,7 @@ public partial class PickupService
 
             // 같은 요청의 재전송은 만료 409보다 먼저 본다(네 API가 같은 순서다). BOARDED 이벤트는 계획을 끝내는 트랜잭션에서만 들어가므로
             // 보통은 위 끝난 계획 분기에서 걸린다
-            var replay = await TryReplayEndedAsync(plan, pickupPlanId, clientEventId, BoardEventTypes, cancellationToken)
-                .ConfigureAwait(false);
+            var replay = await TryReplayBoardAsync(plan, userId, dto, cancellationToken).ConfigureAwait(false);
             if (replay is not null)
                 return replay;
 
@@ -325,7 +325,7 @@ public partial class PickupService
             {
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
                 var ended = await _pickupRepository.GetPlanByIdAsync(pickupPlanId, null, cancellationToken).ConfigureAwait(false);
-                return await TryReplayEndedAsync(ended, pickupPlanId, clientEventId, BoardEventTypes, cancellationToken)
+                return await TryReplayBoardAsync(ended, userId, dto, cancellationToken)
                            .ConfigureAwait(false)
                        ?? new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 404 };
             }
@@ -342,7 +342,17 @@ public partial class PickupService
             if (sameEventType == EventBoarded)
             {
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return PlanOk(new PickupPlanDto { pickupPlanSeq = pickupPlanId, status = locked.Status, reassigned = false });
+                var boardedPlan = await _pickupRepository.GetPlanByIdAsync(pickupPlanId, null, cancellationToken)
+                    .ConfigureAwait(false);
+                return PlanOk(new PickupPlanDto
+                {
+                    pickupPlanSeq = pickupPlanId,
+                    status = locked.Status,
+                    reassigned = false,
+                    homeRoute = boardedPlan is null
+                        ? null
+                        : await BuildBoardReplayHomeRouteAsync(boardedPlan, userId, dto, cancellationToken).ConfigureAwait(false)
+                });
             }
 
             if (locked.ExpireDt <= thisTime)
@@ -358,7 +368,16 @@ public partial class PickupService
                 return new ResponseModel<PickupPlanDto> { message = "잘못된 요청입니다.", data = null, code = 400 };
             }
 
-            // 4-3) 계획 PK → TIMETABLE_DAY 순서로 끝내고 익명화한다. BOARD_DT는 그 끝내기 UPDATE 안에서 eventDt로 함께 쓴다.
+            // 4-3) 끝내면 계획이 익명화되므로 아이 이름·탑승 장소(이름·좌표)를 먼저 읽는다. 외부 호출은 커밋 뒤에 한다
+            var beforeClose = await _pickupRepository.GetPlanByIdAsync(pickupPlanId, dbTransaction, cancellationToken)
+                .ConfigureAwait(false);
+            var childName = await _pickupRepository.GetPlanChildNameAsync(pickupPlanId, dbTransaction, cancellationToken)
+                .ConfigureAwait(false);
+            var placeName = beforeClose?.PickupSpotId is not null ? beforeClose.SpotName : beforeClose?.CustomName;
+            var placeLat = beforeClose?.PickupSpotId is not null ? beforeClose.SpotLat : beforeClose?.CustomLat;
+            var placeLng = beforeClose?.PickupSpotId is not null ? beforeClose.SpotLng : beforeClose?.CustomLng;
+
+            // 4-4) 계획 PK → TIMETABLE_DAY 순서로 끝내고 익명화한다. BOARD_DT는 그 끝내기 UPDATE 안에서 eventDt로 함께 쓴다.
             //      BOARDED 이벤트에는 요청의 clientEventId와 eventDt가 들어간다
             if (!await _pickupRepository.ClosePickupPlanAsync(pickupPlanId, PlanStatusBoarded, true, thisTime, AuditUser,
                     dbTransaction, cancellationToken, clientEventId, eventDt, boardDt: eventDt).ConfigureAwait(false))
@@ -370,8 +389,21 @@ public partial class PickupService
             await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
             SignalPlanEnded(pickupPlanId);
 
-            // 끝난 계획은 개인정보 칸이 비어 있어 계획 ID와 상태만 돌려준다
-            return PlanOk(new PickupPlanDto { pickupPlanSeq = pickupPlanId, status = PlanStatusBoarded, reassigned = false });
+            // 끝난 계획은 개인정보 칸이 비어 있어 계획 ID와 상태, 익명화 전에 읽은 집으로 가는 길 값만 돌려준다
+            var origin = dto.currentLat is { } currentLat && dto.currentLng is { } currentLng
+                ? (currentLat, currentLng)
+                : placeLat is { } fallbackLat && placeLng is { } fallbackLng
+                    ? (fallbackLat, fallbackLng)
+                    : ((decimal Lat, decimal Lng)?)null;
+            var homeRoute = await BuildHomeRouteAsync(userId, childName, eventDt, placeName, origin, cancellationToken)
+                .ConfigureAwait(false);
+            return PlanOk(new PickupPlanDto
+            {
+                pickupPlanSeq = pickupPlanId,
+                status = PlanStatusBoarded,
+                reassigned = false,
+                homeRoute = homeRoute
+            });
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested && !IsDeadlock(ex)) // 요청 취소·교착은 그대로 올려보낸다
         {
@@ -799,6 +831,89 @@ public partial class PickupService
             // 취소 문자는 처음 요청에서만 보낸다. 재요청은 보내지 않으므로 NONE이다
             cancelNotice = sameEvent.EventType == EventCanceled ? CancelNoticeNone : null
         });
+    }
+
+    // 탑승 재요청. 최소 응답에 집으로 가는 길을 가능한 만큼 채운다(계획이 익명화된 뒤라 계획에 남은 값만 쓴다)
+    private async Task<ResponseModel<PickupPlanDto>?> TryReplayBoardAsync(LivePlanRow? plan, int userId,
+        UpdatePickupPlanBoardDto dto, CancellationToken cancellationToken)
+    {
+        var replay = await TryReplayEndedAsync(plan, dto.pickupPlanSeq!.Value, dto.clientEventId!.Value, BoardEventTypes,
+            cancellationToken).ConfigureAwait(false);
+        if (replay?.data is { } data && plan is not null)
+            data.homeRoute = await BuildBoardReplayHomeRouteAsync(plan, userId, dto, cancellationToken).ConfigureAwait(false);
+        return replay;
+    }
+
+    // childName은 로그인 계정의 아이, 탑승 시각은 BOARD_DT, 장소는 남은 PICKUP_SPOT_ID의 지점(임의 좌표였으면 null),
+    // 출발점은 요청 좌표 또는 남은 지점 좌표다
+    private async Task<PickupHomeRouteDto> BuildBoardReplayHomeRouteAsync(LivePlanRow plan, int userId,
+        UpdatePickupPlanBoardDto dto, CancellationToken cancellationToken)
+    {
+        string? childName = null;
+        try
+        {
+            childName = await _pickupRepository.GetUserChildNameAsync(userId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 이름을 못 읽어도 재요청은 성공이다
+        {
+            _logService.LogMessage(ex.ToString());
+        }
+
+        var origin = dto.currentLat is { } currentLat && dto.currentLng is { } currentLng
+            ? (currentLat, currentLng)
+            : plan.SpotLat is { } spotLat && plan.SpotLng is { } spotLng
+                ? (spotLat, spotLng)
+                : ((decimal Lat, decimal Lng)?)null;
+        return await BuildHomeRouteAsync(userId, childName, plan.BoardDt, plan.SpotName, origin, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    // 집으로 가는 길 값을 만든다. 호출자는 DB 트랜잭션·잠금을 쥐지 않아야 한다(카카오 길찾기를 부른다).
+    // 집 읽기나 경로 계산이 실패해도 탑승 기록은 성공이므로 그 칸만 비운다. 요청 취소는 그대로 올려보낸다
+    private async Task<PickupHomeRouteDto> BuildHomeRouteAsync(int userId, string? childName, DateTime? boardedDt,
+        string? boardedPlaceName, (decimal Lat, decimal Lng)? origin, CancellationToken cancellationToken)
+    {
+        var homeRoute = new PickupHomeRouteDto
+        {
+            childName = childName,
+            boardedDt = boardedDt,
+            boardedPlaceName = boardedPlaceName
+        };
+
+        try
+        {
+            var home = await _pickupRepository.GetUserHomeAsync(userId, cancellationToken).ConfigureAwait(false);
+            homeRoute.homeAddress = home?.DestAddress;
+            homeRoute.homeLat = home?.DestLat;
+            homeRoute.homeLng = home?.DestLng;
+            if (home?.DestLat is not { } homeLat || home.DestLng is not { } homeLng || origin is not { } from)
+                return homeRoute;
+
+            try
+            {
+                var route = await DriveRouteAsync(new[] { (from.Lat, from.Lng), (homeLat, homeLng) },
+                    new[] { string.Empty, string.Empty }, new int?[1], cancellationToken).ConfigureAwait(false);
+                homeRoute.driveMin = route.driveMin;
+                homeRoute.distanceM = route.distanceM;
+                homeRoute.source = route.source;
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                _logService.LogMessage(ex.ToString());
+                homeRoute.driveMin = DepartureGuideCalculator.EstimateMinutes(
+                    GeoDistance.Meters(from.Lat, from.Lng, homeLat, homeLng), _options.DriveKmh, _options.RoadFactor);
+                homeRoute.distanceM = null;
+                homeRoute.source = DriveRouteSourceEstimate;
+            }
+
+            homeRoute.arrivalDt = DateTime.Now.AddMinutes(homeRoute.driveMin!.Value);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            _logService.LogMessage(ex.ToString());
+        }
+
+        return homeRoute;
     }
 
     // 재요청 응답용 정차 판정. 거리와 단속 판정은 저장하지 않으므로 이벤트 유형과 DETAIL로 다시 만든다.

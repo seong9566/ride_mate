@@ -74,6 +74,17 @@ public interface IPickupRepository
     Task<UserHomeRow?> GetUserHomeAsync(int userId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 계획이 가리키는 살아 있는 아이의 이름을 돌려준다. 탑승 기록이 계획을 익명화하기 전에 읽는다. 없으면 null이다
+    /// </summary>
+    Task<string?> GetPlanChildNameAsync(int pickupPlanId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 로그인한 부모의 살아 있는 아이 한 명의 이름을 돌려준다(여럿이면 먼저 등록한 아이). 없으면 null이다
+    /// </summary>
+    Task<string?> GetUserChildNameAsync(int userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 학원가의 살아 있는 대기 장소를 조회한다
     /// </summary>
     Task<List<ParkingLotRow>> GetParkingLotsAsync(int areaId, CancellationToken cancellationToken = default);
