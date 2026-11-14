@@ -3,16 +3,16 @@ using System.Globalization;
 namespace RideMateService.Service.v1.Pickup;
 
 /// <summary>
-/// 아이에게 보내는 픽업 문자 본문. 차량 앱의 미리보기와 같은 문구여야 한다
+/// 아이에게 보내는 픽업 문자 본문. 차량 앱의 미리보기는 화면 시안 문구라 이 문구와 다르다
 /// </summary>
 public static class PickupLinkMessage
 {
     /// <summary>
-    /// 링크 문자
+    /// 링크 문자. 운전자 호칭은 넣지 않는다
     /// </summary>
-    public static string Link(string userName, DateTime etaDt, string spotName, string url)
+    public static string Link(DateTime etaDt, string spotName, string url)
     {
-        return $"[라이드메이트] {userName} 차 {etaDt.ToString("HH:mm", CultureInfo.InvariantCulture)} 도착! {spotName}에서 만나\n{url}";
+        return $"[라이드메이트] {etaDt.ToString("HH:mm", CultureInfo.InvariantCulture)} 도착! {spotName}에서 만나\n{url}";
     }
 
     /// <summary>
