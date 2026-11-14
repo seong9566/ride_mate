@@ -37,6 +37,9 @@ public interface IPickupLiveHub
     /// <summary>최소 보고 간격을 충족하면 위치를 저장하고 구독에 알린다</summary>
     bool TrySetVehiclePosition(int pickupPlanId, VehiclePosition position);
 
+    /// <summary>정차한 위치를 최소 보고 간격과 상관없이 저장하고 VehicleMoved를 알린다. 계획이 끝나거나 VehicleParkedMaxMin이 지날 때까지 오래됐다고 지우지 않는다</summary>
+    void SetParkedVehiclePosition(int pickupPlanId, VehiclePosition position);
+
     /// <summary>마지막 차량 위치를 돌려준다. 없으면 null</summary>
     VehiclePosition? GetVehiclePosition(int pickupPlanId);
 
@@ -109,7 +112,8 @@ public sealed class PickupLiveSubscription : IDisposable
 
 /// <summary>
 /// 서버 한 대 기준의 픽업 메모리 허브. 계획별 잠금으로 위치와 구독의 동시 접근을 보호한다
-/// 끝난 계획은 위치 보고가 404이므로 종료와 경합해 남은 위치도 최대 VehicleStaleSec + 60초 안에 지워진다
+/// 계획이 끝나면(NotifyPlanEnded) 위치와 정차 표시를 지운다. 정차 저장(커밋 뒤)과 탑승·취소의 종료 알림이 경합하면 끝난 계획에 정차 위치가 남을 수 있다
+/// 끝난 계획은 위치 보고가 404이므로, 일반 위치는 VehicleStaleSec + 60초 안에, 정차 위치는 정차 뒤 VehicleParkedMaxMin + 60초 안에 Sweep이 지운다
 /// </summary>
 public sealed class PickupLiveHub : IPickupLiveHub, IDisposable
 {
@@ -147,9 +151,15 @@ public sealed class PickupLiveHub : IPickupLiveHub, IDisposable
             var state = pair.Value;
             lock (state)
             {
+                // 정차한 위치는 VehicleStaleSec로 지우지 않고 정차 뒤 VehicleParkedMaxMin이 지나야 지운다(무한히 남지 않게 하는 상한)
                 if (state.Position is { } position
-                    && (DateTime.Now - position.ReceivedDt).TotalSeconds > _options.VehicleStaleSec)
+                    && (state.ParkedDt is { } parkedDt
+                        ? (DateTime.Now - parkedDt).TotalMinutes > _options.VehicleParkedMaxMin
+                        : (DateTime.Now - position.ReceivedDt).TotalSeconds > _options.VehicleStaleSec))
+                {
                     state.Position = null;
+                    state.ParkedDt = null;
+                }
                 RemoveIfEmpty(pair.Key, state);
             }
         }
@@ -173,6 +183,24 @@ public sealed class PickupLiveHub : IPickupLiveHub, IDisposable
                 state.Position = position;
                 Publish(state, PickupLiveSignal.VehicleMoved);
                 return true;
+            }
+        }
+    }
+
+    /// <summary>정차한 위치를 간격 제한 없이 저장하고 정차 표시를 남긴 뒤 VehicleMoved를 알린다</summary>
+    public void SetParkedVehiclePosition(int pickupPlanId, VehiclePosition position)
+    {
+        while (true)
+        {
+            var state = _plans.GetOrAdd(pickupPlanId, _ => new PlanState());
+            lock (state)
+            {
+                if (!IsCurrent(pickupPlanId, state))
+                    continue;
+                state.Position = position;
+                state.ParkedDt = position.ReceivedDt;
+                Publish(state, PickupLiveSignal.VehicleMoved);
+                return;
             }
         }
     }
@@ -244,7 +272,10 @@ public sealed class PickupLiveHub : IPickupLiveHub, IDisposable
                 if (!IsCurrent(pickupPlanId, state))
                     continue;
                 if (signal == PickupLiveSignal.PlanEnded)
+                {
                     state.Position = null;
+                    state.ParkedDt = null;
+                }
                 Publish(state, signal);
                 RemoveIfEmpty(pickupPlanId, state);
                 return;
@@ -277,6 +308,8 @@ public sealed class PickupLiveHub : IPickupLiveHub, IDisposable
     private sealed class PlanState
     {
         public VehiclePosition? Position { get; set; }
+        // 정차로 저장한 시각. 있으면 Sweep이 VehicleStaleSec 대신 VehicleParkedMaxMin으로 위치를 지운다
+        public DateTime? ParkedDt { get; set; }
         public List<PickupLiveSubscription> ChildSubscriptions { get; } = new();
         public List<PickupLiveSubscription> VehicleSubscriptions { get; } = new();
 

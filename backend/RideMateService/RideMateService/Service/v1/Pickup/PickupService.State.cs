@@ -232,6 +232,9 @@ public partial class PickupService
             }
 
             await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+            // 정차 위치를 먼저 두고 알려야 아이 화면의 한 번 깨어남에 STOP 도착 시각과 차 위치가 함께 실린다
+            if (_liveOptions.VehiclePositionEnabled)
+                _liveHub.SetParkedVehiclePosition(pickupPlanId, new VehiclePosition(lat, lng, null, NowToSecond()));
             SignalPlanChanged(pickupPlanId);
 
             var result = await BuildPlanDtoAsync(pickupPlanId, false, null, cancellationToken).ConfigureAwait(false);

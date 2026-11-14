@@ -8,7 +8,7 @@
 - 아이 휴대폰 웹(픽업 안내)은 서버와 SSE(`text/event-stream`)로 연결한다(`GET /api/v1/Pickup/W/DetailChildPickupStream`). WebSocket을 쓰지 않는다.
   - 브라우저 `EventSource`는 요청 헤더를 붙일 수 없다. 링크 토큰은 `X-Pickup-Token` 헤더로만 받기 때문에(T40), 웹은 `fetch` 스트리밍으로 읽는다.
 - 차량은 경로 시작부터 탑승 전까지 3초마다 위치와 내비 남은 시간을 보고한다(`PATCH /api/v1/Pickup/M/sign/UpdatePickupPlanPosition`). 서버는 그 값을 아이 화면에 바로 보낸다.
-- 차 위치는 서버 메모리(`IPickupLiveHub`, 싱글턴)에 계획마다 마지막 하나만 둔다. DB·로그·`PICKUP_EVENT`에 남기지 않는다. 계획이 끝나면 지운다.
+- 차 위치는 서버 메모리(`IPickupLiveHub`, 싱글턴)에 계획마다 마지막 하나만 둔다. DB·로그·`PICKUP_EVENT`에 남기지 않는다. 계획이 끝나면 지운다. 정차(`UpdatePickupPlanStop`)로 둔 위치는 오래돼도 계획이 끝나거나 `PickupLive:VehicleParkedMaxMin`(60분)이 지날 때까지 남겨 아이 화면에 정차한 차를 계속 보여 준다(T95).
 - 서비스는 계획 행이나 `PICKUP_EVENT`를 바꾸는 커밋 뒤에 허브에 "바뀜·끝남" 신호만 보낸다. 스트림 연결은 신호를 받으면 화면 데이터를 DB에서 다시 읽고, 직전과 다르면 보낸다. 이벤트 내용을 서비스마다 따로 만들지 않는다.
 - 놓친 이벤트를 다시 보내지 않는다(`Last-Event-ID` 재생 없음). 다시 연결하면 화면 전체 스냅샷부터 받는다.
 - 위치 기능은 `PickupLive:VehiclePositionEnabled`로 끌 수 있다. 기획의 위치정보 고지·동의 검토가 끝나기 전까지의 안전장치다.
