@@ -75,6 +75,11 @@ class SetupStore(context: Context) {
         get() = prefs.getString(K_NOTIFIED, null)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
         set(v) = prefs.edit().putString(K_NOTIFIED, v?.toString()).apply()
 
+    /** 이 차에 로그인한 계정이 있는지(Gleo 요청 허용 조건). 로그인 성공 시 true, "이 차에서 로그아웃" 시 false */
+    var loggedIn: Boolean
+        get() = prefs.getBoolean(K_LOGGED_IN, false)
+        set(v) = prefs.edit().putBoolean(K_LOGGED_IN, v).apply()
+
     val isSetupDone: Boolean get() = child != null && schedules != null && home != null
 
     private companion object {
@@ -83,5 +88,6 @@ class SetupStore(context: Context) {
         const val K_HOME = "home"
         const val K_DEPARTURE = "departure_cache"
         const val K_NOTIFIED = "notified_date"
+        const val K_LOGGED_IN = "logged_in"
     }
 }

@@ -1,5 +1,7 @@
 package com.example.pickup_hyundai.ui.pickup
 
+import com.example.pickup_hyundai.domain.voice.VoiceCommand
+import com.example.pickup_hyundai.ui.components.VoiceCommandBar
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -121,6 +123,10 @@ private fun ColumnScope.WaitingStayBody(info: WaitingStayInfo, onDepartNow: () -
             Text("주차 요금 $it", color = WayMeColors.TextSecondary, fontSize = 18.sp)
         }
         Spacer(Modifier.weight(1f))
+        VoiceCommandBar(screen = "WAITING_STAY", idleText = "\"출발\"이라고 말하면 바로 안내해요") { cmd ->
+            if (cmd == VoiceCommand.DEPART || cmd == VoiceCommand.YES) { onDepartNow(); true } else false
+        }
+        Spacer(Modifier.height(16.dp))
         PrimaryPanelButton("지금 출발", onDepartNow)
     }
 }
@@ -198,18 +204,11 @@ private fun ColumnScope.PickupGuideBody(info: PickupGuideInfo, naviGuiding: Bool
             StatusCard("배정된 픽업 장소로 안내해요", info.guideText, warning = false) { WalkerIcon(Modifier.size(24.dp)) }
         }
         Spacer(Modifier.weight(1f))
-        Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(WayMeColors.Card).padding(horizontal = 24.dp, vertical = 22.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            VoiceBars(active = naviGuiding)
-            Spacer(Modifier.width(16.dp))
-            // 길안내 음성은 Pleos 기본 내비가 담당(NaviHelper ROUTE_DRIVE 상태로 판단)
-            Text(
-                if (naviGuiding) "음성으로 안내하고 있어요" else "내비 경로를 준비하고 있어요",
-                color = WayMeColors.TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold,
-            )
-        }
+        // 이동 중 화면 하단 음성 아이콘: 탭하면 차량 마이크로 듣기(길안내 음성 자체는 Pleos 기본 내비가 담당)
+        VoiceCommandBar(
+            screen = "PICKUP_GUIDE",
+            idleText = if (naviGuiding) "음성으로 안내하고 있어요" else "내비 경로를 준비하고 있어요",
+        )
     }
 }
 

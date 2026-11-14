@@ -13,6 +13,8 @@
     <uses-permission android:name="pleos.car.permission.NAVI_ROUTE" />
     <!-- Pleos FusedLocation SDK: 차량 위치 (dangerous → 런타임 요청) -->
     <uses-permission android:name="pleos.car.permission.FUSED_LOCATION" />
+    <!-- Pleos SpeechToText SDK: 차량 마이크 음성 → 텍스트 (App Market 사전 승인 필요) -->
+    <uses-permission android:name="pleos.car.permission.STT_SERVICE" />
     <!-- V01 시동 알림: 알림 표시(Android 13+ 런타임 요청), 부팅(시동) 수신 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -30,12 +32,18 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:label="@string/title_activity_main"
             android:theme="@style/Theme.PickUp_Hyundai"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Gleo Interface: START_PICKUP(component=activity) — "글레오, 오늘 픽업 시작해 줘" -->
+            <intent-filter>
+                <action android:name="START_PICKUP" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
             <meta-data
                 android:name="distractionOptimized"
@@ -48,6 +56,15 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+        <!-- Gleo Interface: service 함수(조회·외부 요청)를 Gleo가 브로드캐스트로 호출 -->
+        <receiver
+            android:name=".platform.gleo.GleoActionReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="GET_PICKUP_STATUS" />
+                <action android:name="SEND_PICKUP_MESSAGE" />
             </intent-filter>
         </receiver>
         <!-- 알림 "닫기" 버튼 -->

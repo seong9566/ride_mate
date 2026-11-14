@@ -1,5 +1,14 @@
 package com.example.pickup_hyundai.ui.navigation
 
+import org.json.JSONObject
+import org.json.JSONArray
+import com.example.pickup_hyundai.platform.gleo.GleoStatus
+import com.example.pickup_hyundai.platform.gleo.GleoRequest
+import kotlinx.coroutines.withTimeoutOrNull
+import com.example.pickup_hyundai.platform.gleo.GleoResult
+import com.example.pickup_hyundai.platform.gleo.GleoProtocol
+import com.example.pickup_hyundai.platform.gleo.GleoBridge
+import com.example.pickup_hyundai.platform.gleo.GleoActionHandler
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
@@ -94,6 +103,34 @@ enum class Screen {
     LOGIN_QR /* A00 */, LOGIN_PHONE, LOGIN_OTP, LOGIN_CONFIRM /* 휴대폰 확인 */, SETUP_CHILD /* A01 */, SETUP_TIMETABLE, SETUP_HOME, SETUP_DONE,
 }
 
+/** 픽업 진행 단계 화면(Gleo 요청으로 단계를 옮길 때 뒤로 가기 대상이 되지 않도록 교체) */
+private val FLOW_SCREENS = setOf(
+    Screen.DEPARTURE, Screen.WAITING_PLACE, Screen.WAITING_DRIVE, Screen.WAITING_STAY,
+    Screen.PICKUP_GUIDE, Screen.SEND_LINK, Screen.PICKUP_STOP, Screen.HOME_DRIVE,
+)
+/** 아이를 태운 뒤 단계 */
+private val AFTER_PICKUP = setOf(Screen.HOME_DRIVE, Screen.RECORD)
+
+/** 운전자 확인이 필요한 Gleo 요청 */
+private class GleoConfirm(val label: String, val onConfirm: () -> Unit)
+
+private val BEFORE_DEPARTURE = setOf(Screen.TODAY_PICKUP, Screen.PICKUP_SPOT, Screen.DEPARTURE, Screen.WAITING_PLACE)
+
+/** Gleo 상태 안내 첫 문장(영어: Gleo Interface 규칙) */
+private val STAGE_TEXT = mapOf(
+    Screen.TODAY_PICKUP to "Today's pickup has not started yet.",
+    Screen.PICKUP_SPOT to "The pickup spot is being chosen.",
+    Screen.DEPARTURE to "The car has not left yet.",
+    Screen.WAITING_PLACE to "A waiting place is being chosen.",
+    Screen.WAITING_DRIVE to "The car is on the way to the waiting place.",
+    Screen.WAITING_STAY to "The car is waiting at the waiting place.",
+    Screen.PICKUP_GUIDE to "The car is on the way to the pickup spot.",
+    Screen.SEND_LINK to "The car is about to send the pickup spot to the child.",
+    Screen.PICKUP_STOP to "The car is stopped at the pickup spot and waiting for the child.",
+    Screen.HOME_DRIVE to "The child is in the car and on the way home.",
+    Screen.RECORD to "Today's pickup is complete.",
+)
+
 /** 도착 판정 반경(m). NaviHelper onDestinationArrived가 오지 않는 경우(에뮬레이터 등) FusedLocation으로 보조 판정 */
 private const val ARRIVAL_RADIUS_M = 50.0
 
@@ -119,14 +156,23 @@ internal fun WayMeAppContent(
     setupStore: SetupStore,
     /** 개발용: 특정 화면부터 시작(adb --es start_screen DEPARTURE 등) */
     startScreen: Screen = Screen.HOME,
+    /** 서버 연동 중이고 이 차에 로그인한 계정이 없으면 QR 로그인부터(뒤로 가기로 우회 불가) */
+    loginRequired: Boolean = false,
 ) {
     val context = LocalContext.current
     val navi = LocalNaviController.current
     val naviState = LocalNaviState.current
     val scope = rememberCoroutineScope()
     val session = remember { PickupSession() }
+    var gleoConfirm by remember { mutableStateOf<GleoConfirm?>(null) }
 
-    val backStack = remember { if (startScreen == Screen.HOME) mutableStateListOf(Screen.HOME) else mutableStateListOf(Screen.HOME, startScreen) }
+    val backStack = remember {
+        when {
+            loginRequired -> mutableStateListOf(Screen.LOGIN_QR)
+            startScreen == Screen.HOME -> mutableStateListOf(Screen.HOME)
+            else -> mutableStateListOf(Screen.HOME, startScreen)
+        }
+    }
     val current = backStack.last()
     fun push(s: Screen) { backStack.add(s) }
     fun pop() { if (backStack.size > 1) backStack.removeAt(backStack.lastIndex) }
@@ -152,6 +198,190 @@ internal fun WayMeAppContent(
         ?: NaviPlace("집(시연)", DemoScenario.HOME.lat, DemoScenario.HOME.lng)
 
     BackHandler(enabled = backStack.size > 1) { pop() }
+
+    // ── Gleo(현대 차량 AI) 요청 처리 ──
+    // Gleo가 말을 이해해 schema.json 함수를 부르면 여기서 실행하고 영어 문장으로 결과를 돌려준다.
+    // 로그인·중복 확인은 GleoBridge가 먼저 하고, 여기서는 "지금 단계에서 가능한 요청인지"를 확인한다.
+    /** 진행 단계 화면 사이 이동: 픽업 진행 중이면 맨 위 화면을 바꾸고, 홈 등에서는 새로 연다 */
+    fun goTo(s: Screen) {
+        val top = backStack.last()
+        if (top == s) return
+        if (top in FLOW_SCREENS) replaceTop(s) else push(s)
+    }
+    fun fail(fn: String, msg: String) = GleoResult(fn, GleoStatus.FAIL, msg)
+
+    suspend fun handleGleo(req: GleoRequest): GleoResult? {
+        val fn = req.functionName
+        val screen = backStack.last()
+        val started = screen in FLOW_SCREENS || screen in BEFORE_DEPARTURE
+        val pName = session.pickupName ?: "the pickup spot"
+        return when (fn) {
+            // 1) 일반 정보 조회: 로그인 확인 후 응답, 개인정보 최소화(아이 이름·주소·좌표 미포함)
+            GleoProtocol.FN_GET_PICKUP_STATUS -> {
+                if (!started && session.departureDt == null) return null // 진행 중인 픽업 없음 → 저장된 일정 안내
+                val nav = navi?.state?.value
+                val remainMin = nav?.remainSec?.takeIf { nav.routing }?.let { (it + 59) / 60 }
+                val minsToDeparture = session.departureDt?.let { Duration.between(now(), it).toMinutes() }
+                val msg = buildString {
+                    append(STAGE_TEXT[screen] ?: "Today's pickup is being prepared.")
+                    session.endTime?.let { append(" ${session.academyName ?: "The academy"} ends at ${KstFormat.hm(it)}.") }
+                    if (screen in BEFORE_DEPARTURE && minsToDeparture != null) {
+                        append(
+                            if (minsToDeparture > 0) " The recommended departure is ${KstFormat.hm(session.departureDt!!.toLocalTime())}, in $minsToDeparture minutes."
+                            else " It is time to leave now."
+                        )
+                    }
+                    remainMin?.let { append(" About $it minutes remain to the destination.") }
+                    session.pickupName?.let { append(" The pickup spot is $it.") }
+                    session.plan?.slotDt?.let { append(" The assigned arrival time is ${KstFormat.hm(it.toLocalTime())}.") }
+                }
+                val data = JSONArray().put(JSONObject().apply {
+                    put("stage", screen.name)
+                    session.academyName?.let { put("academyName", it) }
+                    session.endTime?.let { put("endTime", KstFormat.hm(it)) }
+                    session.departureDt?.let { put("departureTime", KstFormat.hm(it.toLocalTime())) }
+                    session.pickupName?.let { put("pickupSpot", it) }
+                    remainMin?.let { put("remainingMinutes", it) }
+                })
+                GleoResult(fn, GleoStatus.SUCCESS, msg, data)
+            }
+
+            // 2) 상태 변경: 현재 단계에서 유효한 요청만 실행(화면에 결과가 보임)
+            GleoProtocol.FN_START_PICKUP -> when (req.params.optString("step")) {
+                "TODAY" -> {
+                    if (screen in FLOW_SCREENS && session.departedAt != null) {
+                        return fail(fn, "Today's pickup is already in progress.")
+                    }
+                    val today = now().toLocalDate()
+                    val first = setupStore.schedules?.filter { it.pickupEnabled && it.day == today.dayOfWeek }?.minByOrNull { it.endTime }
+                    if (setupStore.schedules != null && first == null) return fail(fn, "There is no pickup scheduled for today.")
+                    session.reset()
+                    replaceAll(Screen.TODAY_PICKUP)
+                    GleoResult(
+                        fn, GleoStatus.SUCCESS,
+                        "Started today's pickup" + (first?.let { " for ${it.academyName}, which ends at ${KstFormat.hm(it.endTime)}" } ?: "") +
+                            ". Please choose a pickup spot on the RideMate screen.",
+                    )
+                }
+                "PICKUP_SPOT" -> {
+                    if (!started) return fail(fn, "Please start today's pickup first.")
+                    if (screen in AFTER_PICKUP) return fail(fn, "The child has already been picked up.")
+                    val p = session.pickupPoint ?: return fail(fn, "Please choose a pickup spot on the RideMate screen first.")
+                    val n = navi ?: return fail(fn, "The navigation is not connected yet.")
+                    n.requestRoute(NaviPlace(pName, p.lat, p.lng))
+                    session.departedAt = session.departedAt ?: now()
+                    goTo(Screen.PICKUP_GUIDE)
+                    GleoResult(fn, GleoStatus.SUCCESS, "Started navigation to $pName.")
+                }
+                "WAITING_PLACE" -> {
+                    if (!started) return fail(fn, "Please start today's pickup first.")
+                    if (screen !in BEFORE_DEPARTURE && screen != Screen.WAITING_DRIVE) return fail(fn, "A waiting place can only be chosen before leaving for the pickup spot.")
+                    // 추천 API가 느릴 수 있다: 3초 안에 못 받으면 추천 화면만 열고 실패로 답한다(Gleo 7초 취소 대비)
+                    val place = session.waitingPlace ?: withTimeoutOrNull(GleoProtocol.BACKEND_BUDGET_MS) {
+                        pickupRepository.getWaitingPlaces().getOrNull()?.places?.let { list -> list.firstOrNull { it.recommended } ?: list.firstOrNull() }
+                    }
+                    if (place == null) {
+                        goTo(Screen.WAITING_PLACE)
+                        return fail(fn, "Waiting place recommendations are taking longer than usual. Please choose one on the RideMate screen.")
+                    }
+                    val n = navi ?: return fail(fn, "The navigation is not connected yet.")
+                    n.requestRoute(NaviPlace(place.name, place.latitude, place.longitude))
+                    session.waitingPlace = place
+                    session.departedAt = session.departedAt ?: now()
+                    goTo(Screen.WAITING_DRIVE)
+                    GleoResult(fn, GleoStatus.SUCCESS, "Started navigation to the waiting place ${place.name}.")
+                }
+                "HOME" -> {
+                    // 집 경로 = 운전자 탑승 확인. 픽업 장소에 도착한 뒤에만 유효
+                    if (screen != Screen.PICKUP_STOP && session.arrivedAtPickupAt == null) {
+                        return fail(fn, "The car has not arrived at the pickup spot yet.")
+                    }
+                    val n = navi ?: return fail(fn, "The navigation is not connected yet.")
+                    n.requestRoute(
+                        setupStore.home?.let { NaviPlace("집", it.latitude, it.longitude, it.address) }
+                            ?: n.state.value.homeBookmark
+                            ?: NaviPlace("집(시연)", DemoScenario.HOME.lat, DemoScenario.HOME.lng)
+                    )
+                    session.boardedAt = session.boardedAt ?: now()
+                    goTo(Screen.HOME_DRIVE)
+                    GleoResult(fn, GleoStatus.SUCCESS, "Started navigation home.")
+                }
+                else -> GleoResult(
+                    fn, GleoStatus.ASKING, "Should I start today's pickup, or go to the pickup spot, a waiting place, or home?",
+                    JSONArray().put(JSONObject().put("missingField", "step")),
+                )
+            }
+
+            // 3) 외부 요청(아이에게 문자): 호출자가 확인되지 않으면 실행하지 않고 운전자가 화면에서 확인한 뒤 보낸다
+            GleoProtocol.FN_SEND_PICKUP_MESSAGE -> {
+                val type = req.params.optString("messageType")
+                val (valid, label) = when (type) {
+                    "PICKUP_SPOT" -> (screen == Screen.PICKUP_GUIDE || screen == Screen.SEND_LINK || screen == Screen.PICKUP_STOP) to "픽업 장소 링크"
+                    "ARRIVED" -> (screen == Screen.PICKUP_STOP) to "도착 알림"
+                    else -> return GleoResult(
+                        fn, GleoStatus.ASKING, "Should I send the pickup spot link, or remind the child that the car has arrived?",
+                        JSONArray().put(JSONObject().put("missingField", "messageType")),
+                    )
+                }
+                if (!valid) {
+                    return fail(fn, if (type == "ARRIVED") "The car has not arrived at the pickup spot yet." else "The pickup trip has not started yet.")
+                }
+                if (type == "PICKUP_SPOT") session.linkSentAt?.let {
+                    return GleoResult(fn, GleoStatus.SUCCESS, "The pickup spot link was already sent at ${KstFormat.hm(it.toLocalTime())}.")
+                }
+                suspend fun send(): Boolean =
+                    if (type == "ARRIVED") meetingRepository.remindArrived().isSuccess
+                    else meetingRepository.sendLink().onSuccess {
+                        session.linkSentAt = now()
+                        if (backStack.last() == Screen.SEND_LINK) {
+                            val fromGuide = backStack.size >= 2 && backStack[backStack.lastIndex - 1] == Screen.PICKUP_GUIDE
+                            if (fromGuide && session.arrivedAtPickupAt == null) pop() else replaceTop(Screen.PICKUP_STOP)
+                        }
+                    }.isSuccess
+                if (req.caller.verified) {
+                    val ok = withTimeoutOrNull(GleoProtocol.BACKEND_BUDGET_MS) { send() }
+                    return when (ok) {
+                        true -> GleoResult(fn, GleoStatus.SUCCESS, if (type == "ARRIVED") "I reminded the child that the car is waiting at $pName." else "I sent the pickup spot link ($pName) to the child.")
+                        false -> fail(fn, "Failed to send the message. Please try again.")
+                        null -> fail(fn, "Sending the message is taking longer than usual. Please check the RideMate screen.")
+                    }
+                }
+                gleoConfirm = GleoConfirm(label) {
+                    scope.launch { if (!send()) toast("$label 을(를) 보내지 못했어요") }
+                }
+                GleoResult(
+                    fn, GleoStatus.SUCCESS,
+                    "Please confirm on the RideMate screen to send the message to the child.",
+                    JSONArray().put(JSONObject().put("executed", false).put("waitingForDriverConfirmation", true)),
+                )
+            }
+
+            else -> null
+        }
+    }
+    DisposableEffect(Unit) {
+        GleoBridge.handler.value = GleoActionHandler { req -> handleGleo(req) }
+        onDispose { GleoBridge.handler.value = null }
+    }
+    // 확인되지 않은 호출자의 외부 요청 → 운전자 확인(디자인 외 요소: 보안상 필요)
+    gleoConfirm?.let { c ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { gleoConfirm = null },
+            title = { androidx.compose.material3.Text("Gleo 요청") },
+            text = { androidx.compose.material3.Text("아이에게 ${c.label}을(를) 보낼까요?") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { gleoConfirm = null; c.onConfirm() }) { androidx.compose.material3.Text("보내기") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { gleoConfirm = null }) { androidx.compose.material3.Text("취소") }
+            },
+        )
+    }
+
+    // 로그인 VM은 화면 밖에서도 QR 폴링 시작·중단을 관리해야 해서 여기서 만든다(로그인 화면들과 같은 인스턴스)
+    val authVm: AuthViewModel = viewModel(factory = AuthViewModel.Factory(authRepository))
+    val qrActive = current == Screen.LOGIN_QR || current == Screen.LOGIN_CONFIRM
+    LaunchedEffect(qrActive) { if (qrActive) authVm.startQr() else authVm.stopQr() }
 
     val pickupFactory = remember(pickupRepository) { PickupViewModelFactory(pickupRepository) }
     val meetingFactory = remember(meetingRepository) { MeetingViewModelFactory(meetingRepository) }
@@ -440,27 +670,43 @@ internal fun WayMeAppContent(
         }
 
         Screen.LOGIN_QR, Screen.LOGIN_PHONE, Screen.LOGIN_OTP, Screen.LOGIN_CONFIRM -> {
-            val vm: AuthViewModel = viewModel(factory = AuthViewModel.Factory(authRepository))
+            val vm = authVm
             val state by vm.state.collectAsState()
             LaunchedEffect(state.event) {
                 when (state.event) {
                     AuthEvent.OTP_SENT -> if (current != Screen.LOGIN_OTP) push(Screen.LOGIN_OTP)
-                    AuthEvent.CONFIRM_REQUESTED -> if (current != Screen.LOGIN_CONFIRM) push(Screen.LOGIN_CONFIRM)
-                    AuthEvent.LOGGED_IN_EXISTING -> replaceAll(Screen.HOME)
-                    AuthEvent.LOGGED_IN_SETUP_REQUIRED -> replaceAll(Screen.SETUP_CHILD)
-                    AuthEvent.LOGGED_OUT -> notReady("이 차에서 로그아웃(Mock)")
+                    AuthEvent.QR_VERIFIED -> if (current == Screen.LOGIN_QR) push(Screen.LOGIN_CONFIRM)
+                    AuthEvent.QR_RESET -> if (current == Screen.LOGIN_CONFIRM) pop()
+                    AuthEvent.SIGNUP_REQUIRED -> {
+                        // 차량에서는 가입 불가 → QR 로그인 화면으로
+                        val i = backStack.lastIndexOf(Screen.LOGIN_QR)
+                        if (i >= 0) {
+                            while (backStack.size > i + 1) pop()
+                        } else {
+                            push(Screen.LOGIN_QR)
+                        }
+                    }
+                    AuthEvent.LOGGED_IN_EXISTING -> { setupStore.loggedIn = true; replaceAll(Screen.HOME) }
+                    AuthEvent.LOGGED_IN_SETUP_REQUIRED -> { setupStore.loggedIn = true; replaceAll(Screen.SETUP_CHILD) }
+                    AuthEvent.LOGGED_OUT -> { setupStore.loggedIn = false; toast("이 차에서 로그아웃했어요") }
                     null -> Unit
                 }
                 if (state.event != null) vm.consumeEvent()
             }
             when (current) {
-                Screen.LOGIN_QR -> QrLoginScreen(
-                    state, onAccount = vm::loginWith, onPhoneLogin = { push(Screen.LOGIN_PHONE) }, onLogout = vm::logoutThisCar,
-                    onRefreshQr = vm::refreshQr, onQrScannedDemo = vm::qrScannedDemo,
-                )
+                Screen.LOGIN_QR -> {
+                    // 명세: 차량 출발 시 QR 취소(DRIVING) 후 폴링 중단
+                    val gear by rememberGearState()
+                    LaunchedEffect(gear) { if (gear != null && !gear.isParked()) vm.cancelForDriving() }
+                    QrLoginScreen(
+                        state, onAccount = vm::loginWith, onPhoneLogin = { push(Screen.LOGIN_PHONE) }, onLogout = vm::logoutThisCar,
+                        onRefreshQr = vm::refreshQr, onQrScannedDemo = vm::qrScannedDemo,
+                    )
+                }
                 Screen.LOGIN_CONFIRM -> {
-                    BackHandler { vm.cancelConfirm(); pop() }
-                    LoginConfirmScreen(state, onCancel = { vm.cancelConfirm(); pop() }, onApprovedDemo = vm::phoneApproved)
+                    // 취소 → 이 QR 취소(USER) 후 새 QR, QR_RESET 이벤트로 QR 화면 복귀
+                    BackHandler { vm.cancelConfirm() }
+                    LoginConfirmScreen(state, onCancel = vm::cancelConfirm, onApprovedDemo = vm::phoneApproved)
                 }
                 Screen.LOGIN_PHONE -> PhoneLoginScreen(state, vm::phoneDigit, vm::phoneBackspace, vm::phoneClear, vm::requestOtp, onBack = ::pop)
                 else -> OtpScreen(state, vm::otpDigit, vm::otpBackspace, vm::otpClear, onResend = vm::requestOtp, onConfirm = vm::verifyOtp, onBack = ::pop)

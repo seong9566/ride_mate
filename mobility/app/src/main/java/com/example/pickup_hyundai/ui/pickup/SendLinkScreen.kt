@@ -1,5 +1,7 @@
 package com.example.pickup_hyundai.ui.pickup
 
+import com.example.pickup_hyundai.domain.voice.VoiceCommand
+import com.example.pickup_hyundai.ui.components.VoiceCommandBar
 import com.example.pickup_hyundai.map.MapScenes
 import com.example.pickup_hyundai.map.MapPanel
 import androidx.compose.foundation.Canvas
@@ -122,7 +124,13 @@ private fun ColumnScope.Body(p: SendLinkPreview, state: SendLinkUiState, onSend:
             Text(it, color = WayMeColors.Warning, fontSize = 18.sp)
         }
         Spacer(Modifier.weight(1f))
-        Text("\"보내\" 또는 \"나중에\"라고 말해 주세요 (음성 연동 예정)", color = WayMeColors.TextTertiary, fontSize = 16.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
+        VoiceCommandBar(screen = "SEND_LINK", idleText = "\"보내\" 또는 \"나중에\"라고 말해 주세요") { cmd ->
+            when (cmd) {
+                VoiceCommand.SEND, VoiceCommand.YES -> { if (!state.sending) onSend(); true }
+                VoiceCommand.LATER -> { onLater(); true }
+                else -> false
+            }
+        }
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(Modifier.weight(1f)) { PrimaryPanelButton("나중에", onLater, enabled = !state.sending) }

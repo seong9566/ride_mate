@@ -28,6 +28,8 @@ android {
         // 카카오 네이티브 앱 키: local.properties(커밋 안 됨)의 KAKAO_NATIVE_APP_KEY. 없으면 지도 자리표시
         buildConfigField("String", "KAKAO_NATIVE_APP_KEY", "\"${localProps.getProperty("KAKAO_NATIVE_APP_KEY", "")}\"")
         // 라이드메이트 서버(정본 차량 API). 비어 있으면 Mock 저장소 사용
+        // Gleo 호출자로 신뢰할 패키지명(쉼표 구분). Pleos가 공식 확인해 주기 전까지 비워 둔다 → 외부 요청은 운전자 화면 확인 필요
+        buildConfigField("String", "GLEO_TRUSTED_PACKAGES", "\"${localProps.getProperty("GLEO_TRUSTED_PACKAGES", "")}\"")
         buildConfigField("String", "RIDEMATE_API_BASE_URL", "\"${localProps.getProperty("RIDEMATE_API_BASE_URL", "")}\"")
     }
 
@@ -66,6 +68,9 @@ dependencies {
     implementation(libs.pleos.vehicle)
     implementation(libs.pleos.navihelper)
     implementation(libs.pleos.fusedlocation)
+    implementation(libs.pleos.speechtotext)
+    // QR 로그인 이미지 생성(verification_uri_complete → QR)
+    implementation(libs.zxing.core)
     implementation(libs.kakao.map)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)

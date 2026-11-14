@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -24,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
@@ -60,17 +62,21 @@ fun QrLoginScreen(
     onRefreshQr: () -> Unit = {},
     onQrScannedDemo: () -> Unit = {},
 ) {
-    WayMeScaffold(map = { DevAdvanceChip("QR 스캔됨(시연)", onQrScannedDemo) }, panel = {
+    WayMeScaffold(map = { if (state.isMock) DevAdvanceChip("QR 진행(시연)", onQrScannedDemo) }, panel = {
         PanelHeader("로그인", isMock = state.isMock)
         Column(Modifier.weight(1f).padding(horizontal = 28.dp, vertical = 24.dp)) {
             Text("휴대폰으로 QR을 찍어 로그인해 주세요", color = WayMeColors.TextPrimary, fontSize = 28.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(20.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // QR 내용(로그인 URL·userCode)은 차량용 QR 발급 API가 정본에 없어 만들 수 없다 → 자리표시(가짜 QR을 그리지 않음)
+                // M-01 verification_uri_complete로 만든 QR(device_code는 넣지 않음)
                 Box(
-                    Modifier.size(170.dp).clip(RoundedCornerShape(14.dp)).background(Color.White),
+                    Modifier.size(170.dp).clip(RoundedCornerShape(14.dp)).background(Color.White).padding(8.dp),
                     contentAlignment = Alignment.Center,
-                ) { Text("QR\n(발급 API 연동 후)", color = Color(0xFF555555), fontSize = 14.sp, textAlign = TextAlign.Center) }
+                ) {
+                    val content = state.qrContent
+                    if (content != null && !state.isMock) QrImage(content, Modifier.fillMaxSize())
+                    else Text(if (state.isMock) "QR\n(Mock)" else "QR을 만드는 중…", color = Color(0xFF555555), fontSize = 14.sp, textAlign = TextAlign.Center)
+                }
                 Spacer(Modifier.width(28.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     listOf("휴대폰 카메라로 찍기", "라이드메이트에서 로그인", "차와 자동으로 연결").forEachIndexed { i, t ->
@@ -90,6 +96,14 @@ fun QrLoginScreen(
                     Modifier.size(36.dp).clip(CircleShape).clickable(onClick = onRefreshQr),
                     contentAlignment = Alignment.Center,
                 ) { RefreshIcon() }
+            }
+            val notice = when (state.qrStatus) {
+                "SCANNED" -> "휴대폰에서 QR을 찍었어요. 휴대폰에서 로그인을 이어가 주세요"
+                else -> state.qrNotice
+            }
+            notice?.let {
+                Spacer(Modifier.height(6.dp))
+                Text(it, color = if (state.qrStatus == "SCANNED") WayMeColors.Accent else WayMeColors.TextSecondary, fontSize = 17.sp)
             }
             if (state.accounts.isNotEmpty()) {
                 Spacer(Modifier.height(20.dp))
@@ -124,8 +138,15 @@ private fun AccountRow(a: LoginAccount, highlighted: Boolean, enabled: Boolean, 
         Box(Modifier.size(52.dp).clip(CircleShape).background(if (highlighted) WayMeColors.Accent else WayMeColors.Avatar))
         Spacer(Modifier.width(20.dp))
         Column(Modifier.weight(1f)) {
-            Text(a.maskedName, color = WayMeColors.TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Text("최근 사용", color = WayMeColors.TextSecondary, fontSize = 18.sp)
+            Text(a.userName, color = WayMeColors.TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text(
+                when {
+                    !a.canResume -> "QR로 다시 로그인 필요"
+                    a.recentlyUsed -> "최근 사용"
+                    else -> "이 차에 로그인됨"
+                },
+                color = WayMeColors.TextSecondary, fontSize = 18.sp,
+            )
         }
         ChevronIcon()
     }
@@ -230,7 +251,7 @@ fun OtpScreen(
 /**
  * A00 휴대폰 확인 대기 — 디자인: 로그인/휴대폰에서 확인하고 있어요.png(2026-11-14 신규)
  * 차와 휴대폰에 같은 4자리 숫자를 보여 주고 휴대폰에서 '로그인 허용'을 누르면 로그인된다.
- * 허용 결과를 차량이 받는 API가 정본에 없어 Mock(debug 빌드의 DEV 버튼으로 허용 처리).
+ * 차량은 M-02 폴링(qr_status=VERIFIED → 허용 대기)을 계속하고, 허용되면 토큰을 받아 로그인한다.
  */
 @Composable
 fun LoginConfirmScreen(
@@ -238,7 +259,7 @@ fun LoginConfirmScreen(
     onCancel: () -> Unit,
     onApprovedDemo: () -> Unit,
 ) {
-    WayMeScaffold(map = { DevAdvanceChip("휴대폰에서 허용(시연)", onApprovedDemo) }, panel = {
+    WayMeScaffold(map = { if (state.isMock) DevAdvanceChip("휴대폰에서 허용(시연)", onApprovedDemo) }, panel = {
         PanelHeader("로그인", isMock = state.isMock)
         Column(Modifier.weight(1f).padding(horizontal = 28.dp, vertical = 24.dp)) {
             Text("휴대폰에서 확인하고 있어요", color = WayMeColors.TextPrimary, fontSize = 28.sp, fontWeight = FontWeight.Bold)
@@ -264,7 +285,7 @@ fun LoginConfirmScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("남은 시간", color = WayMeColors.TextSecondary, fontSize = 20.sp, modifier = Modifier.weight(1f))
-                val sec = state.confirmRemainSec
+                val sec = state.qrRemainSec
                 Text(
                     if (sec > 0) mmss(sec) else "만료",
                     color = if (sec > 0) WayMeColors.Accent else WayMeColors.Warning, fontSize = 30.sp, fontWeight = FontWeight.Bold,
@@ -296,4 +317,22 @@ private fun RefreshIcon() {
         drawLine(Color.White, tip, Offset(tip.x, tip.y + size.height * 0.28f), w, cap = StrokeCap.Round)
         drawLine(Color.White, tip, Offset(tip.x - size.width * 0.28f, tip.y), w, cap = StrokeCap.Round)
     }
+}
+
+/** QR 이미지(ZXing). 내용이 바뀔 때만 다시 만든다 */
+@Composable
+private fun QrImage(content: String, modifier: Modifier = Modifier) {
+    val bitmap = androidx.compose.runtime.remember(content) {
+        runCatching {
+            val size = 512
+            val m = com.google.zxing.qrcode.QRCodeWriter().encode(
+                content, com.google.zxing.BarcodeFormat.QR_CODE, size, size,
+                mapOf(com.google.zxing.EncodeHintType.MARGIN to 0),
+            )
+            val px = IntArray(size * size) { i -> if (m.get(i % size, i / size)) android.graphics.Color.BLACK else android.graphics.Color.WHITE }
+            android.graphics.Bitmap.createBitmap(px, size, size, android.graphics.Bitmap.Config.ARGB_8888).asImageBitmap()
+        }.getOrNull()
+    }
+    if (bitmap != null) androidx.compose.foundation.Image(bitmap, contentDescription = "로그인 QR", modifier = modifier)
+    else Text("QR을 만들지 못했어요", color = Color(0xFF555555), fontSize = 14.sp)
 }

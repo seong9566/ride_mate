@@ -1,5 +1,7 @@
 package com.example.pickup_hyundai.ui.pickup
 
+import com.example.pickup_hyundai.domain.voice.VoiceCommand
+import com.example.pickup_hyundai.ui.components.VoiceCommandBar
 import com.example.pickup_hyundai.map.MapScenes
 import com.example.pickup_hyundai.map.MapPanel
 import androidx.compose.foundation.background
@@ -104,9 +106,13 @@ private fun ColumnScope.Body(plan: DeparturePlan, isParked: Boolean, onStartRout
             }
         }
         Spacer(Modifier.weight(1f))
+        // 음성 "출발": 주행 중에도 말로 경로를 시작할 수 있다(버튼은 P단에서만)
+        VoiceCommandBar(screen = "DEPARTURE", idleText = "\"출발\"이라고 말해 주세요") { cmd ->
+            if (cmd == VoiceCommand.DEPART || cmd == VoiceCommand.YES) { onStartRoute(plan); true } else false
+        }
+        Spacer(Modifier.height(16.dp))
         PrimaryPanelButton("경로 시작", onClick = { onStartRoute(plan) }, enabled = isParked)
         Spacer(Modifier.height(16.dp))
-        // 음성 "출발" 명령은 SpeechToText SDK 검증 후 연결(현재 미구현)
         Text(
             "정차(P) 중에만 누를 수 있어요 · 주행 중엔 \"출발\"이라고 말해 주세요",
             color = WayMeColors.TextSecondary, fontSize = 16.sp,

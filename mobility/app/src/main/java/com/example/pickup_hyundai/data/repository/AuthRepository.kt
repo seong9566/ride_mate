@@ -3,24 +3,37 @@ package com.example.pickup_hyundai.data.repository
 import com.example.pickup_hyundai.domain.model.AcademySchedule
 import com.example.pickup_hyundai.domain.model.ChildInfoInput
 import com.example.pickup_hyundai.domain.model.HomeAddress
-import com.example.pickup_hyundai.domain.model.LoginConfirm
 import com.example.pickup_hyundai.domain.model.LoginAccount
+import com.example.pickup_hyundai.domain.model.LoginOutcome
+import com.example.pickup_hyundai.domain.model.OtpRequest
+import com.example.pickup_hyundai.domain.model.OtpVerify
+import com.example.pickup_hyundai.domain.model.QrPoll
+import com.example.pickup_hyundai.domain.model.QrSession
 import com.example.pickup_hyundai.domain.model.SetupSummary
 
 /**
- * A00 로그인 / A01 초기 설정 데이터 소스.
- * 차량 앱의 QR 발급, 토큰, 계정 목록, 아이/시간표/집 등록 API (미정) -> Mock.
+ * A00 로그인 데이터 소스. 실제: RemoteAuthRepository(WAY:ME 인증 API M-01~M-08), 서버 설정이 없으면 MockAuthRepository.
  */
 interface AuthRepository {
+    val isMock: Boolean
+    /** M-06 이 차에 로그인한 계정 목록 */
     suspend fun getAccounts(): Result<List<LoginAccount>>
-    suspend fun loginWithAccount(id: String): Result<Unit>
-    /** 휴대폰 확인 요청. accountId = 저장된 계정 선택, null = QR 스캔으로 시작 */
-    suspend fun requestLoginConfirm(accountId: String?): Result<LoginConfirm>
-    /** 휴대폰에서 '로그인 허용'됨 → true면 초기 설정 필요(신규) */
-    suspend fun completeLoginConfirm(): Result<Boolean>
-    suspend fun requestOtp(phoneDigits: String): Result<Int>
-    suspend fun verifyOtp(phoneDigits: String, code: String): Result<Boolean>
+    /** M-04 계정 선택(저장된 refresh token으로 로그인) */
+    suspend fun loginWithAccount(id: String): Result<LoginOutcome>
+    /** M-01 QR 발급(이전 QR이 있으면 먼저 취소) */
+    suspend fun issueQr(): Result<QrSession>
+    /** M-02 승인 확인 */
+    suspend fun pollQr(): Result<QrPoll>
+    /** M-03 QR 취소. reason: USER / DRIVING */
+    suspend fun cancelQr(reason: String): Result<Unit>
+    /** M-07 차량 OTP 발송 */
+    suspend fun requestOtp(phoneDigits: String): Result<OtpRequest>
+    /** M-08 차량 OTP 확인 */
+    suspend fun verifyOtp(phoneDigits: String, code: String): Result<OtpVerify>
+    /** M-05 현재 계정 로그아웃 + 이 차의 토큰 삭제 */
     suspend fun logoutThisCar(): Result<Unit>
+    /** 시연(Mock 전용): QR 스캔·휴대폰 허용을 한 단계 진행 */
+    fun demoAdvance() {}
 }
 
 interface SetupRepository {

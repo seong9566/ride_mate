@@ -1,0 +1,58 @@
+{
+  "packageName": "com.example.pickup_hyundai",
+  "appDescription": "RideMate helps a parent pick up a child from an after-school academy by recommending the departure time, pickup spot and waiting place, and by guiding the trip with the vehicle navigation.",
+  "version": "1.0",
+  "actionCalls": [
+    {
+      "type": "function",
+      "function": {
+        "name": "GET_PICKUP_STATUS",
+        "description": "Gets today's child pickup status, including the academy end time, recommended departure time, remaining time and pickup spot.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        },
+        "component": "service"
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "SEND_PICKUP_MESSAGE",
+        "description": "Sends the child a text message with the pickup spot link, or reminds the child that the car has arrived at the pickup spot.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "messageType": {
+              "type": "string",
+              "enum": ["PICKUP_SPOT", "ARRIVED"],
+              "description": "PICKUP_SPOT sends the pickup spot link. ARRIVED reminds the child that the car is waiting at the pickup spot."
+            }
+          },
+          "required": ["messageType"]
+        },
+        "component": "service"
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "START_PICKUP",
+        "description": "Starts today's child pickup in RideMate, or moves the ongoing pickup trip to its next step with vehicle navigation.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "step": {
+              "type": "string",
+              "enum": ["TODAY", "PICKUP_SPOT", "WAITING_PLACE", "HOME"],
+              "description": "TODAY starts today's pickup. PICKUP_SPOT drives to the pickup spot. WAITING_PLACE drives to a waiting place near the pickup spot. HOME drives home after the child gets in the car."
+            }
+          },
+          "required": ["step"]
+        },
+        "component": "activity"
+      }
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 package com.example.pickup_hyundai.ui.pickup
 
+import com.example.pickup_hyundai.ui.components.VoiceCommandBar
 import com.example.pickup_hyundai.map.MapScenes
 import com.example.pickup_hyundai.map.MapPanel
 import androidx.compose.foundation.Canvas
@@ -63,6 +64,7 @@ fun WaitingDriveScreen(state: LoadState<WaitingDrive>, onRetry: () -> Unit, onDe
                     destinationName = state.data.place.name,
                     progress = state.data.progress,
                     guideText = "대기 장소로 안내하고 있어요",
+                    voiceScreen = "WAITING_DRIVE",
                 ) {
                     InfoCard(
                         title = state.data.place.feeText?.let { "예상 요금 $it" } ?: "요금 정보 없음",
@@ -95,6 +97,7 @@ fun HomeDriveScreen(state: LoadState<HomeDrive>, onRetry: () -> Unit, onDevAdvan
                     destinationName = "집 · ${state.data.homeName}",
                     progress = state.data.progress,
                     guideText = "집으로 안내하고 있어요",
+                    voiceScreen = "HOME_DRIVE",
                 ) {
                     val sub = listOfNotNull(
                         state.data.boardedAt?.let { KstFormat.hm(it.toLocalTime()) },
@@ -116,6 +119,7 @@ private fun ColumnScope.DrivingBody(
     destinationName: String,
     progress: DriveProgress,
     guideText: String,
+    voiceScreen: String = "DRIVING",
     card: @Composable () -> Unit,
 ) {
     Column(
@@ -144,8 +148,11 @@ private fun ColumnScope.DrivingBody(
         Spacer(Modifier.height(24.dp))
         card()
         Spacer(Modifier.weight(1f))
-        // 음성 안내 자체는 기본 내비가 수행. 이 바는 안내 중임을 알리는 상태 표시(내비가 ROUTE_DRIVE일 때만)
-        if (progress.guidanceActive) GuidanceStatusBar(guideText)
+        // 이동 중 화면 하단 음성 아이콘(탭하면 듣기). 길안내 음성 자체는 기본 내비가 수행
+        VoiceCommandBar(
+            screen = voiceScreen,
+            idleText = if (progress.guidanceActive) guideText else "말로 물어볼 수 있어요",
+        )
     }
 }
 

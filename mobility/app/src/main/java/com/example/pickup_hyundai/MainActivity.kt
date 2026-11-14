@@ -1,11 +1,16 @@
 package com.example.pickup_hyundai
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.example.pickup_hyundai.core.net.ApiClient
-import com.example.pickup_hyundai.core.net.ApiConfig
+import com.example.pickup_hyundai.core.net.HttpCore
+import com.example.pickup_hyundai.data.auth.AuthSession
+import com.example.pickup_hyundai.data.remote.AuthApi
+import com.example.pickup_hyundai.data.repository.AuthRepository
+import com.example.pickup_hyundai.data.repository.RemoteAuthRepository
 import com.example.pickup_hyundai.data.local.LocalRecordStore
 import com.example.pickup_hyundai.data.local.SetupStore
 import com.example.pickup_hyundai.data.remote.VehiclePickupApi
@@ -21,6 +26,10 @@ import com.example.pickup_hyundai.data.repository.PickupRepository
 import com.example.pickup_hyundai.data.repository.RemotePickupRepository
 import com.example.pickup_hyundai.domain.route.GeoPoint
 import com.example.pickup_hyundai.notify.PickupNotifier
+import com.example.pickup_hyundai.platform.gleo.GleoBridge
+import com.example.pickup_hyundai.platform.gleo.GleoCaller
+import com.example.pickup_hyundai.platform.gleo.GleoProtocol
+import com.example.pickup_hyundai.platform.gleo.GleoRequest
 import com.example.pickup_hyundai.platform.location.VehicleLocationSource
 import com.example.pickup_hyundai.platform.navi.NaviController
 import com.example.pickup_hyundai.ui.debug.SdkCheckHost
@@ -41,6 +50,8 @@ import java.time.LocalTime
  *                     LOGIN_QR, LOGIN_PHONE, LOGIN_OTP, LOGIN_CONFIRM, SETUP_CHILD, SETUP_TIMETABLE, SETUP_HOME, SETUP_DONE)
  *   아이 미확인 Mock : ... --es start_screen PICKUP_STOP --es mock_child NOT_OPENED
  *   시동 알림 시험   : ... --ez notify_test true   (debug 빌드만, 디자인 예시 문구)
+ *   로그인 상태 시험 : ... --ez dev_logged_in true (debug 빌드만, Gleo 요청 허용 조건)
+ *   Gleo 픽업 시작   : adb shell am start -a START_PICKUP -n com.example.pickup_hyundai/.MainActivity --es ACTION_PARAM '{"step":"TODAY"}' 
  */
 class MainActivity : ComponentActivity() {
 
@@ -62,13 +73,21 @@ class MainActivity : ComponentActivity() {
         val navi = NaviController(this)
         val location = VehicleLocationSource(this)
         val setupStore = SetupStore(this)
+        if (BuildConfig.DEBUG && intent.getBooleanExtra(EXTRA_DEV_LOGGED_IN, false)) setupStore.loggedIn = true
 
-        // Repository 주입 지점
-        val apiConfig = ApiConfig(BuildConfig.RIDEMATE_API_BASE_URL, BuildConfig.RIDEMATE_DEV_ACCESS_TOKEN)
+        // Repository 주입 지점: local.properties RIDEMATE_API_BASE_URL이 있으면 실제 서버, 없으면 Mock
+        val http = HttpCore(BuildConfig.RIDEMATE_API_BASE_URL)
+        val remote = http.isConfigured
+        val authSession = AuthSession(this, AuthApi(http), devAccessToken = BuildConfig.RIDEMATE_DEV_ACCESS_TOKEN)
+        val authRepository: AuthRepository = if (remote) RemoteAuthRepository(AuthApi(http), authSession) else MockAuthRepository()
+        // Gleo 요청 허용 조건(로그인 상태)을 실제 세션과 맞춘다
+        if (remote) setupStore.loggedIn = authSession.isLoggedIn
+        val loginRequired = remote && !authSession.isLoggedIn && intent.getStringExtra(EXTRA_START_SCREEN) == null
+
         val mockPickup = MockPickupRepository()
-        val pickupRepository: PickupRepository = if (apiConfig.isConfigured && !mockEmpty) {
+        val pickupRepository: PickupRepository = if (remote && !mockEmpty) {
             RemotePickupRepository(
-                api = VehiclePickupApi(ApiClient(apiConfig)),
+                api = VehiclePickupApi(ApiClient(http, authSession)),
                 fallback = mockPickup,
                 currentLocation = { location.state.value.location?.let { GeoPoint(it.latitude, it.longitude) } },
                 naviDriveMin = { navi.state.value.tripEtaSec?.let { (it + 59) / 60 } },
@@ -79,7 +98,6 @@ class MainActivity : ComponentActivity() {
         else LocalHomeRepository(setupStore, fallback = MockHomeRepository())
         val setupRepository = LocalSetupRepository(setupStore, MockSetupRepository(), naviHome = { navi.state.value.homeBookmark })
         val driveRepository = MockDriveRepository()
-        val authRepository = MockAuthRepository()
         val recordStore = LocalRecordStore(this)
         val meetingRepository = MockMeetingRepository(childScenario = intent.getStringExtra(EXTRA_MOCK_CHILD) ?: "LEAVING")
 
@@ -87,10 +105,29 @@ class MainActivity : ComponentActivity() {
             PickUp_HyundaiTheme {
                 if (sdkCheck) SdkCheckHost() else WayMeRoot(
                     homeRepository, pickupRepository, meetingRepository, driveRepository, recordStore,
-                    authRepository, setupRepository, setupStore, navi, location, startScreen,
+                    authRepository, setupRepository, setupStore, navi, location, startScreen, loginRequired,
                 )
             }
         }
+        handleGleoIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleGleoIntent(intent)
+    }
+
+    /**
+     * Gleo activity 함수(START_PICKUP). 액티비티 호출자는 referrer로만 짐작할 수 있고 위조 가능하므로 항상 '확인 안 됨'으로 취급한다.
+     * 화면이 준비되면 WayMeAppContent의 처리기가 실행하고, 결과는 GleoBridge가 7초 안에 브로드캐스트로 돌려준다.
+     */
+    private fun handleGleoIntent(intent: Intent?) {
+        val fn = intent?.action ?: return
+        if (fn != GleoProtocol.FN_START_PICKUP) return
+        val request = GleoRequest(fn, GleoProtocol.params(intent), GleoCaller(referrer?.host, verified = false))
+        intent.action = Intent.ACTION_MAIN // 화면 회전 등으로 다시 만들어질 때 같은 요청을 반복하지 않도록
+        GleoBridge.dispatch(this, request, waitForUi = true)
     }
 
     companion object {
@@ -99,5 +136,6 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_START_SCREEN = "start_screen"
         const val EXTRA_MOCK_CHILD = "mock_child"
         const val EXTRA_NOTIFY_TEST = "notify_test"
+        const val EXTRA_DEV_LOGGED_IN = "dev_logged_in"
     }
 }

@@ -3,26 +3,49 @@ package com.example.pickup_hyundai.data.repository
 import com.example.pickup_hyundai.domain.model.AcademySchedule
 import com.example.pickup_hyundai.domain.model.ChildInfoInput
 import com.example.pickup_hyundai.domain.model.HomeAddress
-import com.example.pickup_hyundai.domain.model.LoginConfirm
 import com.example.pickup_hyundai.domain.model.LoginAccount
+import com.example.pickup_hyundai.domain.model.LoginOutcome
+import com.example.pickup_hyundai.domain.model.OtpRequest
+import com.example.pickup_hyundai.domain.model.OtpVerify
+import com.example.pickup_hyundai.domain.model.QrPoll
+import com.example.pickup_hyundai.domain.model.QrSession
 import com.example.pickup_hyundai.domain.model.SetupSummary
 import java.time.DayOfWeek
 import java.time.LocalTime
 
-/** 디자인 예시 값 Mock. 인증번호는 Mock에서 어떤 6자리든 통과한다. */
+/**
+ * 서버 설정(RIDEMATE_API_BASE_URL)이 없을 때 쓰는 Mock(화면에 MOCK 표시).
+ * QR: debug 빌드의 DEV 버튼(demoAdvance)으로 PENDING → SCANNED → VERIFIED → 승인 순서로 진행. 인증번호는 아무 6자리 통과.
+ */
 class MockAuthRepository : AuthRepository {
+    override val isMock = true
+    private var qrStep = 0
+
     override suspend fun getAccounts() = Result.success(
         listOf(
-            LoginAccount("mom", "엄마", "김*주", recentlyUsed = true),
-            LoginAccount("dad", "아빠", "이*은", recentlyUsed = false),
+            LoginAccount("12", "엄마", recentlyUsed = true, canResume = true),
+            LoginAccount("9", "아빠", recentlyUsed = false, canResume = true),
         )
     )
-    override suspend fun loginWithAccount(id: String) = Result.success(Unit)
-    override suspend fun requestLoginConfirm(accountId: String?) = Result.success(LoginConfirm("4821", 180))
-    override suspend fun completeLoginConfirm() = Result.success(false)
-    override suspend fun requestOtp(phoneDigits: String) = Result.success(180)
-    override suspend fun verifyOtp(phoneDigits: String, code: String) = Result.success(true)
+    override suspend fun loginWithAccount(id: String) = Result.success(LoginOutcome(setupRequired = false))
+    override suspend fun issueQr(): Result<QrSession> {
+        qrStep = 0
+        return Result.success(QrSession("https://example.invalid/qr?code=MOCK", "0427", 180, 3))
+    }
+    override suspend fun pollQr(): Result<QrPoll> = Result.success(
+        when (qrStep) {
+            0 -> QrPoll.Pending("PENDING")
+            1 -> QrPoll.Pending("SCANNED")
+            2 -> QrPoll.Pending("VERIFIED")
+            else -> QrPoll.Approved(LoginOutcome(setupRequired = false))
+        }
+    )
+    override suspend fun cancelQr(reason: String) = Result.success(Unit)
+    override suspend fun requestOtp(phoneDigits: String): Result<OtpRequest> = Result.success(OtpRequest.Sent(180, 60))
+    override suspend fun verifyOtp(phoneDigits: String, code: String): Result<OtpVerify> =
+        Result.success(OtpVerify.Success(LoginOutcome(setupRequired = false)))
     override suspend fun logoutThisCar() = Result.success(Unit)
+    override fun demoAdvance() { qrStep = (qrStep + 1).coerceAtMost(3) }
 }
 
 class MockSetupRepository : SetupRepository {

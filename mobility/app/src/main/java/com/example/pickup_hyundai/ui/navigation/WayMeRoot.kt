@@ -32,6 +32,9 @@ import com.example.pickup_hyundai.notify.PickupNotifier
 import com.example.pickup_hyundai.platform.location.VehicleLocationSource
 import com.example.pickup_hyundai.platform.navi.LocalNaviController
 import com.example.pickup_hyundai.platform.navi.NaviController
+import com.example.pickup_hyundai.platform.voice.LocalVoice
+import com.example.pickup_hyundai.platform.voice.VoiceController
+import com.example.pickup_hyundai.platform.voice.VoiceInput
 
 private const val PERMISSION_FUSED_LOCATION = "pleos.car.permission.FUSED_LOCATION"
 
@@ -53,6 +56,7 @@ fun WayMeRoot(
     navi: NaviController,
     location: VehicleLocationSource,
     startScreen: Screen = Screen.HOME,
+    loginRequired: Boolean = false,
 ) {
     val context = LocalContext.current
     fun has(p: String) = ContextCompat.checkSelfPermission(context, p) == PackageManager.PERMISSION_GRANTED
@@ -74,11 +78,15 @@ fun WayMeRoot(
     }
     LaunchedEffect(granted) { if (granted) location.start() }
 
+    // 음성: Pleos SpeechToText(화면별 짧은 명령). 자유 문장은 Gleo Interface(GleoActionReceiver)가 처리
+    val voice = remember { VoiceController(VoiceInput(context)) }
+
     DisposableEffect(Unit) {
         navi.start()
         onDispose {
             navi.stop()
             location.stop()
+            voice.input.release()
         }
     }
 
@@ -91,10 +99,11 @@ fun WayMeRoot(
         LocalLocationState provides locState,
         LocalNaviState provides naviState,
         LocalNaviController provides navi,
+        LocalVoice provides voice,
     ) {
         WayMeAppContent(
             homeRepository, pickupRepository, meetingRepository, driveRepository, recordStore,
-            authRepository, setupRepository, setupStore, startScreen,
+            authRepository, setupRepository, setupStore, startScreen, loginRequired,
         )
     }
 }

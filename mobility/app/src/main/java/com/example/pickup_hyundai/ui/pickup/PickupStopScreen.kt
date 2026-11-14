@@ -1,5 +1,7 @@
 package com.example.pickup_hyundai.ui.pickup
 
+import com.example.pickup_hyundai.domain.voice.VoiceCommand
+import com.example.pickup_hyundai.ui.components.VoiceCommandBar
 import com.example.pickup_hyundai.map.MapScenes
 import com.example.pickup_hyundai.map.MapPanel
 import androidx.compose.foundation.Canvas
@@ -142,6 +144,15 @@ private fun ColumnScope.Body(
             Text(it, color = WayMeColors.Accent, fontSize = 18.sp)
         }
         Spacer(Modifier.weight(1f))
+        VoiceCommandBar(screen = "PICKUP_STOP", idleText = "\"탔어\" 또는 \"다시 알려줘\"라고 말해 주세요") { cmd ->
+            when (cmd) {
+                // 운전자가 말로 탑승을 확인 → 집 경로(§4-7 운전자 확인)
+                VoiceCommand.BOARDED -> { onConfirmBoarded(); true }
+                VoiceCommand.REMIND -> { if (!state.reminding) onRemind(); true }
+                else -> false
+            }
+        }
+        Spacer(Modifier.height(12.dp))
         if (boardingCandidate) {
             // 뒷문 열림→닫힘 감지 → 운전자 확인 후 집 경로 요청
             PrimaryPanelButton("아이가 탔어요 · 집으로 출발", onConfirmBoarded)
