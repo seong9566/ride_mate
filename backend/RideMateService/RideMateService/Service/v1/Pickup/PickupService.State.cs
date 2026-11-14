@@ -232,10 +232,11 @@ public partial class PickupService
             }
 
             await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
-            // 정차 위치를 먼저 두고 알려야 아이 화면의 한 번 깨어남에 STOP 도착 시각과 차 위치가 함께 실린다
+            // 계획 변경을 먼저 알린다. 아이 스트림은 다시 읽은 계획(stopDt)으로 차 위치 이벤트를 만들므로,
+            // 위치를 먼저 알리면 그 사이 깨어난 스트림이 정차 전 값(SLOT)으로 도착 시각을 한 번 보낼 수 있다
+            SignalPlanChanged(pickupPlanId);
             if (_liveOptions.VehiclePositionEnabled)
                 _liveHub.SetParkedVehiclePosition(pickupPlanId, new VehiclePosition(lat, lng, null, NowToSecond()));
-            SignalPlanChanged(pickupPlanId);
 
             var result = await BuildPlanDtoAsync(pickupPlanId, false, null, cancellationToken).ConfigureAwait(false);
             result.stopCheck = stopCheck;
