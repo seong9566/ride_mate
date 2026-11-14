@@ -130,8 +130,9 @@ public partial class PickupService
             if (soonAt is { } soon && soon < wake)
                 wake = soon;
             // 보낸 차 위치가 오래되는 시각에도 깨어나 위치 칸이 빈 vehicle을 보낸다(하트비트까지 기다리면 최대 15초 늦다).
-            // 받은 시각은 초 단위라 1초를 더해야 깨어난 시각에 확실히 오래된 위치로 판정된다
-            var staleAt = lastVehicleHadPosition && _liveHub.GetVehiclePosition(ticket.PickupPlanId) is { } held
+            // 받은 시각은 초 단위라 1초를 더해야 깨어난 시각에 확실히 오래된 위치로 판정된다.
+            // 정차한 계획은 위치가 오래돼도 채우므로 깨어나지 않는다(허브가 정차 위치를 지우면 다음 하트비트에 빈 vehicle을 보낸다)
+            var staleAt = lastVehicleHadPosition && !IsParkedWithinLimit(last.stopDt, DateTime.Now) && _liveHub.GetVehiclePosition(ticket.PickupPlanId) is { } held
                 ? held.ReceivedDt.AddSeconds(_liveOptions.VehicleStaleSec + 1) : (DateTime?)null;
             if (staleAt is { } staleWake && staleWake < wake)
                 wake = staleWake;
@@ -167,7 +168,7 @@ public partial class PickupService
             }
             if (moved && _liveOptions.VehiclePositionEnabled)
             {
-                var position = VehicleEvent(ticket.PickupPlanId, last.slotDt);
+                var position = VehicleEvent(ticket.PickupPlanId, last.slotDt, last.stopDt);
                 yield return new SseEvent("vehicle", position);
                 lastVehicleHadPosition = position.lat is not null;
             }
@@ -180,7 +181,7 @@ public partial class PickupService
             }
             if (lastVehicleHadPosition && (staleAt is null || now >= staleAt))
             {
-                var position = VehicleEvent(ticket.PickupPlanId, last.slotDt);
+                var position = VehicleEvent(ticket.PickupPlanId, last.slotDt, last.stopDt);
                 if (position.lat is null)
                 {
                     yield return new SseEvent("vehicle", position);
@@ -210,18 +211,19 @@ public partial class PickupService
         }
     }
 
-    private ChildPickupVehicleEventDto VehicleEvent(int pickupPlanId, DateTime? slotDt)
+    private ChildPickupVehicleEventDto VehicleEvent(int pickupPlanId, DateTime? slotDt, DateTime? stopDt)
     {
         // 응답 시각은 다른 시각 필드처럼 오프셋 없는 KST 초 단위로 내보낸다(DateTime.Now는 Kind가 Local이라 오프셋이 붙는다)
         var now = NowToSecond();
-        var position = ResolveVehicle(pickupPlanId, slotDt, now);
+        var position = ResolveVehicle(pickupPlanId, slotDt, stopDt, now);
         return new ChildPickupVehicleEventDto
         {
             lat = position.Vehicle?.lat,
             lng = position.Vehicle?.lng,
             reportedDt = position.Vehicle?.reportedDt,
             arrivalDt = position.ArrivalDt,
-            arrivalSource = position.Vehicle is null ? ArrivalSourceSlot : position.ArrivalSource,
+            arrivalSource = position.Vehicle is null && position.ArrivalSource != ArrivalSourceStop
+                ? ArrivalSourceSlot : position.ArrivalSource,
             serverDt = now
         };
     }

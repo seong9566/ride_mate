@@ -66,17 +66,17 @@ public class ChildPickupDto
     public DateTime? stopDt { get; set; }
 
     /// <summary>
-    /// 화면에 보여줄 도착 예정 시각. 신선한 차 위치의 etaSec가 있으면 보고 시각 + etaSec(NAVI), 그 밖에는 배정 시각(SLOT)
+    /// 화면에 보여줄 도착 예정 시각. 정차했으면 정차 시각(STOP), 아니면 신선한 차 위치의 etaSec가 있을 때 보고 시각 + etaSec(NAVI), 그 밖에는 배정 시각(SLOT)
     /// </summary>
     public DateTime? arrivalDt { get; set; }
 
     /// <summary>
-    /// 도착 예정의 근거. NAVI(신선한 위치의 보고 시각 + etaSec), SLOT(배정 시각). 둘 다 없으면 null
+    /// 도착 예정의 근거. STOP(정차 시각), NAVI(신선한 위치의 보고 시각 + etaSec), SLOT(배정 시각). 둘 다 없으면 null
     /// </summary>
     public string? arrivalSource { get; set; }
 
     /// <summary>
-    /// 차 현재 위치. 기능이 켜져 있고 보고 후 VehicleStaleSec(기본 30초) 이내일 때만 채우며 그 밖에는 null
+    /// 차 현재 위치. 기능이 켜져 있을 때만 채운다. 정차한 계획은 정차 위치(이후 보고가 있으면 그 위치)를 계획이 끝나거나 VehicleParkedMaxMin(기본 60분)이 지날 때까지 채우고, 그 밖에는 보고 후 VehicleStaleSec(기본 30초) 이내일 때만 채우며 나머지는 null
     /// </summary>
     public ChildPickupVehicleDto? vehicle { get; set; }
 

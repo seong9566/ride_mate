@@ -10,22 +10,22 @@ public class ChildPickupSnapshotEventDto : ChildPickupDto
     public string? change { get; set; }
 }
 
-/// <summary>차량 위치와 도착 예정 시각 이벤트. 위치가 신선하지 않으면 위치 필드는 null이고 도착 근거는 SLOT</summary>
+/// <summary>차량 위치와 도착 예정 시각 이벤트. 위치가 없거나 신선하지 않으면(정차한 계획은 제외) 위치 필드는 null이고 도착 근거는 SLOT. 정차했으면 도착 근거는 STOP</summary>
 public class ChildPickupVehicleEventDto
 {
-    /// <summary>차 위도. 신선한 위치가 없으면 null</summary>
+    /// <summary>차 위도. 보여 줄 위치가 없으면 null</summary>
     public decimal? lat { get; set; }
 
-    /// <summary>차 경도. 신선한 위치가 없으면 null</summary>
+    /// <summary>차 경도. 보여 줄 위치가 없으면 null</summary>
     public decimal? lng { get; set; }
 
-    /// <summary>서버 위치 수신 시각. 신선한 위치가 없으면 null</summary>
+    /// <summary>서버 위치 수신 시각. 보여 줄 위치가 없으면 null</summary>
     public DateTime? reportedDt { get; set; }
 
     /// <summary>차 도착 예정 시각</summary>
     public DateTime? arrivalDt { get; set; }
 
-    /// <summary>도착 예정 근거 NAVI 또는 SLOT</summary>
+    /// <summary>도착 예정 근거 STOP, NAVI 또는 SLOT</summary>
     public string? arrivalSource { get; set; }
 
     /// <summary>서버 현재 시각(KST)</summary>
