@@ -51,6 +51,11 @@ public class PickupPlanDto
     public DateTime? expireDt { get; set; }
 
     /// <summary>
+    /// 첫 정차 시각(오프셋 없는 KST). 정차 전이면 null
+    /// </summary>
+    public DateTime? stopDt { get; set; }
+
+    /// <summary>
     /// 이번 요청으로 장소나 시각이 바뀌었는지. 계획 만들기는 false
     /// </summary>
     public bool reassigned { get; set; }

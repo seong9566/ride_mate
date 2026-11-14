@@ -874,9 +874,17 @@ public partial class PickupRepository
                        p.SLOT_DT AS SlotDt,
                        p.WALK_MIN AS WalkMin,
                        p.EXPIRE_DT AS ExpireDt,
+                       p.STOP_DT AS StopDt,
                        p.CUSTOM_LAT AS CustomLat,
                        p.CUSTOM_LNG AS CustomLng,
                        p.CUSTOM_NAME AS CustomName,
+                       p.PREV_PICKUP_SPOT_ID AS PrevPickupSpotId,
+                       ps.SPOT_NAME AS PrevSpotName,
+                       ps.LAT AS PrevSpotLat,
+                       ps.LNG AS PrevSpotLng,
+                       p.PREV_CUSTOM_LAT AS PrevCustomLat,
+                       p.PREV_CUSTOM_LNG AS PrevCustomLng,
+                       p.PREV_CUSTOM_NAME AS PrevCustomName,
                        ST_AsText(p.CUSTOM_WALK_PATH) AS CustomWalkPathWkt,
                        s.SPOT_NAME AS SpotName,
                        s.LAT AS SpotLat,
@@ -893,6 +901,9 @@ public partial class PickupRepository
                 LEFT JOIN PICKUP_SPOT AS s
                        ON s.PICKUP_SPOT_ID = p.PICKUP_SPOT_ID
                       AND s.DELETE_YN = FALSE
+                LEFT JOIN PICKUP_SPOT AS ps
+                       ON ps.PICKUP_SPOT_ID = p.PREV_PICKUP_SPOT_ID
+                      AND ps.DELETE_YN = FALSE
                 LEFT JOIN TIMETABLE_DAY AS td
                        ON td.TIMETABLE_DAY_ID = p.TIMETABLE_DAY_ID
                       AND td.DELETE_YN = FALSE
@@ -1417,7 +1428,7 @@ public partial class PickupRepository
                     new CommandDefinition(lockDaySql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
             }
 
-            // 3) 상태·끝난 시각·탑승 시각과 익명화(참조·하원 시각·도보 시간·임의 좌표 칸 NULL, DELETE_YN)를 한 UPDATE로 한다.
+            // 3) 상태·끝난 시각·탑승 시각과 익명화(참조·하원 시각·도보 시간·임의 좌표·직전 장소 칸 NULL, DELETE_YN)를 한 UPDATE로 한다.
             //    나누면 WALK_MIN·CUSTOM_*를 비우는 순간 CK_PICKUP_PLAN_01·02에 걸린다(schema.md 익명화)
             var closeSql = $@"
                 UPDATE PICKUP_PLAN
@@ -1434,6 +1445,10 @@ public partial class PickupRepository
                     CUSTOM_LNG = NULL,
                     CUSTOM_NAME = NULL,
                     CUSTOM_WALK_PATH = NULL,
+                    PREV_PICKUP_SPOT_ID = NULL,
+                    PREV_CUSTOM_LAT = NULL,
+                    PREV_CUSTOM_LNG = NULL,
+                    PREV_CUSTOM_NAME = NULL,
                     DELETE_YN = 1,
                     UPDATE_DT = @now,
                     UPDATE_USER = @updateUser
