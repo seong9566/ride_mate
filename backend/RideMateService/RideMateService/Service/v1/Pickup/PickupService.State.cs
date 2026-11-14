@@ -906,7 +906,7 @@ public partial class PickupService
                 homeRoute.source = DriveRouteSourceEstimate;
             }
 
-            homeRoute.arrivalDt = DateTime.Now.AddMinutes(homeRoute.driveMin!.Value);
+            homeRoute.arrivalDt = NowToSecond().AddMinutes(homeRoute.driveMin!.Value);
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
