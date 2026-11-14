@@ -43,6 +43,12 @@ public interface IPickupService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 개발 전용 픽업 링크 발급. 문자를 보내지 않고 세션·LINK_SENT를 기록한 뒤 토큰과 링크를 돌려준다. 계획 만료 시각을 최대로 늦춘다
+    /// </summary>
+    Task<ResponseModel<DevPickupLinkDto>> AddDevPickupLinkService(AddDevPickupLinkDto dto,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 정차 전 픽업 링크 다시 보내기(같은 링크를 한 번 더 문자로 보낸다)
     /// </summary>
     Task<ResponseModel<PickupLinkSendDto>> AddPickupLinkResendService(AddPickupLinkResendDto dto,
