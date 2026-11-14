@@ -18,8 +18,15 @@ public partial class PickupService
     /// 픽업 완료 기록 저장. 시간표 요일의 살아 있는 기록이 있으면 그 행을 덮어쓰고 없으면 새로 넣는다.
     /// 끝난 픽업 계획은 읽지도 잇지도 않는다(ADR-0027)
     /// </summary>
-    public async Task<ResponseModel<PickupRecordDto>> AddPickupRecordService(AddPickupRecordDto dto,
+    public Task<ResponseModel<PickupRecordDto>> AddPickupRecordService(AddPickupRecordDto dto,
         CancellationToken cancellationToken = default)
+    {
+        return RetryOnDeadlockAsync(() => AddPickupRecordCoreAsync(dto, cancellationToken), cancellationToken);
+    }
+
+    // 교착은 RetryOnDeadlockAsync가 잠금부터 커밋까지 다시 실행하므로 여기서는 500으로 바꾸지 않고 올려보낸다
+    private async Task<ResponseModel<PickupRecordDto>> AddPickupRecordCoreAsync(AddPickupRecordDto dto,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -119,7 +126,7 @@ public partial class PickupService
             return RecordResult(200, "요청이 정상 처리되었습니다.", ToPickupRecordDto(dto.scheduleSeq.Value,
                 dto.dayOfWeek.Value, row));
         }
-        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 그대로 올려보낸다. 장소는 로그에 남기지 않는다
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && !IsDeadlock(ex)) // 요청 취소·교착은 그대로 올려보낸다. 장소는 로그에 남기지 않는다
         {
             _logService.LogMessage(ex.ToString());
 #if DEBUG

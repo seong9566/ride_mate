@@ -959,8 +959,7 @@ public partial class PickupRepository
                        a.LAT AS AcademyLat,
                        a.LNG AS AcademyLng,
                        p.PARKING_LOT_ID AS ParkingLotId,
-                       t.PICKUP_SPOT_ID AS PreferredSpotId,
-                       p.BOARD_DT AS BoardDt
+                       t.PICKUP_SPOT_ID AS PreferredSpotId
                 FROM PICKUP_PLAN AS p
                 LEFT JOIN PICKUP_SPOT AS s
                        ON s.PICKUP_SPOT_ID = p.PICKUP_SPOT_ID

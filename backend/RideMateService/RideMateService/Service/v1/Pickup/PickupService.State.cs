@@ -342,16 +342,12 @@ public partial class PickupService
             if (sameEventType == EventBoarded)
             {
                 await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                var boardedPlan = await _pickupRepository.GetPlanByIdAsync(pickupPlanId, null, cancellationToken)
-                    .ConfigureAwait(false);
                 return PlanOk(new PickupPlanDto
                 {
                     pickupPlanSeq = pickupPlanId,
                     status = locked.Status,
                     reassigned = false,
-                    homeRoute = boardedPlan is null
-                        ? null
-                        : await BuildBoardReplayHomeRouteAsync(boardedPlan, userId, dto, cancellationToken).ConfigureAwait(false)
+                    homeRoute = await BuildBoardReplayHomeRouteAsync(userId, dto, cancellationToken).ConfigureAwait(false)
                 });
             }
 
@@ -833,21 +829,21 @@ public partial class PickupService
         });
     }
 
-    // 탑승 재요청. 최소 응답에 집으로 가는 길을 가능한 만큼 채운다(계획이 익명화된 뒤라 계획에 남은 값만 쓴다)
+    // 탑승 재요청. 최소 응답에 집으로 가는 길을 채운다. 끝난 계획은 익명화되어 소유를 확인할 수 없으므로 계획에서 꺼낸 값은 쓰지 않는다
     private async Task<ResponseModel<PickupPlanDto>?> TryReplayBoardAsync(LivePlanRow? plan, int userId,
         UpdatePickupPlanBoardDto dto, CancellationToken cancellationToken)
     {
         var replay = await TryReplayEndedAsync(plan, dto.pickupPlanSeq!.Value, dto.clientEventId!.Value, BoardEventTypes,
             cancellationToken).ConfigureAwait(false);
-        if (replay?.data is { } data && plan is not null)
-            data.homeRoute = await BuildBoardReplayHomeRouteAsync(plan, userId, dto, cancellationToken).ConfigureAwait(false);
+        if (replay?.data is { } data)
+            data.homeRoute = await BuildBoardReplayHomeRouteAsync(userId, dto, cancellationToken).ConfigureAwait(false);
         return replay;
     }
 
-    // childName은 로그인 계정의 아이, 탑승 시각은 BOARD_DT, 장소는 남은 PICKUP_SPOT_ID의 지점(임의 좌표였으면 null),
-    // 출발점은 요청 좌표 또는 남은 지점 좌표다
-    private async Task<PickupHomeRouteDto> BuildBoardReplayHomeRouteAsync(LivePlanRow plan, int userId,
-        UpdatePickupPlanBoardDto dto, CancellationToken cancellationToken)
+    // 요청 계정의 값과 요청 값만 쓴다. childName은 로그인 계정의 아이, 집은 로그인 계정의 USER_INFO, 탑승 시각은 이 요청의 eventDt(앱이
+    // 처음과 같은 값을 다시 보낸다), 장소 이름은 null, 출발점은 요청 좌표가 있을 때만이다(없으면 경로 칸은 null)
+    private async Task<PickupHomeRouteDto> BuildBoardReplayHomeRouteAsync(int userId, UpdatePickupPlanBoardDto dto,
+        CancellationToken cancellationToken)
     {
         string? childName = null;
         try
@@ -861,10 +857,8 @@ public partial class PickupService
 
         var origin = dto.currentLat is { } currentLat && dto.currentLng is { } currentLng
             ? (currentLat, currentLng)
-            : plan.SpotLat is { } spotLat && plan.SpotLng is { } spotLng
-                ? (spotLat, spotLng)
-                : ((decimal Lat, decimal Lng)?)null;
-        return await BuildHomeRouteAsync(userId, childName, plan.BoardDt, plan.SpotName, origin, cancellationToken)
+            : ((decimal Lat, decimal Lng)?)null;
+        return await BuildHomeRouteAsync(userId, childName, dto.eventDt, null, origin, cancellationToken)
             .ConfigureAwait(false);
     }
 
