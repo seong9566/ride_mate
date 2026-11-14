@@ -806,6 +806,8 @@ public partial class RideMateContext : DbContext
 
             entity.ToTable("PICKUP_PLAN", tb => tb.HasComment("오늘 계획"));
 
+            entity.HasIndex(e => e.PrevPickupSpotId, "FK_PICKUP_PLAN_08");
+
             entity.HasIndex(e => new { e.PickupSpotId, e.SlotDt }, "IX_PICKUP_PLAN_01");
 
             entity.HasIndex(e => new { e.UserId, e.PickupDate }, "IX_PICKUP_PLAN_02");
@@ -881,6 +883,21 @@ public partial class RideMateContext : DbContext
             entity.Property(e => e.PickupSpotId)
                 .HasComment("배정 픽업 지점 ID")
                 .HasColumnName("PICKUP_SPOT_ID");
+            entity.Property(e => e.PrevCustomLat)
+                .HasPrecision(10, 7)
+                .HasComment("직전 장소가 부모가 고른 임의 좌표면 그 위도")
+                .HasColumnName("PREV_CUSTOM_LAT");
+            entity.Property(e => e.PrevCustomLng)
+                .HasPrecision(10, 7)
+                .HasComment("직전 장소가 부모가 고른 임의 좌표면 그 경도")
+                .HasColumnName("PREV_CUSTOM_LNG");
+            entity.Property(e => e.PrevCustomName)
+                .HasMaxLength(100)
+                .HasComment("직전 임의 좌표의 장소 이름")
+                .HasColumnName("PREV_CUSTOM_NAME");
+            entity.Property(e => e.PrevPickupSpotId)
+                .HasComment("장소를 바꾸기 직전 장소가 기본 지점이면 그 지점")
+                .HasColumnName("PREV_PICKUP_SPOT_ID");
             entity.Property(e => e.SlotDt)
                 .HasComment("배정 도착 일시")
                 .HasColumnType("datetime")
@@ -936,9 +953,13 @@ public partial class RideMateContext : DbContext
                 .HasForeignKey(d => d.ParkingLotId)
                 .HasConstraintName("FK_PICKUP_PLAN_07");
 
-            entity.HasOne(d => d.PickupSpot).WithMany(p => p.PickupPlans)
+            entity.HasOne(d => d.PickupSpot).WithMany(p => p.PickupPlanPickupSpots)
                 .HasForeignKey(d => d.PickupSpotId)
                 .HasConstraintName("FK_PICKUP_PLAN_06");
+
+            entity.HasOne(d => d.PrevPickupSpot).WithMany(p => p.PickupPlanPrevPickupSpots)
+                .HasForeignKey(d => d.PrevPickupSpotId)
+                .HasConstraintName("FK_PICKUP_PLAN_08");
 
             entity.HasOne(d => d.TimetableDay).WithMany(p => p.PickupPlans)
                 .HasForeignKey(d => d.TimetableDayId)

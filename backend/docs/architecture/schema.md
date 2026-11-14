@@ -628,6 +628,9 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `CUSTOM_LAT`·`CUSTOM_LNG` | DECIMAL(10,7) | Y | 부모가 고른 픽업 좌표. 기본 지점이면 NULL. 끝나면 NULL |
 | `CUSTOM_NAME` | VARCHAR(100) | Y | 임의 좌표의 장소 이름(카카오 주소 변환 결과). 끝나면 NULL |
 | `CUSTOM_WALK_PATH` | LINESTRING SRID 4326 | Y | 학원에서 임의 좌표까지 도보 경로 선. 카카오 도보 경로가 실패했으면 NULL. 끝나면 NULL. 스캐폴드가 건너뛰므로 엔티티에 없고 읽기·쓰기는 Dapper로 한다 |
+| `PREV_PICKUP_SPOT_ID` | INT | Y | FK → PICKUP_SPOT. 장소를 바꾸기 직전 장소가 기본 지점이면 그 지점. 장소를 바꾼 적이 없으면 NULL. 끝나면 NULL |
+| `PREV_CUSTOM_LAT`·`PREV_CUSTOM_LNG` | DECIMAL(10,7) | Y | 직전 장소가 부모가 고른 임의 좌표면 그 좌표. 장소를 바꾼 적이 없거나 직전 장소가 기본 지점이면 NULL. 끝나면 NULL |
+| `PREV_CUSTOM_NAME` | VARCHAR(100) | Y | 직전 임의 좌표의 장소 이름. 끝나면 NULL |
 | `EXPIRE_DT` | DATETIME | N | 만료 시각. `SLOT_DT`(없으면 그날 하원 시각)에 설정값(기본 1시간)을 더한다. 재배정하거나 하원 시각이 바뀌면 다시 계산한다 |
 | `STATUS` | VARCHAR(20) | N | 아래 코드 |
 | `PARKING_LOT_ID` | INT | Y | FK → PARKING_LOT. 대기 장소에 도착했을 때(`UpdatePickupPlanWait`) 그 주차장. 다른 주차장으로 옮기면 바꾸고, 출발해도 비우지 않는다 |
@@ -657,6 +660,8 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
   - `CK_PICKUP_PLAN_02`: `(PICKUP_SPOT_ID IS NULL AND CUSTOM_LAT IS NULL) OR WALK_MIN IS NOT NULL OR DELETE_YN = 1` — 장소가 있으면 `WALK_MIN`이 있다. 익명화된 행은 예외다
   - `CK_PICKUP_PLAN_03`: `(CUSTOM_LAT IS NULL) = (CUSTOM_LNG IS NULL) AND (CUSTOM_LAT IS NULL) = (CUSTOM_NAME IS NULL)` — 임의 좌표 칸 셋은 함께 있거나 함께 없다
   - `CK_PICKUP_PLAN_04`: `PICKUP_SPOT_ID IS NULL OR CUSTOM_LAT IS NULL` — 지점과 임의 좌표는 동시에 있을 수 없다
+  - `CK_PICKUP_PLAN_05`: `(PREV_CUSTOM_LAT IS NULL) = (PREV_CUSTOM_LNG IS NULL) AND (PREV_CUSTOM_LAT IS NULL) = (PREV_CUSTOM_NAME IS NULL)` — 직전 임의 좌표 칸 셋은 함께 있거나 함께 없다
+  - `CK_PICKUP_PLAN_06`: `PREV_PICKUP_SPOT_ID IS NULL OR PREV_CUSTOM_LAT IS NULL` — 직전 장소가 지점과 임의 좌표 둘일 수 없다
 - 인덱스: `(PICKUP_SPOT_ID, SLOT_DT)`, `(USER_ID, PICKUP_DATE)`
 - 상태, 시각 컬럼, `PICKUP_EVENT`는 같은 일을 함께 적는다. 셋은 항상 같은 트랜잭션에서 쓴다.
 
@@ -701,11 +706,11 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 
 **익명화.** 계획이 `BOARDED`·`EXPIRED`·`CANCELED`가 되면 같은 트랜잭션에서 아래를 한다. [ADR-0008]
 
-1. `USER_ID`·`CHILD_ID`·`TIMETABLE_DAY_ID`·`ACADEMY_ID`·`END_TIME`·`WALK_MIN`과 `CUSTOM_LAT`·`CUSTOM_LNG`·`CUSTOM_NAME`·`CUSTOM_WALK_PATH`를 NULL로 바꾼다.
+1. `USER_ID`·`CHILD_ID`·`TIMETABLE_DAY_ID`·`ACADEMY_ID`·`END_TIME`·`WALK_MIN`과 `CUSTOM_LAT`·`CUSTOM_LNG`·`CUSTOM_NAME`·`CUSTOM_WALK_PATH`와 `PREV_PICKUP_SPOT_ID`·`PREV_CUSTOM_LAT`·`PREV_CUSTOM_LNG`·`PREV_CUSTOM_NAME`을 NULL로 바꾼다.
 2. 그 계획의 `END_TIME_CHANGED`·`LEAVE_SCHEDULED` 이벤트는 `DETAIL`을 NULL로 바꾼다. 하원 시각과 아이가 정한 출발 시각이 들어 있기 때문이다.
 3. `DELETE_YN`을 켠다. `PICKUP_SESSION`·`PICKUP_EVENT`도 함께 켠다.
 
-계획 행의 1과 3은 한 UPDATE로 한다. 나눠서 하면 `WALK_MIN`을 비우는 순간 CHECK에 걸린다. `CUSTOM_LAT`·`CUSTOM_LNG`·`CUSTOM_NAME`도 한 UPDATE에서 함께 비운다(`CK_PICKUP_PLAN_03`). 임의 좌표 계획은 `PICKUP_SPOT_ID`가 NULL이고 `SLOT_DT`가 남으므로, `DELETE_YN`을 켜지 않고 좌표만 비우면 `CK_PICKUP_PLAN_01`에 걸린다.
+계획 행의 1과 3은 한 UPDATE로 한다. 나눠서 하면 `WALK_MIN`을 비우는 순간 CHECK에 걸린다. `CUSTOM_LAT`·`CUSTOM_LNG`·`CUSTOM_NAME`도 한 UPDATE에서 함께 비운다(`CK_PICKUP_PLAN_03`). `PREV_CUSTOM_LAT`·`PREV_CUSTOM_LNG`·`PREV_CUSTOM_NAME`도 마찬가지다(`CK_PICKUP_PLAN_05`). 임의 좌표 계획은 `PICKUP_SPOT_ID`가 NULL이고 `SLOT_DT`가 남으므로, `DELETE_YN`을 켜지 않고 좌표만 비우면 `CK_PICKUP_PLAN_01`에 걸린다.
 
 끝난 뒤 남는 값은 `AREA_ID`, `PICKUP_DATE`, `PICKUP_SPOT_ID`, `SLOT_DT`, `EXPIRE_DT`, `STATUS`, `PARKING_LOT_ID`, 시각 컬럼 다섯, 그리고 이벤트 이력이다. 임의 좌표 칸(`CUSTOM_*` 넷)은 남기지 않는다. 끝난 계획에 남는 장소 정보는 지점 ID뿐이다.
 
