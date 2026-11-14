@@ -36,6 +36,8 @@ public partial class RideMateContext : DbContext
 
     public virtual DbSet<PickupPlan> PickupPlans { get; set; }
 
+    public virtual DbSet<PickupRecord> PickupRecords { get; set; }
+
     public virtual DbSet<PickupSession> PickupSessions { get; set; }
 
     public virtual DbSet<PickupSpot> PickupSpots { get; set; }
@@ -968,6 +970,104 @@ public partial class RideMateContext : DbContext
             entity.HasOne(d => d.User).WithMany(p => p.PickupPlans)
                 .HasForeignKey(d => d.UserId)
                 .HasConstraintName("FK_PICKUP_PLAN_01");
+        });
+
+        modelBuilder.Entity<PickupRecord>(entity =>
+        {
+            entity.HasKey(e => e.PickupRecordId).HasName("PRIMARY");
+
+            entity.ToTable("PICKUP_RECORD", tb => tb.HasComment("픽업 완료 기록"));
+
+            entity.HasIndex(e => e.UserId, "IX_PICKUP_RECORD_01");
+
+            entity.HasIndex(e => new { e.TimetableDayId, e.ActiveFlag }, "UK_PICKUP_RECORD_01").IsUnique();
+
+            entity.Property(e => e.PickupRecordId)
+                .HasComment("픽업 완료 기록 ID")
+                .HasColumnName("PICKUP_RECORD_ID");
+            entity.Property(e => e.ActiveFlag)
+                .HasComment("살아 있는 행 표시 (UNIQUE용)")
+                .HasColumnName("ACTIVE_FLAG");
+            entity.Property(e => e.ArriveDt)
+                .HasComment("집 도착 시각")
+                .HasColumnType("datetime")
+                .HasColumnName("ARRIVE_DT");
+            entity.Property(e => e.AutoSaveYn)
+                .HasComment("다음부터 묻지 않고 저장 여부")
+                .HasColumnName("AUTO_SAVE_YN");
+            entity.Property(e => e.BoardDt)
+                .HasComment("탑승 시각")
+                .HasColumnType("datetime")
+                .HasColumnName("BOARD_DT");
+            entity.Property(e => e.BoardLat)
+                .HasPrecision(10, 7)
+                .HasComment("탑승 장소 위도. 지우면 NULL")
+                .HasColumnName("BOARD_LAT");
+            entity.Property(e => e.BoardLng)
+                .HasPrecision(10, 7)
+                .HasComment("탑승 장소 경도. 지우면 NULL")
+                .HasColumnName("BOARD_LNG");
+            entity.Property(e => e.BoardName)
+                .HasMaxLength(100)
+                .HasComment("탑승 장소 이름. 지우면 빈 문자열")
+                .HasColumnName("BOARD_NAME");
+            entity.Property(e => e.CreateDt)
+                .HasComment("생성 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("CREATE_DT");
+            entity.Property(e => e.CreateUser)
+                .HasMaxLength(50)
+                .HasComment("생성자")
+                .HasColumnName("CREATE_USER");
+            entity.Property(e => e.DeleteYn)
+                .HasComment("삭제 여부")
+                .HasColumnName("DELETE_YN");
+            entity.Property(e => e.DepartDt)
+                .HasComment("출발 시각")
+                .HasColumnType("datetime")
+                .HasColumnName("DEPART_DT");
+            entity.Property(e => e.DepartLat)
+                .HasPrecision(10, 7)
+                .HasComment("출발 장소 위도. 지우면 NULL")
+                .HasColumnName("DEPART_LAT");
+            entity.Property(e => e.DepartLng)
+                .HasPrecision(10, 7)
+                .HasComment("출발 장소 경도. 지우면 NULL")
+                .HasColumnName("DEPART_LNG");
+            entity.Property(e => e.DepartName)
+                .HasMaxLength(100)
+                .HasComment("출발 장소 이름. 지우면 빈 문자열")
+                .HasColumnName("DEPART_NAME");
+            entity.Property(e => e.TimetableDayId)
+                .HasComment("시간표 요일 ID")
+                .HasColumnName("TIMETABLE_DAY_ID");
+            entity.Property(e => e.TotalMin)
+                .HasComment("총 소요 분")
+                .HasColumnName("TOTAL_MIN");
+            entity.Property(e => e.UpdateDt)
+                .HasComment("수정 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("UPDATE_DT");
+            entity.Property(e => e.UpdateUser)
+                .HasMaxLength(50)
+                .HasComment("수정자")
+                .HasColumnName("UPDATE_USER");
+            entity.Property(e => e.UserId)
+                .HasComment("계정 ID")
+                .HasColumnName("USER_ID");
+            entity.Property(e => e.WaitMin)
+                .HasComment("대기 분")
+                .HasColumnName("WAIT_MIN");
+
+            entity.HasOne(d => d.TimetableDay).WithMany(p => p.PickupRecords)
+                .HasForeignKey(d => d.TimetableDayId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_PICKUP_RECORD_02");
+
+            entity.HasOne(d => d.User).WithMany(p => p.PickupRecords)
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_PICKUP_RECORD_01");
         });
 
         modelBuilder.Entity<PickupSession>(entity =>

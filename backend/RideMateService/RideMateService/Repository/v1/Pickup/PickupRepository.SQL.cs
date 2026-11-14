@@ -158,6 +158,69 @@ public partial class PickupRepository
     }
 
     /// <summary>
+    /// 계획이 가리키는 살아 있는 아이의 이름을 돌려준다. 탑승 기록이 계획을 익명화하기 전에 읽는다. 없으면 null이다
+    /// </summary>
+    public async Task<string?> GetPlanChildNameAsync(int pickupPlanId, IDbTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("pickupPlanId", pickupPlanId);
+
+            var sql = @"
+                SELECT c.CHILD_NAME
+                FROM PICKUP_PLAN AS p
+                INNER JOIN CHILD AS c
+                        ON c.CHILD_ID = p.CHILD_ID
+                       AND c.DELETE_YN = FALSE
+                WHERE p.PICKUP_PLAN_ID = @pickupPlanId";
+
+            return await _dapper.QueryFirstOrDefaultAsync<string?>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 로그인한 부모의 살아 있는 아이 한 명의 이름을 돌려준다(여럿이면 먼저 등록한 아이). 없으면 null이다
+    /// </summary>
+    public async Task<string?> GetUserChildNameAsync(int userId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("userId", userId);
+
+            var sql = @"
+                SELECT c.CHILD_NAME
+                FROM CHILD AS c
+                WHERE c.USER_ID = @userId
+                  AND c.DELETE_YN = FALSE
+                ORDER BY c.CHILD_ID
+                LIMIT 1";
+
+            return await _dapper.QueryFirstOrDefaultAsync<string?>(
+                new CommandDefinition(sql, dp, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
     /// 학원가의 살아 있는 대기 장소를 조회한다
     /// </summary>
     public async Task<List<ParkingLotRow>> GetParkingLotsAsync(int areaId,

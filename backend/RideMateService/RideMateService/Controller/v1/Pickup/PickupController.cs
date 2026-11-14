@@ -66,6 +66,86 @@ public class PickupController : ApiControllerBase
     }
 
     /// <summary>
+    /// 픽업 완료 기록 저장
+    /// </summary>
+    /// <remarks>
+    /// 집에 도착해 "오늘 픽업 완료!" 화면에서 저장할 때 그날 기록을 보낸다. 시간표 요일마다 한 건만 두고 다시 저장하면 덮어쓴다. 끝난 픽업 계획과 잇지 않는다.
+    /// 요청: scheduleSeq·dayOfWeek(1월~7일)·arriveDt·totalMin·waitMin·departName·departLat·departLng·departDt·boardName·boardLat·boardLng·boardDt·autoSave 모두 필수.
+    /// 응답 code: 200 저장한 기록, 400 잘못된 입력(waitMin이 totalMin보다 큼·시각 순서가 departDt ≤ boardDt ≤ arriveDt가 아님·arriveDt가 서버 현재 시각 + 1분보다 뒤이거나 24시간보다 앞),
+    /// 401 인증 실패·계정 없음, 404 내 시간표가 아니거나 삭제됐거나 그 요일이 없음, 500 서버 처리 실패
+    /// </remarks>
+    [Consumes("application/json")]
+    [Produces("application/json")]
+    [HttpPost]
+    [Route("v1/Pickup/M/sign/AddPickupRecord")]
+    [SwaggerOperation(Summary = "픽업 완료 기록 저장")]
+    [ProducesResponseType(typeof(ResponseModel<PickupRecordDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ResponseModel<PickupRecordDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ResponseModel<PickupRecordDto>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ResponseModel<PickupRecordDto>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> AddPickupRecord([FromBody] AddPickupRecordDto dto, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _pickupService.AddPickupRecordService(dto, cancellationToken).ConfigureAwait(false);
+            return ToActionResult(model);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // 앱이 요청을 끊었다. 오류로 기록하지 않는다
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
+
+    /// <summary>
+    /// 픽업 완료 기록 조회
+    /// </summary>
+    /// <remarks>
+    /// 같은 일정·요일의 다음 픽업에서 앱이 직전 기록을 읽어 쓴다.
+    /// 요청 query: scheduleSeq·dayOfWeek(1월~7일) 필수.
+    /// 응답 code: 101 시간표 요일은 있으나 기록 없음(data null), 200 정상, 400 잘못된 입력, 401 인증 실패·계정 없음, 404 내 시간표가 아니거나 삭제됐거나 그 요일이 없음, 500 서버 처리 실패
+    /// </remarks>
+    [Produces("application/json")]
+    [HttpGet]
+    [Route("v1/Pickup/M/sign/DetailPickupRecord")]
+    [SwaggerOperation(Summary = "픽업 완료 기록 조회")]
+    [ProducesResponseType(typeof(ResponseModel<PickupRecordDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ResponseModel<PickupRecordDto>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ResponseModel<PickupRecordDto>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ResponseModel<PickupRecordDto>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> DetailPickupRecord([FromQuery] DetailPickupRecordQueryDto dto, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var model = await _pickupService.DetailPickupRecordService(dto, cancellationToken).ConfigureAwait(false);
+            return ToActionResult(model);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // 앱이 요청을 끊었다. 오류로 기록하지 않는다
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        catch (Exception ex)
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            return Problem("서버에서 요청을 처리하지 못하였습니다. 잠시후 다시 시도해주세요.", statusCode: 500);
+        }
+    }
+
+    /// <summary>
     /// 오늘의 픽업 경로 조회
     /// </summary>
     /// <remarks>

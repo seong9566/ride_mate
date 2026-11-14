@@ -401,3 +401,23 @@ public class UserHomeRow
     public decimal? DestLat { get; set; }
     public decimal? DestLng { get; set; }
 }
+
+/// <summary>
+/// 살아 있는 픽업 완료 기록 한 건
+/// </summary>
+public class PickupRecordRow
+{
+    public DateTime ArriveDt { get; set; }
+    public int TotalMin { get; set; }
+    public int WaitMin { get; set; }
+    public string DepartName { get; set; } = string.Empty;
+    public decimal DepartLat { get; set; }
+    public decimal DepartLng { get; set; }
+    public DateTime DepartDt { get; set; }
+    public string BoardName { get; set; } = string.Empty;
+    public decimal BoardLat { get; set; }
+    public decimal BoardLng { get; set; }
+    public DateTime BoardDt { get; set; }
+    public bool AutoSaveYn { get; set; }
+    public DateTime UpdateDt { get; set; }
+}

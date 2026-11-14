@@ -167,4 +167,16 @@ public interface IPickupService
     /// </summary>
     Task<ResponseModel<AddPickupSpotRequestResultDto>> AddPickupSpotRequestService(AddPickupSpotRequestDto dto,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 픽업 완료 기록 저장. 같은 시간표 요일의 기록이 있으면 덮어쓴다
+    /// </summary>
+    Task<ResponseModel<PickupRecordDto>> AddPickupRecordService(AddPickupRecordDto dto,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 픽업 완료 기록 조회. 기록이 없으면 code 101
+    /// </summary>
+    Task<ResponseModel<PickupRecordDto>> DetailPickupRecordService(DetailPickupRecordQueryDto dto,
+        CancellationToken cancellationToken = default);
 }
