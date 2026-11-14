@@ -34,11 +34,20 @@ public enum PickupLiveSignal
 /// </summary>
 public interface IPickupLiveHub
 {
-    /// <summary>최소 보고 간격을 충족하면 위치를 저장하고 구독에 알린다</summary>
-    bool TrySetVehiclePosition(int pickupPlanId, VehiclePosition position);
+    /// <summary>
+    /// 최소 보고 간격을 충족하면 위치를 저장하고 구독에 알린다.
+    /// parkedSince(DB의 정차 시각)가 있고 정차 표시가 비어 있으면 간격에 막혀도 표시를 채운다(서버 재시작으로 사라진 표시 복구)
+    /// </summary>
+    bool TrySetVehiclePosition(int pickupPlanId, VehiclePosition position, DateTime? parkedSince = null);
 
-    /// <summary>정차한 위치를 최소 보고 간격과 상관없이 저장하고 VehicleMoved를 알린다. 계획이 끝나거나 VehicleParkedMaxMin이 지날 때까지 오래됐다고 지우지 않는다</summary>
+    /// <summary>
+    /// 정차한 위치를 최소 보고 간격과 상관없이 저장하고 정차 표시를 남긴다. 신호는 보내지 않으므로 커밋 뒤 NotifyVehicleMoved로 알린다.
+    /// 계획이 끝나거나 VehicleParkedMaxMin이 지날 때까지 오래됐다고 지우지 않는다
+    /// </summary>
     void SetParkedVehiclePosition(int pickupPlanId, VehiclePosition position);
+
+    /// <summary>차 위치 변경을 구독에 알린다</summary>
+    void NotifyVehicleMoved(int pickupPlanId);
 
     /// <summary>마지막 차량 위치를 돌려준다. 없으면 null</summary>
     VehiclePosition? GetVehiclePosition(int pickupPlanId);
@@ -112,8 +121,9 @@ public sealed class PickupLiveSubscription : IDisposable
 
 /// <summary>
 /// 서버 한 대 기준의 픽업 메모리 허브. 계획별 잠금으로 위치와 구독의 동시 접근을 보호한다
-/// 계획이 끝나면(NotifyPlanEnded) 위치와 정차 표시를 지운다. 정차 저장(커밋 뒤)과 탑승·취소의 종료 알림이 경합하면 끝난 계획에 정차 위치가 남을 수 있다
-/// 끝난 계획은 위치 보고가 404이므로, 일반 위치는 VehicleStaleSec + 60초 안에, 정차 위치는 정차 뒤 VehicleParkedMaxMin + 60초 안에 Sweep이 지운다
+/// 계획이 끝나면(NotifyPlanEnded) 위치와 정차 표시를 지운다. 정차 위치는 정차 커밋 전에 계획 행 잠금을 쥔 채 저장하고
+/// 탑승·취소·만료도 같은 행을 먼저 잠그므로 종료 알림은 항상 정차 저장 뒤에 와서 끝난 계획에 정차 위치가 남지 않는다
+/// 끝난 계획은 위치 보고가 404이므로 남은 위치도 일반 위치는 VehicleStaleSec + 60초 안에, 정차 위치는 정차 뒤 VehicleParkedMaxMin + 60초 안에 Sweep이 지운다(안전망)
 /// </summary>
 public sealed class PickupLiveHub : IPickupLiveHub, IDisposable
 {
@@ -166,7 +176,7 @@ public sealed class PickupLiveHub : IPickupLiveHub, IDisposable
     }
 
     /// <summary>최소 보고 간격을 충족하면 위치를 저장하고 VehicleMoved를 알린다</summary>
-    public bool TrySetVehiclePosition(int pickupPlanId, VehiclePosition position)
+    public bool TrySetVehiclePosition(int pickupPlanId, VehiclePosition position, DateTime? parkedSince = null)
     {
         while (true)
         {
@@ -176,6 +186,10 @@ public sealed class PickupLiveHub : IPickupLiveHub, IDisposable
                 // 잠금을 기다리는 동안 제거된 항목이면 현재 사전 항목으로 다시 시도한다
                 if (!IsCurrent(pickupPlanId, state))
                     continue;
+                // 서버를 다시 띄우면 메모리의 정차 표시가 사라진다. DB의 정차 시각으로 복구해 보고가 끊겨도 상한(VehicleParkedMaxMin)까지 남긴다.
+                // 표시 복구는 간격 검사보다 먼저 한다(거절된 보고에서도 같은 값을 쓰므로 해롭지 않고, 복구가 한 보고 늦어지지 않는다)
+                if (parkedSince is not null && state.ParkedDt is null)
+                    state.ParkedDt = parkedSince;
                 if (state.Position is { } previous
                     && (position.ReceivedDt - previous.ReceivedDt).TotalSeconds < _options.PositionMinIntervalSec)
                     return false;
@@ -187,7 +201,7 @@ public sealed class PickupLiveHub : IPickupLiveHub, IDisposable
         }
     }
 
-    /// <summary>정차한 위치를 간격 제한 없이 저장하고 정차 표시를 남긴 뒤 VehicleMoved를 알린다</summary>
+    /// <summary>정차한 위치를 간격 제한 없이 저장하고 정차 표시를 남긴다. 신호는 보내지 않는다</summary>
     public void SetParkedVehiclePosition(int pickupPlanId, VehiclePosition position)
     {
         while (true)
@@ -199,10 +213,15 @@ public sealed class PickupLiveHub : IPickupLiveHub, IDisposable
                     continue;
                 state.Position = position;
                 state.ParkedDt = position.ReceivedDt;
-                Publish(state, PickupLiveSignal.VehicleMoved);
                 return;
             }
         }
+    }
+
+    /// <summary>구독에 VehicleMoved를 알린다</summary>
+    public void NotifyVehicleMoved(int pickupPlanId)
+    {
+        Notify(pickupPlanId, PickupLiveSignal.VehicleMoved);
     }
 
     /// <summary>계획의 마지막 차량 위치를 돌려준다</summary>

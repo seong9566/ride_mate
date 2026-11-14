@@ -5,7 +5,7 @@ namespace RideMateService.Repository.v1.Pickup;
 public partial class PickupRepository
 {
     /// <summary>
-    /// 위치 보고 대상 계획의 소유자·상태·만료 시각을 잠금 없이 조회한다
+    /// 위치 보고 대상 계획의 소유자·상태·만료·정차 시각을 잠금 없이 조회한다
     /// </summary>
     public async Task<PositionPlanRow?> GetPositionPlanAsync(int pickupPlanId,
         CancellationToken cancellationToken = default)
@@ -18,7 +18,8 @@ public partial class PickupRepository
             var sql = @"
                 SELECT p.USER_ID AS UserId,
                        p.STATUS AS Status,
-                       p.EXPIRE_DT AS ExpireDt
+                       p.EXPIRE_DT AS ExpireDt,
+                       p.STOP_DT AS StopDt
                 FROM PICKUP_PLAN AS p
                 WHERE p.PICKUP_PLAN_ID = @pickupPlanId";
 

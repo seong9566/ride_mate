@@ -346,6 +346,11 @@ public class ChildPickupDriverRow
 public class PositionPlanRow
 {
     /// <summary>
+    /// 첫 정차 시각. 정차 전이면 null
+    /// </summary>
+    public DateTime? StopDt { get; set; }
+
+    /// <summary>
     /// 소유 사용자 ID. 익명화되었으면 null
     /// </summary>
     public int? UserId { get; set; }

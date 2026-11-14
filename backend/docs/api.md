@@ -525,7 +525,7 @@
 | `stopAtSpot` | `planStatus`가 `STOPPED`일 때만 값이 있다. 마지막 정차 이벤트가 `STOPPED`(배정 장소 반경 안)면 true, `WRONG_STOP`이면 false |
 | `slotDt` | 배정 도착 시각 |
 | `arrivalDt`·`arrivalSource` | 화면에 보여줄 도착 예정과 그 근거. 정차했으면(`stopDt`가 있으면) `stopDt`와 `STOP`, 신선한 차 위치에 내비 남은 시간이 있으면 `reportedDt + etaSec`와 `NAVI`, 아니면 `slotDt`와 `SLOT`이다(배정 시각이 없으면 둘 다 null). 실시간 도착 예정은 화면 표시에만 쓰고 배정 시각·정원·만료 시각을 바꾸지 않는다 |
-| `vehicle` | 차 현재 위치 `{ lat, lng, reportedDt }`. 서버가 마지막 위치를 받은 지 `PickupLive:VehicleStaleSec`(30초) 안일 때만 값이 있다. 단 정차한 계획은 정차 위치(차량 앱이 `UpdatePickupPlanStop`에 보낸 좌표, 이후 위치 보고가 있으면 그 위치)를 계획이 끝나거나 정차 뒤 `PickupLive:VehicleParkedMaxMin`(60분)이 지날 때까지 오래돼도 채운다. 위치 기능 스위치(`PickupLive:VehiclePositionEnabled`)가 꺼져 있으면 늘 null이다 |
+| `vehicle` | 차 현재 위치 `{ lat, lng, reportedDt }`. 서버가 마지막 위치를 받은 지 `PickupLive:VehicleStaleSec`(30초) 안일 때만 값이 있다. 단 정차한 계획은 정차 위치(차량 앱이 `UpdatePickupPlanStop`에 보낸 좌표, 이후 위치 보고가 있으면 그 위치)를 계획이 끝나거나 정차 뒤 `PickupLive:VehicleParkedMaxMin`(60분)이 지날 때까지 오래돼도 채운다. 정차 좌표는 DB에 저장하지 않으므로 서버를 다시 띄운 뒤 위치 보고가 한 번도 없으면 정차한 계획도 null이다. 위치 기능 스위치(`PickupLive:VehiclePositionEnabled`)가 꺼져 있으면 늘 null이다 |
 | `leave` | `{ leaveStatus, plannedLeaveDt, leavingDt }`. 아래 "아이 출발 알림"의 출발 상태다 |
 
 화면 문구는 웹이 이 값으로 만든다.
