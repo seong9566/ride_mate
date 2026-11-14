@@ -504,9 +504,11 @@ public partial class PickupService
                 entity.CustomName = null;
             }
 
-            // 직전 장소. 새 장소가 지금 장소와 다를 때만, 덮어쓰기 전의 장소를 남긴다(지금 장소가 없으면 그대로 둔다)
-            var placeChanged = oldSpotId != entity.PickupSpotId || oldCustomLat != entity.CustomLat
-                               || oldCustomLng != entity.CustomLng || oldCustomName != entity.CustomName;
+            // 직전 장소. 새 장소가 지금 장소와 다를 때만, 덮어쓰기 전의 장소를 남긴다(지금 장소가 없으면 그대로 둔다).
+            // 지점은 ID로, 임의 좌표는 DB 정밀도(소수 7자리)로 맞춘 좌표로 비교한다. 장소 이름은 주소 조회 결과에 따라 달라질 수 있어 보지 않는다
+            var placeChanged = oldSpotId != entity.PickupSpotId
+                               || RoundToDbScale(oldCustomLat) != RoundToDbScale(entity.CustomLat)
+                               || RoundToDbScale(oldCustomLng) != RoundToDbScale(entity.CustomLng);
             if (placeChanged && oldSpotId is { } prevSpotId)
             {
                 entity.PrevPickupSpotId = prevSpotId;
@@ -997,6 +999,10 @@ public partial class PickupService
             parkingLotSeq = row.Status == PlanStatusWaiting ? row.ParkingLotId : null
         };
     }
+
+    // 좌표를 PICKUP_PLAN의 DECIMAL(10,7) 정밀도로 맞춘다(MySQL은 저장할 때 소수 7자리로 반올림한다)
+    private static decimal? RoundToDbScale(decimal? value)
+        => value is { } v ? Math.Round(v, 7, MidpointRounding.AwayFromZero) : null;
 
     // 직전 픽업 장소를 아이 응답에 옮긴다. 임의 좌표가 있으면 CUSTOM, 지점이 있으면 SPOT, 없으면 null
     private static ChildPickupPreviousLocationDto? ToPreviousLocation(LivePlanRow row)
