@@ -12,9 +12,9 @@ public static class ChildPickupLiveState
         // 링크가 끝나면 장소 칸도 모두 비므로, 장소 변경보다 먼저 본다(끝날 때 "장소가 바뀌었어요" 토스트가 뜨지 않게)
         if (previous.linkStatus != next.linkStatus)
             return "STATUS_CHANGED";
-        if (!Same(previous.pickup, next.pickup) || previous.slotDt != next.slotDt)
+        if (!Same(previous.pickup, next.pickup) || !Same(previous.previousPickup, next.previousPickup) || previous.slotDt != next.slotDt)
             return "PLACE_CHANGED";
-        if (previous.planStatus != next.planStatus || previous.stopAtSpot != next.stopAtSpot)
+        if (previous.planStatus != next.planStatus || previous.stopAtSpot != next.stopAtSpot || previous.stopDt != next.stopDt)
             return "STATUS_CHANGED";
         if (!Same(previous.leave, next.leave))
             return "LEAVE_CHANGED";

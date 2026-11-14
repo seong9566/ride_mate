@@ -104,10 +104,12 @@ public partial class PickupService
                     ? new GeoPointDto { lat = academyLat, lng = academyLng }
                     : null,
                 pickup = pickup,
+                previousPickup = ToPreviousLocation(plan),
                 walkPath = walkPath,
                 planStatus = plan.Status,
                 stopAtSpot = stopAtSpot,
                 slotDt = plan.SlotDt,
+                stopDt = plan.StopDt,
                 arrivalDt = vehicle.ArrivalDt,
                 arrivalSource = vehicle.ArrivalSource,
                 vehicle = vehicle.Vehicle,

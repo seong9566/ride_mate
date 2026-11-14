@@ -203,9 +203,17 @@ public class LivePlanRow
     public DateTime? SlotDt { get; set; }
     public byte? WalkMin { get; set; }
     public DateTime ExpireDt { get; set; }
+    public DateTime? StopDt { get; set; }
     public decimal? CustomLat { get; set; }
     public decimal? CustomLng { get; set; }
     public string? CustomName { get; set; }
+    public int? PrevPickupSpotId { get; set; }
+    public string? PrevSpotName { get; set; }
+    public decimal? PrevSpotLat { get; set; }
+    public decimal? PrevSpotLng { get; set; }
+    public decimal? PrevCustomLat { get; set; }
+    public decimal? PrevCustomLng { get; set; }
+    public string? PrevCustomName { get; set; }
     public string? CustomWalkPathWkt { get; set; }
     public string? SpotName { get; set; }
     public decimal? SpotLat { get; set; }

@@ -36,6 +36,11 @@ public class ChildPickupDto
     public PickupPlanLocationDto? pickup { get; set; }
 
     /// <summary>
+    /// 장소를 바꾸기 직전의 픽업 장소. 장소를 바꾼 적이 없으면 null
+    /// </summary>
+    public ChildPickupPreviousLocationDto? previousPickup { get; set; }
+
+    /// <summary>
     /// 학원에서 픽업 장소까지 도보 경로 선. 없으면 null
     /// </summary>
     public List<GeoPointDto>? walkPath { get; set; }
@@ -56,6 +61,11 @@ public class ChildPickupDto
     public DateTime? slotDt { get; set; }
 
     /// <summary>
+    /// 첫 정차 시각(오프셋 없는 KST). 정차 전이면 null
+    /// </summary>
+    public DateTime? stopDt { get; set; }
+
+    /// <summary>
     /// 화면에 보여줄 도착 예정 시각. 신선한 차 위치의 etaSec가 있으면 보고 시각 + etaSec(NAVI), 그 밖에는 배정 시각(SLOT)
     /// </summary>
     public DateTime? arrivalDt { get; set; }
@@ -74,6 +84,37 @@ public class ChildPickupDto
     /// 아이 출발 알림 상태
     /// </summary>
     public ChildPickupLeaveDto? leave { get; set; }
+}
+
+/// <summary>
+/// 아이 픽업 직전 장소
+/// </summary>
+public class ChildPickupPreviousLocationDto
+{
+    /// <summary>
+    /// 장소 종류 (SPOT: 기본 지점, CUSTOM: 임의 좌표)
+    /// </summary>
+    public string locationType { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 기본 지점 ID. CUSTOM이면 null
+    /// </summary>
+    public int? pickupSpotSeq { get; set; }
+
+    /// <summary>
+    /// 지점 이름 또는 임의 좌표의 장소 이름
+    /// </summary>
+    public string name { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 위도
+    /// </summary>
+    public decimal lat { get; set; }
+
+    /// <summary>
+    /// 경도
+    /// </summary>
+    public decimal lng { get; set; }
 }
 
 /// <summary>

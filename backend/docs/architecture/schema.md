@@ -654,7 +654,7 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 - 아이 화면의 "곧 도착"(도착 1분 전)은 상태로 저장하지 않는다. 배정 시각과 현재 시각으로 계산한다.
 - UNIQUE: `(TIMETABLE_DAY_ID, PICKUP_DATE)`. 진행 중에 같은 계획을 두 번 만들 수 없다. 끝난 계획은 `TIMETABLE_DAY_ID`가 NULL이라 걸리지 않으므로 `ACTIVE_FLAG`가 필요 없다. 중복 키 오류가 나면 이미 만들어진 계획을 시작한다(경로 시작).
 - 탑승이나 만료로 끝난 뒤 다시 만드는 것은 `TIMETABLE_DAY.LAST_PICKUP_DATE`로 막는다. 부모 취소(`DeletePickupPlan`)는 이 값을 바꾸지 않아 그날 다시 만들 수 있다.
-- 임의 좌표(`CUSTOM_*`)는 공유 지점이 아니라 정원 개념이 없다. 임의 좌표 계획은 `PICKUP_SPOT_ID`가 NULL이고, `CUSTOM_LAT`·`CUSTOM_LNG`·`CUSTOM_NAME`은 셋 다 있거나 셋 다 없다.
+- 임의 좌표(`CUSTOM_*`)는 공유 지점이 아니라 정원 개념이 없다. 임의 좌표 계획은 `PICKUP_SPOT_ID`가 NULL이고, `CUSTOM_LAT`·`CUSTOM_LNG`·`CUSTOM_NAME`은 셋 다 있거나 셋 다 없다. 장소를 바꾸면 바꾸기 직전 장소를 `PREV_*`에 남긴다(같은 장소로 다시 정하면 그대로 둔다).
 - CHECK:
   - `CK_PICKUP_PLAN_01`: `DELETE_YN = 1 OR (SLOT_DT IS NULL) = (PICKUP_SPOT_ID IS NULL AND CUSTOM_LAT IS NULL)` — 장소(지점 또는 임의 좌표)가 있으면 `SLOT_DT`가 있다. 익명화된 행은 장소 칸이 비어도 `SLOT_DT`가 남으므로 예외다
   - `CK_PICKUP_PLAN_02`: `(PICKUP_SPOT_ID IS NULL AND CUSTOM_LAT IS NULL) OR WALK_MIN IS NOT NULL OR DELETE_YN = 1` — 장소가 있으면 `WALK_MIN`이 있다. 익명화된 행은 예외다
