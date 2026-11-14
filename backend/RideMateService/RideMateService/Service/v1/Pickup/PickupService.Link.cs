@@ -391,7 +391,7 @@ public partial class PickupService
 
                 var url = PickupLinkToken.BuildUrl(_linkOptions.BaseUrl, token);
                 message = eventType is EventLinkSent or EventLinkResent
-                    ? PickupLinkMessage.Link(target.UserName, etaDt!.Value, spotName, url)
+                    ? PickupLinkMessage.Link(etaDt!.Value, spotName, url)
                     : PickupLinkMessage.Remind(target.UserName, spotName, url);
 
                 // 5) 진행 중 이벤트를 넣고 커밋한다. 같은 계획에 동시에 온 다른 요청은 이 행을 보고 IN_PROGRESS가 된다
