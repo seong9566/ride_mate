@@ -132,7 +132,7 @@ public partial class PickupService
             // 보낸 차 위치가 오래되는 시각에도 깨어나 위치 칸이 빈 vehicle을 보낸다(하트비트까지 기다리면 최대 15초 늦다).
             // 받은 시각은 초 단위라 1초를 더해야 깨어난 시각에 확실히 오래된 위치로 판정된다.
             // 정차한 계획은 위치가 오래돼도 채우므로 깨어나지 않는다(허브가 정차 위치를 지우면 다음 하트비트에 빈 vehicle을 보낸다)
-            var staleAt = lastVehicleHadPosition && last.stopDt is null && _liveHub.GetVehiclePosition(ticket.PickupPlanId) is { } held
+            var staleAt = lastVehicleHadPosition && !IsParkedWithinLimit(last.stopDt, DateTime.Now) && _liveHub.GetVehiclePosition(ticket.PickupPlanId) is { } held
                 ? held.ReceivedDt.AddSeconds(_liveOptions.VehicleStaleSec + 1) : (DateTime?)null;
             if (staleAt is { } staleWake && staleWake < wake)
                 wake = staleWake;
