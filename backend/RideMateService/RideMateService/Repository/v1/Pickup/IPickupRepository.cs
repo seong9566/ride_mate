@@ -317,4 +317,43 @@ public interface IPickupRepository
     /// 픽업 장소 추가 요청 등록. 저장 뒤 model의 요청 ID가 채워진다
     /// </summary>
     Task<bool> AddPickupSpotRequestAsync(PickupSpotRequest model, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 살아 있는 운전자 계정을 FOR UPDATE 잠그고 ID를 돌려준다. 픽업 완료 기록 저장 트랜잭션의 첫 문장으로 부른다.
+    /// 시간표 삭제·편집(USER_INFO → … → TIMETABLE_DAY)과 같은 순서라 기록 INSERT의 USER_INFO FK 공유 잠금이 교착하지 않는다
+    /// </summary>
+    Task<int?> LockRecordUserAsync(int userId, IDbTransaction transaction, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 로그인한 부모의 살아 있는 아이의 살아 있는 시간표 요일을 FOR UPDATE로 잠그고 ID를 돌려준다. 없거나 남의 것이면 null.
+    /// 잠그는 행은 TIMETABLE_DAY 하나다
+    /// </summary>
+    Task<int?> LockRecordTimetableDayAsync(int userId, int timetableId, byte dayOfWeek, IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 로그인한 부모의 살아 있는 아이의 살아 있는 시간표 요일 ID를 잠그지 않고 조회한다. 없거나 남의 것이면 null
+    /// </summary>
+    Task<int?> GetRecordTimetableDayIdAsync(int userId, int timetableId, byte dayOfWeek,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 시간표 요일의 살아 있는 픽업 완료 기록을 조회한다. 없으면 null
+    /// </summary>
+    Task<PickupRecordRow?> GetPickupRecordRowAsync(int timetableDayId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 시간표 요일의 살아 있는 픽업 완료 기록을 불러온다(수정 대상, 추적). 없으면 null
+    /// </summary>
+    Task<PickupRecord?> GetPickupRecordEntityAsync(int timetableDayId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 픽업 완료 기록 등록
+    /// </summary>
+    Task<bool> AddPickupRecordAsync(PickupRecord model, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 픽업 완료 기록 수정(덮어쓰기)
+    /// </summary>
+    Task<bool> UpdatePickupRecordAsync(PickupRecord model, CancellationToken cancellationToken = default);
 }

@@ -42,14 +42,14 @@ public interface IScheduleRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 시간표를 지운다. 날짜별 예외 → 요일 → 시간표 순으로 표마다 UPDATE 한 번씩 DELETE_YN을 켜고, 시간표의 DISPLAY_NAME은 빈 문자열로 바꾼다.
+    /// 시간표를 지운다. 날짜별 예외 → 픽업 완료 기록(삭제 표시·장소 비움) → 요일 → 시간표 순으로 표마다 UPDATE 한 번씩 DELETE_YN을 켜고, 시간표의 DISPLAY_NAME은 빈 문자열로 바꾼다.
     /// 시간표 행이 바뀌지 않았으면 false를 돌려준다.
     /// </summary>
     Task<bool> DeleteScheduleAsync(int timetableId, IReadOnlyCollection<int> timetableDayIds, DateTime updateDt,
         string updateUser, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 시간표를 편집한다. 뺀 요일의 날짜별 예외 → 뺀 요일 → 되살릴 요일 → 새 요일 → 시간표 순으로 쓴다.
+    /// 시간표를 편집한다. 뺀 요일의 날짜별 예외 → 뺀 요일의 픽업 완료 기록(삭제 표시·장소 비움) → 뺀 요일 → 되살릴 요일 → 새 요일 → 시간표 순으로 쓴다.
     /// 되살린 요일은 픽업 스위치를 켜고 LAST_PICKUP_DATE는 그대로 둔다. 학원이 바뀌었으면(academyChanged) 같은 시간표 쓰기에서
     /// 우리 픽업 장소를 비운다. 시간표 행이 바뀌지 않았으면 false를 돌려준다.
     /// </summary>
