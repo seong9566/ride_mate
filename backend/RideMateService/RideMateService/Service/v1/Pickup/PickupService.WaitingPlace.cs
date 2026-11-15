@@ -107,9 +107,13 @@ public partial class PickupService
             if (waitMin <= 0)
                 continue;
 
+            // 대기 종료는 도보가 길면 하원 시각보다 늦을 수 있다(ADR-0028). 하원 시각과 대기 종료 중 늦은 쪽까지 운영해야 한다
             var (open, close) = OperatingHours(row, computation.DayType);
-            if (!WaitingPlaceCalculator.IsOpen(open, close,
-                    (computation.Now + TimeSpan.FromMinutes(driveToLot)).TimeOfDay, computation.Target!.EndTime))
+            var waitStart = computation.Now + TimeSpan.FromMinutes(driveToLot);
+            // 그날 0시부터 잰다. 자정을 넘으면 하루보다 커져 운영 시간 검증에서 빠진다
+            var waitEnd = waitStart + TimeSpan.FromMinutes(waitMin) - computation.Now.Date;
+            var endTime = computation.Target!.EndTime;
+            if (!WaitingPlaceCalculator.IsOpen(open, close, waitStart.TimeOfDay, waitEnd > endTime ? waitEnd : endTime))
                 continue;
 
             candidates.Add(new WaitingPlaceCandidate

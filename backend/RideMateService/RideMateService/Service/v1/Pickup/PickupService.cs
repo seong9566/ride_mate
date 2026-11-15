@@ -459,8 +459,8 @@ public partial class PickupService : IPickupService
         };
         var driveMin = route.legs[0].driveMin;
 
-        // 8) 추천 출발 시각과 남은 여유. 하원 시각보다 ArriveBeforeEndMin분 먼저 픽업 장소에 닿는 것이 목표다
-        var targetArrival = DepartureGuideCalculator.TargetArrival(date, target.EndTime, _options.ArriveBeforeEndMin);
+        // 8) 추천 출발 시각과 남은 여유. 하원 시각 + 아이 도보 시간보다 WaitBeforeChildMin분 먼저 픽업 장소에 닿는 것이 목표다
+        var targetArrival = DepartureGuideCalculator.TargetArrival(date, target.EndTime, pickup.walkMin, _options.WaitBeforeChildMin);
         var departure = DepartureGuideCalculator.Departure(targetArrival, driveMin);
         result.departureDt = departure;
         result.slackMin = DepartureGuideCalculator.SlackMinutes(departure, now);

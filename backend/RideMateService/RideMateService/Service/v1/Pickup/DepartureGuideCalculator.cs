@@ -12,10 +12,10 @@ public static class DepartureGuideCalculator
         => date.ToDateTime(TimeOnly.MinValue) + endTime + TimeSpan.FromMinutes(tidyUpMin + walkMin);
 
     /// <summary>
-    /// 픽업 장소 도착 목표 시각 = 날짜 + 하원 시각 − 하원 전 도착 시간
+    /// 픽업 장소 도착 목표 시각 = 날짜 + 하원 시각 + 아이 도보 시간 − 대기 여유
     /// </summary>
-    public static DateTime TargetArrival(DateOnly date, TimeSpan endTime, int arriveBeforeEndMin)
-        => date.ToDateTime(TimeOnly.MinValue) + endTime - TimeSpan.FromMinutes(arriveBeforeEndMin);
+    public static DateTime TargetArrival(DateOnly date, TimeSpan endTime, int walkMin, int waitBeforeChildMin)
+        => date.ToDateTime(TimeOnly.MinValue) + endTime + TimeSpan.FromMinutes(walkMin - waitBeforeChildMin);
 
     /// <summary>
     /// 추천 출발 시각 = 도착 목표 시각 − 차량 소요 시간

@@ -40,7 +40,7 @@ internal sealed class DepartureComputation
     public DateTime Now { get; init; }
 
     /// <summary>
-    /// 픽업 장소 도착 목표 시각(하원 시각 − 하원 전 도착 시간). 픽업 장소가 없으면 null
+    /// 픽업 장소 도착 목표 시각(하원 시각 + 아이 도보 시간 − 대기 여유). 픽업 장소가 없으면 null
     /// </summary>
     public DateTime? TargetArrival { get; init; }
 
