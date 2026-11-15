@@ -57,6 +57,11 @@ class LocalSetupRepository(
         store.schedules ?: (seed?.getSchedules()?.getOrThrow() ?: emptyList()).also { store.schedules = it }
     }
 
+    override suspend fun setPickupEnabled(id: String, enabled: Boolean): Result<Unit> = runCatching {
+        val list = getSchedules().getOrThrow()
+        store.schedules = list.map { if (it.id == id) it.copy(pickupEnabled = enabled) else it }
+    }
+
     /**
      * 학원 추가. 서버 연동 중이면 AddSchedule(POST /api/v1/Schedule/M/sign/AddSchedule)로 저장하고 응답을 차량에도 반영한다.
      * code 102·103·104는 서버 message를 그대로 보여 주고 저장하지 않는다.
@@ -68,13 +73,13 @@ class LocalSetupRepository(
         var notice: String? = null
         val added: List<AcademySchedule> = if (api == null) local(list, input) else {
             val r = api.addSchedule(input)
-            when {
-                r.code == 200 && r.schedule != null -> {
-                    val sv = r.schedule
+            when (r.code) {
+                200 -> {
+                    val sv = r.schedule ?: throw IllegalStateException(r.message ?: "시간표를 저장하지 못했어요")
                     val place = listOf(sv.academyName, sv.address).filter { it.isNotBlank() }.distinct().joinToString(" · ")
                     sv.days.map { d -> AcademySchedule("srv-${d.scheduleDaySeq}", sv.displayName, place, d.day, sv.endTime, d.pickupYn) }
                 }
-                r.code == 101 -> {
+                101 -> {
                     notice = "서버에 아이 정보가 없어 이 차에만 저장했어요. 아이 정보를 다시 저장해 주세요"
                     local(list, input)
                 }

@@ -17,10 +17,22 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.InputTransformation
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.maxLength
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,6 +61,13 @@ private val ToggleGreen = Color(0xFF1ED760)
 /** A01-1 아이 정보 — 디자인: 초기 설정/1.아이정보입력.png */
 @Composable
 fun ChildInfoScreen(state: SetupUiState, onChange: ((com.example.pickup_hyundai.domain.model.ChildInfoInput) -> com.example.pickup_hyundai.domain.model.ChildInfoInput) -> Unit, onNext: () -> Unit) {
+    val name = rememberTextFieldState(initialText = state.child.name)
+    val updateChild by rememberUpdatedState(onChange)
+    LaunchedEffect(name) {
+        snapshotFlow { name.text.toString() }.collect { text ->
+            updateChild { it.copy(name = text) }
+        }
+    }
     WayMeScaffold(map = {}, panel = {
         PanelHeader("초기 설정", isMock = state.isMock)
         Column(Modifier.weight(1f).padding(horizontal = 28.dp, vertical = 24.dp)) {
@@ -56,7 +75,17 @@ fun ChildInfoScreen(state: SetupUiState, onChange: ((com.example.pickup_hyundai.
             Spacer(Modifier.height(28.dp))
             Text("아이 정보를 알려주세요", color = WayMeColors.TextPrimary, fontSize = 30.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(20.dp))
-            Field("이름", state.child.name, "이름", KeyboardType.Text) { v -> onChange { it.copy(name = v.take(10)) } }
+            // Keep the IME's composing text in the editor instead of feeding ViewModel updates back into it.
+            FieldFrame("이름", name.text.isEmpty(), "이름") {
+                BasicTextField(
+                    state = name,
+                    inputTransformation = InputTransformation.maxLength(10),
+                    lineLimits = TextFieldLineLimits.SingleLine,
+                    textStyle = TextStyle(color = WayMeColors.TextPrimary, fontSize = 24.sp),
+                    cursorBrush = SolidColor(WayMeColors.Accent),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             Spacer(Modifier.height(16.dp))
             Field("휴대폰 번호", formatPhone(state.child.phoneDigits), "010-0000-0000", KeyboardType.Number) { v ->
                 onChange { it.copy(phoneDigits = v.filter(Char::isDigit).take(11)) }
@@ -68,13 +97,46 @@ fun ChildInfoScreen(state: SetupUiState, onChange: ((com.example.pickup_hyundai.
             state.childError?.let { Spacer(Modifier.height(12.dp)); Text(it, color = WayMeColors.Warning, fontSize = 18.sp) }
             state.error?.let { Spacer(Modifier.height(12.dp)); Text(it, color = WayMeColors.Warning, fontSize = 18.sp) }
             Spacer(Modifier.weight(1f))
-            PrimaryPanelButton(if (state.busy) "저장 중…" else "다음", onNext, enabled = !state.busy)
+            PrimaryPanelButton(if (state.busy) "저장 중…" else "다음", {
+                val text = name.text.toString()
+                onChange { it.copy(name = text) }
+                onNext()
+            }, enabled = !state.busy)
         }
     })
 }
 
 @Composable
 private fun Field(label: String, value: String, placeholder: String, keyboard: KeyboardType, onValue: (String) -> Unit) {
+    val isText = keyboard == KeyboardType.Text
+    var editingValue by remember { mutableStateOf(TextFieldValue(value, selection = TextRange(value.length))) }
+    // 한글 IME가 음절을 이어서 조합할 수 있도록 조합 범위와 커서 위치를 보존한다.
+    val fieldValue = if (isText && editingValue.text == value) {
+        editingValue
+    } else {
+        TextFieldValue(value, selection = TextRange(value.length))
+    }
+    SideEffect {
+        if (isText) editingValue = fieldValue
+    }
+    FieldFrame(label, value.isEmpty(), placeholder) {
+        BasicTextField(
+            value = fieldValue,
+            onValueChange = {
+                if (isText) editingValue = it
+                if (it.text != value) onValue(it.text)
+            },
+            singleLine = true,
+            textStyle = TextStyle(color = WayMeColors.TextPrimary, fontSize = 24.sp),
+            cursorBrush = SolidColor(WayMeColors.Accent),
+            keyboardOptions = KeyboardOptions(keyboardType = keyboard),
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
+private fun FieldFrame(label: String, isEmpty: Boolean, placeholder: String, content: @Composable () -> Unit) {
     Text(label, color = WayMeColors.TextSecondary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
     Spacer(Modifier.height(8.dp))
     Box(
@@ -82,17 +144,8 @@ private fun Field(label: String, value: String, placeholder: String, keyboard: K
             .border(1.dp, WayMeColors.Divider, RoundedCornerShape(16.dp)).padding(horizontal = 24.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
-        if (value.isEmpty()) Text(placeholder, color = WayMeColors.TextTertiary, fontSize = 24.sp)
-        // 포맷된 값을 다시 넣으므로 커서는 항상 끝으로 둔다
-        BasicTextField(
-            value = TextFieldValue(value, selection = TextRange(value.length)),
-            onValueChange = { onValue(it.text) },
-            singleLine = true,
-            textStyle = TextStyle(color = WayMeColors.TextPrimary, fontSize = 24.sp),
-            cursorBrush = SolidColor(WayMeColors.Accent),
-            keyboardOptions = KeyboardOptions(keyboardType = keyboard),
-            modifier = Modifier.fillMaxWidth(),
-        )
+        if (isEmpty) Text(placeholder, color = WayMeColors.TextTertiary, fontSize = 24.sp)
+        content()
     }
 }
 

@@ -1,0 +1,59 @@
+{
+  "_comment": "시연 전용 경로(DEMO) — '바로 시작' 분기: 출발지에서 대기 없이 픽업 장소로",
+  "name": "대치동 픽업 시연(바로 시작)",
+  "legs": [
+    {
+      "id": "start_to_pickup",
+      "label": "출발지(선릉역 인근) → 픽업 장소",
+      "speed_kmh": 30,
+      "points": [
+        {
+          "name": "출발지 · 선릉역 인근",
+          "lat": 37.50455,
+          "lng": 127.04905
+        },
+        {
+          "name": "한티역 인근",
+          "lat": 37.4963,
+          "lng": 127.0529
+        },
+        {
+          "name": "픽업 장소 · 학원가(시연용)",
+          "lat": 37.4946,
+          "lng": 127.062
+        }
+      ],
+      "arrive": {
+        "dwell_sec": 0,
+        "wait_enter": true,
+        "prompt": "픽업 장소 정차 — Virtual Console > Convenience > Door Position에서 2열 문 '열림' → '닫힘' 후 Enter"
+      }
+    },
+    {
+      "id": "to_home",
+      "label": "픽업 장소 → 집",
+      "speed_kmh": 35,
+      "points": [
+        {
+          "name": "픽업 장소 · 학원가(시연용)",
+          "lat": 37.4946,
+          "lng": 127.062
+        },
+        {
+          "name": "도곡역 인근",
+          "lat": 37.4909,
+          "lng": 127.0554
+        },
+        {
+          "name": "집 · ○○아파트(시연용)",
+          "lat": 37.4885,
+          "lng": 127.0501
+        }
+      ],
+      "arrive": {
+        "dwell_sec": 0,
+        "prompt": "집 도착 — 앱에서 픽업 완료·기록 저장 확인"
+      }
+    }
+  ]
+}

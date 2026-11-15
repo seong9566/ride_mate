@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import com.example.pickup_hyundai.core.time.KstFormat
 import com.example.pickup_hyundai.domain.model.DriveProgress
 import com.example.pickup_hyundai.domain.model.HomeDrive
+import com.example.pickup_hyundai.domain.route.GeoPoint
 import com.example.pickup_hyundai.domain.model.WaitingDrive
 import com.example.pickup_hyundai.ui.components.MapPlaceholder
 import com.example.pickup_hyundai.ui.components.DevAdvanceChip
@@ -79,11 +80,11 @@ fun WaitingDriveScreen(state: LoadState<WaitingDrive>, onRetry: () -> Unit, onDe
 
 /** V10 집으로 가는 중 — 디자인: 픽업 5단계/5.탑승완료.png */
 @Composable
-fun HomeDriveScreen(state: LoadState<HomeDrive>, onRetry: () -> Unit, onDevAdvance: () -> Unit = {}) {
+fun HomeDriveScreen(state: LoadState<HomeDrive>, route: List<GeoPoint>, onRetry: () -> Unit, onDevAdvance: () -> Unit = {}) {
     val data = (state as? LoadState.Content)?.data
     WayMeScaffold(
         map = {
-            MapPanel(MapScenes.toHome(), followVehicle = true)
+            MapPanel(MapScenes.toHome(route), followVehicle = true)
             data?.let { MapInfoChip("집까지", it.progress) }
             DevAdvanceChip("집 도착", onDevAdvance)
         },

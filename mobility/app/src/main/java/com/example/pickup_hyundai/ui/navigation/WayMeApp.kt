@@ -35,8 +35,7 @@ import com.example.pickup_hyundai.data.repository.MeetingRepository
 import com.example.pickup_hyundai.data.repository.PickupRepository
 import com.example.pickup_hyundai.data.repository.SetupRepository
 import com.example.pickup_hyundai.demo.DemoScenario
-import com.example.pickup_hyundai.demo.LiveDriveTracker
-import com.example.pickup_hyundai.demo.LocalLocationState
+import com.example.pickup_hyundai.demo.liveDriveProgress
 import com.example.pickup_hyundai.demo.LocalNaviState
 import com.example.pickup_hyundai.demo.withLiveProgress
 import com.example.pickup_hyundai.domain.PickupFlowRules
@@ -172,6 +171,7 @@ internal fun WayMeAppContent(
     // V01 알림 카드: 앱을 켠 뒤 홈에서 한 번 보여 준다(보기/닫기 후 숨김)
     var alertDismissed by remember { mutableStateOf(false) }
     var gleoConfirm by remember { mutableStateOf<GleoConfirm?>(null) }
+    var homeDestination by remember { mutableStateOf<NaviPlace?>(null) }
 
     val backStack = remember {
         when {
@@ -200,9 +200,25 @@ internal fun WayMeAppContent(
     }
     val pickupPoint = session.pickupPoint ?: DemoScenario.PICKUP
     val pickupName = session.pickupName ?: "픽업 장소"
+    val pickupRoute = if (pickupPoint == DemoScenario.PICKUP &&
+        session.waitingPlace?.let { GeoPoint(it.latitude, it.longitude) } == DemoScenario.WAITING
+    ) DemoScenario.TO_PICKUP else listOf(pickupPoint)
     fun homePlace(): NaviPlace = setupStore.home?.let { NaviPlace("집", it.latitude, it.longitude, it.address) }
-        ?: naviState.homeBookmark
+        ?: (navi?.state?.value ?: naviState).homeBookmark
         ?: NaviPlace("집(시연)", DemoScenario.HOME.lat, DemoScenario.HOME.lng)
+    fun routeHome() {
+        val home = homePlace()
+        homeDestination = home
+        navi?.requestRoute(home) ?: toast("내비 연결 전이에요")
+    }
+    fun homeRoute(home: NaviPlace): List<GeoPoint> {
+        val target = GeoPoint(home.latitude, home.longitude)
+        return if (pickupPoint == DemoScenario.PICKUP && target == DemoScenario.HOME) {
+            DemoScenario.TO_HOME
+        } else {
+            listOf(pickupPoint, target)
+        }
+    }
 
     BackHandler(enabled = backStack.size > 1) { pop() }
 
@@ -303,12 +319,8 @@ internal fun WayMeAppContent(
                     if (screen != Screen.PICKUP_STOP && session.arrivedAtPickupAt == null) {
                         return fail(fn, "The car has not arrived at the pickup spot yet.")
                     }
-                    val n = navi ?: return fail(fn, "The navigation is not connected yet.")
-                    n.requestRoute(
-                        setupStore.home?.let { NaviPlace("집", it.latitude, it.longitude, it.address) }
-                            ?: n.state.value.homeBookmark
-                            ?: NaviPlace("집(시연)", DemoScenario.HOME.lat, DemoScenario.HOME.lng)
-                    )
+                    if (navi == null) return fail(fn, "The navigation is not connected yet.")
+                    routeHome()
                     session.boardedAt = session.boardedAt ?: now()
                     goTo(Screen.HOME_DRIVE)
                     GleoResult(fn, GleoStatus.SUCCESS, "Started navigation home.")
@@ -520,13 +532,16 @@ internal fun WayMeAppContent(
             val vm: WaitingDriveViewModel = viewModel(factory = driveFactory)
             // 개발용 직접 진입 시(선택 없음) 추천 1번 Mock 장소 사용
             val place = session.waitingPlace ?: DEV_WAITING_PLACE
+            val target = GeoPoint(place.latitude, place.longitude)
+            val route = if (target == DemoScenario.WAITING) DemoScenario.TO_WAITING else listOf(target)
+            val live = liveDriveProgress(route)
             LaunchedEffect(place) { vm.load(place) }
             val state by vm.state.collectAsState()
-            val arrived = rememberArrived(GeoPoint(place.latitude, place.longitude), place.name)
+            val arrived = rememberArrived(target, place.name)
             fun onArrived() { session.waitingPlace = place; session.waitingArrivedAt = now(); replaceTop(Screen.WAITING_STAY) }
             LaunchedEffect(arrived) { if (arrived) onArrived() }
             WaitingDriveScreen(
-                state = state.withLiveProgress(DemoScenario.TO_WAITING) { d, p -> d.copy(progress = p) },
+                state = state.withLiveProgress(live) { d, p -> d.copy(progress = p) },
                 onRetry = vm::retry,
                 onDevAdvance = ::onArrived,
             )
@@ -563,8 +578,7 @@ internal fun WayMeAppContent(
         }
 
         Screen.PICKUP_GUIDE -> {
-            val start = session.waitingPlace?.let { GeoPoint(it.latitude, it.longitude) } ?: DemoScenario.WAITING
-            val live = LiveDriveTracker.compute(LocalLocationState.current, naviState, listOf(start, pickupPoint))
+            val live = liveDriveProgress(pickupRoute)
             val remain = live.progress.remainMin
             val walk = session.walkMin
             fun onArrived() {
@@ -592,7 +606,7 @@ internal fun WayMeAppContent(
                     distanceKm = live.progress.distanceKm,
                     isMock = session.plan?.isMock != false,
                 ),
-                naviGuiding = naviState.routing,
+                naviGuiding = live.progress.guidanceActive,
                 onDevAdvance = ::onArrived,
             )
         }
@@ -601,6 +615,11 @@ internal fun WayMeAppContent(
             val vm: SendLinkViewModel = viewModel(factory = meetingFactory)
             val state by vm.state.collectAsState()
             val fromGuide = backStack.size >= 2 && backStack[backStack.lastIndex - 1] == Screen.PICKUP_GUIDE
+            val remainMin = if (fromGuide && session.arrivedAtPickupAt == null) {
+                liveDriveProgress(pickupRoute).progress.remainMin
+            } else {
+                null
+            }
             LaunchedEffect(state.sentEvent) {
                 if (state.sentEvent) {
                     vm.consumeSentEvent()
@@ -618,7 +637,7 @@ internal fun WayMeAppContent(
                 },
                 onRetry = vm::refresh,
                 walkMin = session.walkMin,
-                remainMin = naviState.remainSec?.takeIf { naviState.routing }?.let { (it + 59) / 60 },
+                remainMin = remainMin,
             )
         }
 
@@ -635,7 +654,7 @@ internal fun WayMeAppContent(
             fun onBoarded() {
                 if (session.boardedAt != null) return
                 session.boardedAt = now()
-                navi?.requestRoute(homePlace()) ?: toast("내비 연결 전이에요")
+                routeHome()
                 replaceTop(Screen.HOME_DRIVE)
             }
             // 디자인: 뒷문이 열렸다 닫히면 자동으로 탑승 완료 → 집 경로 안내(2026-11-15 결정, 이전에는 운전자 확인 버튼)
@@ -655,12 +674,16 @@ internal fun WayMeAppContent(
         Screen.HOME_DRIVE -> {
             val vm: HomeDriveViewModel = viewModel(factory = driveFactory)
             val state by vm.state.collectAsState()
-            val home = homePlace()
-            val arrived = rememberArrived(GeoPoint(home.latitude, home.longitude), home.name)
+            val home = homeDestination ?: homePlace()
+            val route = homeRoute(home)
+            val arrived = (naviState.destination == home && naviState.arrived != null) ||
+                (vehicleNow?.let { RouteMath.distanceM(it, route.last()) <= ARRIVAL_RADIUS_M } == true)
+            val live = liveDriveProgress(if (route == DemoScenario.TO_HOME) route else listOf(route.last()))
             fun onArrived() { session.homeArrivedAt = now(); replaceTop(Screen.RECORD) }
             LaunchedEffect(arrived) { if (arrived) onArrived() }
             HomeDriveScreen(
-                state = state.withLiveProgress(DemoScenario.TO_HOME) { d, p -> d.copy(progress = p) },
+                state = state.withLiveProgress(live) { d, p -> d.copy(progress = p) },
+                route = route,
                 onRetry = vm::refresh,
                 onDevAdvance = ::onArrived,
             )
@@ -678,6 +701,7 @@ internal fun WayMeAppContent(
             }
             RecordScreen(
                 state = state,
+                route = homeRoute(homeDestination ?: homePlace()),
                 onAutoSaveChange = vm::setAutoSave,
                 onSave = vm::save,
                 onSkip = vm::skip,

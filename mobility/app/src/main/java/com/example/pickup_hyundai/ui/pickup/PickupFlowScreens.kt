@@ -171,6 +171,11 @@ private fun ColumnScope.PickupGuideBody(info: PickupGuideInfo, naviGuiding: Bool
     Column(Modifier.weight(1f).padding(horizontal = 28.dp, vertical = 24.dp)) {
         Text("배정된 도착 시각", color = WayMeColors.TextSecondary, fontSize = 20.sp)
         Text(info.assignedArrival?.let(KstFormat::hm) ?: "--:--", color = WayMeColors.TextPrimary, fontSize = 80.sp, fontWeight = FontWeight.Bold)
+        Text(
+            info.remainMin?.let { "픽업 장소까지 ${it}분" } ?: "픽업 장소까지 --분",
+            color = WayMeColors.TextSecondary,
+            fontSize = 20.sp,
+        )
         Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             PinIcon(Modifier.size(width = 20.dp, height = 26.dp))

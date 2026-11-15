@@ -142,7 +142,8 @@ object MapScenes {
         center = DemoScenario.PICKUP, zoom = 16,
         vehicleText = remainMin?.let { "남은 ${it}분" },
         vehicleFallback = DemoScenario.WAITING,
-        info = MapInfo("보내기 좋은 시점", walkMin?.let { "아이 도보 ${it}분 + 1분 전" } ?: "도착 1분 전"),
+        info = remainMin?.let { MapInfo("픽업 장소까지", "${it}분") }
+            ?: MapInfo("보내기 좋은 시점", walkMin?.let { "아이 도보 ${it}분 + 1분 전" } ?: "도착 1분 전"),
         containsDemoData = true,
     )
 
@@ -159,9 +160,9 @@ object MapScenes {
     )
 
     /** V10 집으로 가는 중 */
-    fun toHome(): MapScene = MapScene(
-        markers = listOf(MapMarker("home", DemoScenario.HOME, R.drawable.map_pin_home, "집")),
-        routes = listOf(MapRoute("route", DemoScenario.TO_HOME, RouteKind.VEHICLE)),
+    fun toHome(route: List<GeoPoint>): MapScene = MapScene(
+        markers = listOf(MapMarker("home", route.last(), R.drawable.map_pin_home, "집")),
+        routes = listOf(MapRoute("route", route, RouteKind.VEHICLE)),
         zoom = 15, containsDemoData = true,
     )
 

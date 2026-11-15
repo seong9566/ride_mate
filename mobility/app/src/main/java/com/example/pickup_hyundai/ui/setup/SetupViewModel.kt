@@ -54,7 +54,10 @@ class SetupViewModel(private val repository: SetupRepository) : ViewModel() {
     }
 
     fun updateChild(transform: (ChildInfoInput) -> ChildInfoInput) =
-        _state.update { it.copy(child = transform(it.child), childError = null) }
+        _state.update { state ->
+            val child = transform(state.child)
+            if (child == state.child) state else state.copy(child = child, childError = null)
+        }
 
     fun saveChild() {
         val error = validateChild(_state.value.child)
