@@ -80,6 +80,11 @@ class SetupStore(context: Context) {
         get() = prefs.getBoolean(K_LOGGED_IN, false)
         set(v) = prefs.edit().putBoolean(K_LOGGED_IN, v).apply()
 
+    /** 로그인 후 초기 설정(아이 → 시간표 → 집)을 아직 끝내지 않음 → 앱을 다시 켜도 초기 설정부터 */
+    var setupPending: Boolean
+        get() = prefs.getBoolean(K_SETUP_PENDING, false)
+        set(v) = prefs.edit().putBoolean(K_SETUP_PENDING, v).apply()
+
     val isSetupDone: Boolean get() = child != null && schedules != null && home != null
 
     private companion object {
@@ -89,5 +94,6 @@ class SetupStore(context: Context) {
         const val K_DEPARTURE = "departure_cache"
         const val K_NOTIFIED = "notified_date"
         const val K_LOGGED_IN = "logged_in"
+        const val K_SETUP_PENDING = "setup_pending"
     }
 }

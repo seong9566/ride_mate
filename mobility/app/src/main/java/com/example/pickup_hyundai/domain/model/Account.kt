@@ -72,6 +72,23 @@ data class AcademySchedule(
     val pickupEnabled: Boolean,
 )
 
+/** 학원 추가 입력(시간표 저장 API의 schedule 항목에 대응) */
+data class AcademyInput(
+    /** displayName: 부모가 지은 이름(예: 수학학원) */
+    val displayName: String = "",
+    /** academyName: 장소 검색 결과의 이름. 장소 검색 API 연결 전에는 직접 입력 */
+    val placeName: String = "",
+    /** address: 학원 주소 */
+    val address: String = "",
+    /** lat/lng: 장소 검색 결과 좌표(직접 입력이면 null) */
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    /** endTime: 하원 시각 */
+    val endTime: LocalTime = LocalTime.of(18, 0),
+    /** days: 요일(픽업 스위치는 켜진 채로 저장) */
+    val days: Set<DayOfWeek> = emptySet(),
+)
+
 /** 초기 설정 3/3 집 */
 data class HomeAddress(
     val address: String,

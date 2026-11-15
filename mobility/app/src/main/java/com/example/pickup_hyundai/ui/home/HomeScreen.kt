@@ -61,15 +61,28 @@ fun HomeScreen(
     onOpenTodayPickup: () -> Unit,
     onOpenTimetable: () -> Unit,
     onRetry: () -> Unit,
+    /** V01 오늘의 픽업 알림(앱을 켰을 때 지도 위 카드). 보기 → 오늘 하원 일정, 닫기 → 숨김 */
+    showAlert: Boolean = false,
+    onDismissAlert: () -> Unit = {},
 ) {
     val isMock = (state as? HomeUiState.Content)?.summary?.isMock == true
     WayMeScaffold(
         map = {
-            val first = (state as? HomeUiState.Content)?.summary?.todayItems?.firstOrNull()
-            MapPanel(
-                if (first != null) MapScenes.overview(pickupName = first.pickupPlaceName ?: "픽업 장소", academyName = first.academyName)
-                else MapScenes.overview()
-            )
+            val summary = (state as? HomeUiState.Content)?.summary
+            val first = summary?.todayItems?.firstOrNull()
+            val alert = showAlert && first != null
+            val scene = if (first != null) MapScenes.overview(pickupName = first.pickupPlaceName ?: "픽업 장소", academyName = first.academyName)
+            else MapScenes.overview()
+            // 알림 카드가 떠 있는 동안에는 같은 자리의 요약 칩을 숨긴다
+            MapPanel(if (alert) scene.copy(info = null) else scene)
+            if (alert && first != null) {
+                PickupAlertCard(
+                    body = "${first.academyName} ${KstFormat.hm(first.endTime)} 하원" +
+                        (summary?.nextDepartureDt?.let { " · ${KstFormat.hm(it.toLocalTime())}에 출발하세요" } ?: ""),
+                    onOpen = { onDismissAlert(); onOpenTodayPickup() },
+                    onClose = onDismissAlert,
+                )
+            }
         },
         panel = {
             PanelHeader(screenName = "홈", isMock = isMock)
@@ -295,6 +308,50 @@ private fun CalendarIcon() {
             drawLine(c, Offset(0f, size.height * 0.4f), Offset(size.width, size.height * 0.4f), strokeWidth = stroke.width)
             drawLine(c, Offset(size.width * 0.3f, 0f), Offset(size.width * 0.3f, size.height * 0.25f), strokeWidth = stroke.width)
             drawLine(c, Offset(size.width * 0.7f, 0f), Offset(size.width * 0.7f, size.height * 0.25f), strokeWidth = stroke.width)
+        }
+    }
+}
+
+/** V01 알림 카드 — 디자인: 로고 · "오늘의 픽업 일정이 도착했어요" · "수학학원 22:00 하원 · 21:29에 출발하세요" · 보기/닫기 */
+@Composable
+private fun androidx.compose.foundation.layout.BoxScope.PickupAlertCard(body: String, onOpen: () -> Unit, onClose: () -> Unit) {
+    val shape = RoundedCornerShape(24.dp)
+    Column(
+        Modifier
+            .align(Alignment.TopStart)
+            .padding(start = 20.dp, top = 20.dp, end = 104.dp)
+            .fillMaxWidth()
+            .clip(shape)
+            .background(Color(0xF21E1F22))
+            .padding(20.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.foundation.Image(
+                painter = androidx.compose.ui.res.painterResource(com.example.pickup_hyundai.R.drawable.img_wayme_logo),
+                contentDescription = null,
+                modifier = Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)),
+            )
+            Spacer(Modifier.width(16.dp))
+            Column {
+                Text("오늘의 픽업 일정이 도착했어요", color = WayMeColors.TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+                Text(body, color = WayMeColors.TextSecondary, fontSize = 18.sp)
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Button(
+                onClick = onClose,
+                modifier = Modifier.weight(1f).height(64.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = WayMeColors.Card, contentColor = WayMeColors.TextPrimary),
+            ) { Text("닫기", fontSize = 20.sp, fontWeight = FontWeight.Bold) }
+            Button(
+                onClick = onOpen,
+                modifier = Modifier.weight(1f).height(64.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = WayMeColors.Accent, contentColor = WayMeColors.OnAccent),
+            ) { Text("보기", fontSize = 20.sp, fontWeight = FontWeight.Bold) }
         }
     }
 }

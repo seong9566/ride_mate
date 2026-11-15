@@ -47,14 +47,19 @@ class ApiClient(private val http: HttpCore, private val tokens: TokenSource) {
 
     suspend fun post(path: String, body: JSONObject): ApiEnvelope = call { t -> http.send("POST", path, json = body, bearer = t) }
 
-    private suspend fun call(block: suspend (String) -> HttpResponse): ApiEnvelope {
+    /** HTTP 응답 원형이 필요한 API용(예: 409 본문을 정상 흐름으로 쓰는 AddChild). 토큰·401 재시도는 같다 */
+    suspend fun postRaw(path: String, body: JSONObject): HttpResponse = raw { t -> http.send("POST", path, json = body, bearer = t) }
+
+    private suspend fun call(block: suspend (String) -> HttpResponse): ApiEnvelope = envelope(raw(block))
+
+    private suspend fun raw(block: suspend (String) -> HttpResponse): HttpResponse {
         val token = tokens.accessToken() ?: throw ApiException(ApiErrorKind.UNAUTHORIZED, null)
         var res = block(token)
         if (res.status == 401) {
             val renewed = tokens.refreshAfterUnauthorized() ?: throw ApiException(ApiErrorKind.UNAUTHORIZED, 401)
             res = block(renewed)
         }
-        return envelope(res)
+        return res
     }
 
     companion object {

@@ -8,6 +8,8 @@ import com.example.pickup_hyundai.domain.model.WeekDaySchedule
 import java.time.Clock
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.LocalDateTime
+import kotlinx.coroutines.withTimeoutOrNull
 import java.time.ZoneId
 import java.time.temporal.TemporalAdjusters
 
@@ -17,12 +19,15 @@ import java.time.temporal.TemporalAdjusters
  */
 class LocalHomeRepository(
     private val store: SetupStore,
-    private val fallback: HomeRepository,
+    /** 예시 일정으로 대체할 때만 지정. null이면 시간표가 없을 때 "일정 없음"으로 표시 */
+    private val fallback: HomeRepository? = null,
+    /** 오늘 일정이 있을 때 추천 출발 시각 조회(픽업 저장소). 3초 안에 못 받으면 마지막으로 받은 값 사용 */
+    private val departure: (suspend () -> LocalDateTime?)? = null,
     private val clock: Clock = Clock.system(ZoneId.of("Asia/Seoul")),
 ) : HomeRepository {
 
     override suspend fun getHomeSummary(): Result<HomeSummary> {
-        val schedules = store.schedules ?: return fallback.getHomeSummary()
+        val schedules = store.schedules ?: fallback?.let { return it.getHomeSummary() } ?: emptyList()
         return runCatching {
             val child = store.child?.name ?: "아이"
             val enabled = schedules.filter { it.pickupEnabled }
@@ -39,14 +44,17 @@ class LocalHomeRepository(
             }
             val next = if (todayItems.isEmpty()) (1L..7L).asSequence().map { today.plusDays(it) }
                 .firstNotNullOfOrNull { d -> itemsOn(d).firstOrNull()?.let { NextPickup(it, d) } } else null
+            val dep = if (todayItems.isEmpty()) null else
+                (departure?.let { d -> withTimeoutOrNull(3_000) { runCatching { d() }.getOrNull() } }?.also { store.cacheDeparture(it) }
+                    ?: store.cachedDepartureFor(today))
             HomeSummary(
-                nextDepartureDt = store.cachedDepartureFor(today),
+                nextDepartureDt = dep,
                 firstEndTime = todayItems.firstOrNull()?.endTime,
                 todayItems = todayItems,
                 week = week,
                 nextPickup = next,
                 // 시간표 원본이 Mock 시드라면 여전히 예시 데이터 → 설정을 마치기 전까지 MOCK 표시
-                isMock = !store.isSetupDone,
+                isMock = false,
             )
         }
     }

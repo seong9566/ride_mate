@@ -13,8 +13,6 @@
     <uses-permission android:name="pleos.car.permission.NAVI_ROUTE" />
     <!-- Pleos FusedLocation SDK: 차량 위치 (dangerous → 런타임 요청) -->
     <uses-permission android:name="pleos.car.permission.FUSED_LOCATION" />
-    <!-- Pleos SpeechToText SDK: 차량 마이크 음성 → 텍스트 (App Market 사전 승인 필요) -->
-    <uses-permission android:name="pleos.car.permission.STT_SERVICE" />
     <!-- V01 시동 알림: 알림 표시(Android 13+ 런타임 요청), 부팅(시동) 수신 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />

@@ -30,6 +30,9 @@ android {
         // 라이드메이트 서버(정본 차량 API). 비어 있으면 Mock 저장소 사용
         // Gleo 호출자로 신뢰할 패키지명(쉼표 구분). Pleos가 공식 확인해 주기 전까지 비워 둔다 → 외부 요청은 운전자 화면 확인 필요
         buildConfigField("String", "GLEO_TRUSTED_PACKAGES", "\"${localProps.getProperty("GLEO_TRUSTED_PACKAGES", "")}\"")
+        // true면 서버가 설정돼 있어도 픽업 데이터는 차량에 등록한 시간표 기준으로 계산(시연용)
+        buildConfigField("boolean", "RIDEMATE_DEV_BUTTONS", localProps.getProperty("RIDEMATE_DEV_BUTTONS", "false").toBoolean().toString())
+        buildConfigField("boolean", "RIDEMATE_DEMO_PICKUP", localProps.getProperty("RIDEMATE_DEMO_PICKUP", "false").toBoolean().toString())
         buildConfigField("String", "RIDEMATE_API_BASE_URL", "\"${localProps.getProperty("RIDEMATE_API_BASE_URL", "")}\"")
     }
 
@@ -68,7 +71,6 @@ dependencies {
     implementation(libs.pleos.vehicle)
     implementation(libs.pleos.navihelper)
     implementation(libs.pleos.fusedlocation)
-    implementation(libs.pleos.speechtotext)
     // QR 로그인 이미지 생성(verification_uri_complete → QR)
     implementation(libs.zxing.core)
     implementation(libs.kakao.map)

@@ -63,6 +63,10 @@ class MockSetupRepository : SetupRepository {
         val i = schedules.indexOfFirst { it.id == id }
         if (i >= 0) schedules[i] = schedules[i].copy(pickupEnabled = enabled)
     }
+    override suspend fun addAcademy(input: com.example.pickup_hyundai.domain.model.AcademyInput): Result<String?> = runCatching {
+        input.days.forEach { d -> schedules += AcademySchedule("mock-${System.nanoTime()}-$d", input.displayName, input.address, d, input.endTime, true) }
+        null
+    }
     override suspend fun getNaviHome() = Result.success(HomeAddress("서울 강남구 도곡로 ○○, 101동", 37.4920, 127.0460, fromNaviBookmark = true))
     override suspend fun saveHome(home: HomeAddress) = Result.success(Unit)
     override suspend fun getSummary() = Result.success(

@@ -28,13 +28,10 @@ import com.example.pickup_hyundai.demo.LocalLocationState
 import com.example.pickup_hyundai.demo.LocalNaviState
 import com.example.pickup_hyundai.domain.route.GeoPoint
 import com.example.pickup_hyundai.map.LocalVehicleLocation
-import com.example.pickup_hyundai.notify.PickupNotifier
+import com.example.pickup_hyundai.domain.pickup.PickupSession
 import com.example.pickup_hyundai.platform.location.VehicleLocationSource
 import com.example.pickup_hyundai.platform.navi.LocalNaviController
 import com.example.pickup_hyundai.platform.navi.NaviController
-import com.example.pickup_hyundai.platform.voice.LocalVoice
-import com.example.pickup_hyundai.platform.voice.VoiceController
-import com.example.pickup_hyundai.platform.voice.VoiceInput
 
 private const val PERMISSION_FUSED_LOCATION = "pleos.car.permission.FUSED_LOCATION"
 
@@ -56,7 +53,9 @@ fun WayMeRoot(
     navi: NaviController,
     location: VehicleLocationSource,
     startScreen: Screen = Screen.HOME,
-    loginRequired: Boolean = false,
+    entryScreen: Screen? = null,
+    session: PickupSession = PickupSession(),
+    onPickupReset: () -> Unit = {},
 ) {
     val context = LocalContext.current
     fun has(p: String) = ContextCompat.checkSelfPermission(context, p) == PackageManager.PERMISSION_GRANTED
@@ -64,8 +63,7 @@ fun WayMeRoot(
     var granted by remember { mutableStateOf(has(PERMISSION_FUSED_LOCATION)) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         granted = result[PERMISSION_FUSED_LOCATION] ?: has(PERMISSION_FUSED_LOCATION)
-        // 알림 권한을 방금 허용했다면 오늘 일정 알림을 한 번 띄운다(같은 날 중복 방지)
-        if (result[Manifest.permission.POST_NOTIFICATIONS] == true) PickupNotifier.notifyTodayFromStore(context)
+        // 오늘의 픽업 알림은 홈 화면의 알림 카드로 보여 준다(시스템 알림은 시동(부팅) 때만)
     }
     LaunchedEffect(Unit) {
         val needed = buildList {
@@ -78,15 +76,11 @@ fun WayMeRoot(
     }
     LaunchedEffect(granted) { if (granted) location.start() }
 
-    // 음성: Pleos SpeechToText(화면별 짧은 명령). 자유 문장은 Gleo Interface(GleoActionReceiver)가 처리
-    val voice = remember { VoiceController(VoiceInput(context)) }
-
     DisposableEffect(Unit) {
         navi.start()
         onDispose {
             navi.stop()
             location.stop()
-            voice.input.release()
         }
     }
 
@@ -99,11 +93,10 @@ fun WayMeRoot(
         LocalLocationState provides locState,
         LocalNaviState provides naviState,
         LocalNaviController provides navi,
-        LocalVoice provides voice,
     ) {
         WayMeAppContent(
             homeRepository, pickupRepository, meetingRepository, driveRepository, recordStore,
-            authRepository, setupRepository, setupStore, startScreen, loginRequired,
+            authRepository, setupRepository, setupStore, startScreen, entryScreen, session, onPickupReset,
         )
     }
 }

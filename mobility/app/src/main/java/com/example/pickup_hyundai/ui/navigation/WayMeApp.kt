@@ -84,6 +84,7 @@ import com.example.pickup_hyundai.ui.pickup.WaitingPlaceScreen
 import com.example.pickup_hyundai.ui.pickup.WaitingPlaceViewModel
 import com.example.pickup_hyundai.ui.pickup.WaitingStayInfo
 import com.example.pickup_hyundai.ui.pickup.WaitingStayScreen
+import com.example.pickup_hyundai.ui.setup.AddAcademyScreen
 import com.example.pickup_hyundai.ui.setup.ChildInfoScreen
 import com.example.pickup_hyundai.ui.setup.HomeSetupScreen
 import com.example.pickup_hyundai.ui.setup.SetupDoneScreen
@@ -100,7 +101,7 @@ enum class Screen {
     HOME /* V02 */, TODAY_PICKUP /* V03 */, PICKUP_SPOT /* V04 */, DEPARTURE /* V05 */, WAITING_PLACE /* V06 */,
     WAITING_DRIVE /* V07 */, WAITING_STAY /* V07A 대기 중 */, PICKUP_GUIDE /* V08 픽업 장소 안내 */,
     SEND_LINK /* V09 만남 연결 */, PICKUP_STOP /* V09 정차 */, HOME_DRIVE /* V10 */, RECORD /* V11 */,
-    LOGIN_QR /* A00 */, LOGIN_PHONE, LOGIN_OTP, LOGIN_CONFIRM /* 휴대폰 확인 */, SETUP_CHILD /* A01 */, SETUP_TIMETABLE, SETUP_HOME, SETUP_DONE,
+    LOGIN_QR /* A00 */, LOGIN_PHONE, LOGIN_OTP, LOGIN_CONFIRM /* 휴대폰 확인 */, SETUP_CHILD /* A01 */, SETUP_TIMETABLE, SETUP_ADD_ACADEMY /* 학원 추가 */, SETUP_HOME, SETUP_DONE,
 }
 
 /** 픽업 진행 단계 화면(Gleo 요청으로 단계를 옮길 때 뒤로 가기 대상이 되지 않도록 교체) */
@@ -156,19 +157,25 @@ internal fun WayMeAppContent(
     setupStore: SetupStore,
     /** 개발용: 특정 화면부터 시작(adb --es start_screen DEPARTURE 등) */
     startScreen: Screen = Screen.HOME,
-    /** 서버 연동 중이고 이 차에 로그인한 계정이 없으면 QR 로그인부터(뒤로 가기로 우회 불가) */
-    loginRequired: Boolean = false,
+    /** 첫 화면 강제: 로그인 전이면 LOGIN_QR, 초기 설정 전이면 SETUP_CHILD(뒤로 가기로 우회 불가). null이면 홈 */
+    entryScreen: Screen? = null,
+    /** 오늘 픽업 진행 상태(MainActivity가 만들어 저장소와 공유) */
+    session: PickupSession = remember { PickupSession() },
+    /** 새 픽업을 시작할 때 저장소 쪽 진행 상태 초기화 */
+    onPickupReset: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val navi = LocalNaviController.current
     val naviState = LocalNaviState.current
     val scope = rememberCoroutineScope()
-    val session = remember { PickupSession() }
+    val vehicleNow = LocalVehicleLocation.current
+    // V01 알림 카드: 앱을 켠 뒤 홈에서 한 번 보여 준다(보기/닫기 후 숨김)
+    var alertDismissed by remember { mutableStateOf(false) }
     var gleoConfirm by remember { mutableStateOf<GleoConfirm?>(null) }
 
     val backStack = remember {
         when {
-            loginRequired -> mutableStateListOf(Screen.LOGIN_QR)
+            entryScreen != null -> mutableStateListOf(entryScreen)
             startScreen == Screen.HOME -> mutableStateListOf(Screen.HOME)
             else -> mutableStateListOf(Screen.HOME, startScreen)
         }
@@ -391,11 +398,15 @@ internal fun WayMeAppContent(
         Screen.HOME -> {
             val vm: HomeViewModel = viewModel(factory = HomeViewModel.Factory(homeRepository))
             val state by vm.state.collectAsState()
+            // 초기 설정·시간표를 바꾸고 돌아왔을 때 최신 일정으로
+            LaunchedEffect(Unit) { vm.refresh() }
             HomeScreen(
                 state = state,
-                onOpenTodayPickup = { session.reset(); push(Screen.TODAY_PICKUP) },
+                onOpenTodayPickup = { session.reset(); onPickupReset(); push(Screen.TODAY_PICKUP) },
                 onOpenTimetable = { push(Screen.SETUP_TIMETABLE) },
                 onRetry = vm::refresh,
+                showAlert = !alertDismissed,
+                onDismissAlert = { alertDismissed = true },
             )
         }
 
@@ -563,7 +574,8 @@ internal fun WayMeAppContent(
             // 만남 연결 시점: 남은 시간 ≤ 아이 도보 + 1분 (디자인 "보내기 좋은 시점")
             LaunchedEffect(remain, walk) {
                 if (session.linkSentAt == null && !session.sendPromptDismissed && remain != null && walk != null && remain <= walk + 1) {
-                    push(Screen.SEND_LINK)
+                    delay(4_000) // 안내 화면을 잠깐 보여 준 뒤 묻는다(짧은 구간에서는 진입 즉시 조건이 맞는다)
+                    if (backStack.last() == Screen.PICKUP_GUIDE && session.linkSentAt == null && !session.sendPromptDismissed) push(Screen.SEND_LINK)
                 }
             }
             val arrived = rememberArrived(pickupPoint, pickupName)
@@ -620,18 +632,22 @@ internal fun WayMeAppContent(
             }
             val doorState by doors.state.collectAsState()
             var devBoarding by remember { mutableStateOf(false) }
+            fun onBoarded() {
+                if (session.boardedAt != null) return
+                session.boardedAt = now()
+                navi?.requestRoute(homePlace()) ?: toast("내비 연결 전이에요")
+                replaceTop(Screen.HOME_DRIVE)
+            }
+            // 디자인: 뒷문이 열렸다 닫히면 자동으로 탑승 완료 → 집 경로 안내(2026-11-15 결정, 이전에는 운전자 확인 버튼)
+            val boarded = doorState.boardingCandidateCount > 0 || devBoarding
+            LaunchedEffect(boarded) { if (boarded) onBoarded() }
             PickupStopScreen(
                 state = state,
                 onRemind = vm::remindArrived,
                 onRetry = vm::refresh,
                 walkMin = session.walkMin,
-                boardingCandidate = doorState.boardingCandidateCount > 0 || devBoarding,
-                onConfirmBoarded = {
-                    session.boardedAt = now()
-                    val home = homePlace()
-                    navi?.requestRoute(home) ?: toast("내비 연결 전이에요")
-                    replaceTop(Screen.HOME_DRIVE)
-                },
+                boardingCandidate = false,
+                onConfirmBoarded = ::onBoarded,
                 onDevBoarding = { devBoarding = true },
             )
         }
@@ -686,8 +702,13 @@ internal fun WayMeAppContent(
                             push(Screen.LOGIN_QR)
                         }
                     }
-                    AuthEvent.LOGGED_IN_EXISTING -> { setupStore.loggedIn = true; replaceAll(Screen.HOME) }
-                    AuthEvent.LOGGED_IN_SETUP_REQUIRED -> { setupStore.loggedIn = true; replaceAll(Screen.SETUP_CHILD) }
+                    AuthEvent.LOGGED_IN_EXISTING, AuthEvent.LOGGED_IN_SETUP_REQUIRED -> {
+                        setupStore.loggedIn = true
+                        // 서버가 초기 설정 필요(setup_required)라고 했거나, Mock 로그인에서 이 차에 설정이 없으면 초기 설정부터
+                        val needSetup = state.event == AuthEvent.LOGGED_IN_SETUP_REQUIRED || (authRepository.isMock && !setupStore.isSetupDone)
+                        setupStore.setupPending = needSetup
+                        if (needSetup) { backStack.clear(); backStack.add(Screen.SETUP_CHILD) } else replaceAll(Screen.HOME)
+                    }
                     AuthEvent.LOGGED_OUT -> { setupStore.loggedIn = false; toast("이 차에서 로그아웃했어요") }
                     null -> Unit
                 }
@@ -713,13 +734,14 @@ internal fun WayMeAppContent(
             }
         }
 
-        Screen.SETUP_CHILD, Screen.SETUP_TIMETABLE, Screen.SETUP_HOME, Screen.SETUP_DONE -> {
+        Screen.SETUP_CHILD, Screen.SETUP_TIMETABLE, Screen.SETUP_ADD_ACADEMY, Screen.SETUP_HOME, Screen.SETUP_DONE -> {
             val vm: SetupViewModel = viewModel(factory = SetupViewModel.Factory(setupRepository))
             val state by vm.state.collectAsState()
             LaunchedEffect(state.event) {
                 when (state.event) {
                     SetupEvent.CHILD_SAVED -> push(Screen.SETUP_TIMETABLE)
-                    SetupEvent.HOME_SAVED -> { vm.loadSummary(); replaceAll(Screen.SETUP_DONE) }
+                    SetupEvent.ACADEMY_SAVED -> if (current == Screen.SETUP_ADD_ACADEMY) pop()
+                    SetupEvent.HOME_SAVED -> { setupStore.setupPending = false; vm.loadSummary(); replaceAll(Screen.SETUP_DONE) }
                     null -> Unit
                 }
                 if (state.event != null) vm.consumeEvent()
@@ -730,13 +752,22 @@ internal fun WayMeAppContent(
                 Screen.SETUP_CHILD -> ChildInfoScreen(state, onChange = vm::updateChild, onNext = vm::saveChild)
                 Screen.SETUP_TIMETABLE -> TimetableScreen(
                     state, onSelectDay = vm::selectDay, onToggle = vm::togglePickup,
-                    onAddAcademy = { notReady("학원 추가(입력 화면 디자인 필요)") }, onNext = { push(Screen.SETUP_HOME) },
+                    onAddAcademy = { vm.startAcademy(); push(Screen.SETUP_ADD_ACADEMY) }, onNext = { push(Screen.SETUP_HOME) },
+                )
+                Screen.SETUP_ADD_ACADEMY -> AddAcademyScreen(
+                    state, onChange = vm::updateAcademy, onToggleDay = vm::toggleAcademyDay, onAdjustTime = vm::adjustAcademyTime,
+                    onSave = vm::saveAcademy, onCancel = ::pop,
+                    canUseCurrentLocation = vehicleNow != null,
+                    onUseCurrentLocation = { vehicleNow?.let { vm.setAcademyLocation(it.lat, it.lng) } },
                 )
                 Screen.SETUP_HOME -> HomeSetupScreen(
                     state,
                     onUseNaviHome = vm::confirmNaviHome,
-                    onSearchOther = { notReady("주소 검색(검색 API 미정)") },
+                    onSearchOther = vm::startManualHome,
                     onDone = vm::saveHome,
+                    onManualAddress = vm::updateManualAddress,
+                    canUseCurrentLocation = vehicleNow != null,
+                    onUseCurrentLocation = { vehicleNow?.let { vm.useCurrentLocationAsHome(it.lat, it.lng) } },
                 )
                 else -> {
                     LaunchedEffect(Unit) { if (state.summary == null) vm.loadSummary() }

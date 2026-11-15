@@ -13,6 +13,8 @@ import com.example.pickup_hyundai.data.repository.AuthRepository
 import com.example.pickup_hyundai.data.repository.RemoteAuthRepository
 import com.example.pickup_hyundai.data.local.LocalRecordStore
 import com.example.pickup_hyundai.data.local.SetupStore
+import com.example.pickup_hyundai.data.remote.ChildApi
+import com.example.pickup_hyundai.data.remote.ScheduleApi
 import com.example.pickup_hyundai.data.remote.VehiclePickupApi
 import com.example.pickup_hyundai.data.repository.LocalHomeRepository
 import com.example.pickup_hyundai.data.repository.LocalSetupRepository
@@ -21,10 +23,13 @@ import com.example.pickup_hyundai.data.repository.MockDriveRepository
 import com.example.pickup_hyundai.data.repository.MockHomeRepository
 import com.example.pickup_hyundai.data.repository.MockMeetingRepository
 import com.example.pickup_hyundai.data.repository.MockPickupRepository
-import com.example.pickup_hyundai.data.repository.MockSetupRepository
 import com.example.pickup_hyundai.data.repository.PickupRepository
 import com.example.pickup_hyundai.data.repository.RemotePickupRepository
+import com.example.pickup_hyundai.core.time.KstFormat
+import com.example.pickup_hyundai.data.repository.TodayBase
+import com.example.pickup_hyundai.domain.pickup.PickupSession
 import com.example.pickup_hyundai.domain.route.GeoPoint
+import java.time.LocalDate
 import com.example.pickup_hyundai.notify.PickupNotifier
 import com.example.pickup_hyundai.platform.gleo.GleoBridge
 import com.example.pickup_hyundai.platform.gleo.GleoCaller
@@ -66,7 +71,7 @@ class MainActivity : ComponentActivity() {
 
         if (BuildConfig.DEBUG && intent.getBooleanExtra(EXTRA_NOTIFY_TEST, false)) {
             // 디자인 V01 예시 값(시연용)
-            PickupNotifier.show(this, "수학학원", LocalTime.of(22, 0), java.time.LocalDate.now().atTime(21, 29))
+            PickupNotifier.show(this, "수학학원", LocalTime.of(22, 0), LocalDate.now().atTime(21, 29))
         }
 
         // 플랫폼(앱 생명주기는 WayMeRoot가 관리)
@@ -80,12 +85,27 @@ class MainActivity : ComponentActivity() {
         val remote = http.isConfigured
         val authSession = AuthSession(this, AuthApi(http), devAccessToken = BuildConfig.RIDEMATE_DEV_ACCESS_TOKEN)
         val authRepository: AuthRepository = if (remote) RemoteAuthRepository(AuthApi(http), authSession) else MockAuthRepository()
-        // Gleo 요청 허용 조건(로그인 상태)을 실제 세션과 맞춘다
+        // 로그인 상태: 서버 연동이면 실제 세션, Mock이면 차량 내 기록
         if (remote) setupStore.loggedIn = authSession.isLoggedIn
-        val loginRequired = remote && !authSession.isLoggedIn && intent.getStringExtra(EXTRA_START_SCREEN) == null
+        // 첫 화면: 로그인 전 → QR 로그인, 로그인 후 초기 설정 전 → 아이 정보, 그 밖에는 홈 (개발용 start_screen 지정 시 제외)
+        val entryScreen = when {
+            intent.getStringExtra(EXTRA_START_SCREEN) != null -> null
+            !setupStore.loggedIn -> Screen.LOGIN_QR
+            setupStore.setupPending -> Screen.SETUP_CHILD
+            else -> null
+        }
 
-        val mockPickup = MockPickupRepository()
-        val pickupRepository: PickupRepository = if (remote && !mockEmpty) {
+        // 오늘 픽업 진행 상태(화면과 저장소가 함께 본다)
+        val session = PickupSession()
+        val childName = { setupStore.child?.name }
+        // 서버 없이 쓰는 픽업 데이터는 초기 설정에서 등록한 오늘 시간표를 기준으로 계산한다
+        val mockPickup = MockPickupRepository(today = {
+            val today = LocalDate.now(KstFormat.ZONE)
+            setupStore.schedules?.filter { it.pickupEnabled && it.day == today.dayOfWeek }?.minByOrNull { it.endTime }
+                ?.let { TodayBase(childName()?.takeIf { n -> n.isNotBlank() } ?: "아이", it.academyName, it.endTime) }
+        })
+        // local.properties RIDEMATE_DEMO_PICKUP=true: 로그인은 실제 서버, 픽업 데이터는 차량에 등록한 시간표 기준(서버에 시간표가 없을 때 시연용)
+        val pickupRepository: PickupRepository = if (remote && !mockEmpty && !BuildConfig.RIDEMATE_DEMO_PICKUP) {
             RemotePickupRepository(
                 api = VehiclePickupApi(ApiClient(http, authSession)),
                 fallback = mockPickup,
@@ -95,17 +115,22 @@ class MainActivity : ComponentActivity() {
             )
         } else mockPickup
         val homeRepository = if (mockEmpty) MockHomeRepository(hasTodaySchedule = false)
-        else LocalHomeRepository(setupStore, fallback = MockHomeRepository())
-        val setupRepository = LocalSetupRepository(setupStore, MockSetupRepository(), naviHome = { navi.state.value.homeBookmark })
-        val driveRepository = MockDriveRepository()
+        else LocalHomeRepository(setupStore, departure = { pickupRepository.getDeparturePlan().getOrNull()?.departureDt }) // 등록한 시간표만 표시
+        val setupRepository = LocalSetupRepository(
+            setupStore, naviHome = { navi.state.value.homeBookmark },
+            scheduleApi = if (remote) ScheduleApi(ApiClient(http, authSession)) else null,
+            childApi = if (remote) ChildApi(ApiClient(http, authSession)) else null,
+        )
+        val driveRepository = MockDriveRepository(session, childName)
         val recordStore = LocalRecordStore(this)
-        val meetingRepository = MockMeetingRepository(childScenario = intent.getStringExtra(EXTRA_MOCK_CHILD) ?: "LEAVING")
+        val meetingRepository = MockMeetingRepository(intent.getStringExtra(EXTRA_MOCK_CHILD) ?: "LEAVING", session, childName)
 
         setContent {
             PickUp_HyundaiTheme {
                 if (sdkCheck) SdkCheckHost() else WayMeRoot(
                     homeRepository, pickupRepository, meetingRepository, driveRepository, recordStore,
-                    authRepository, setupRepository, setupStore, navi, location, startScreen, loginRequired,
+                    authRepository, setupRepository, setupStore, navi, location, startScreen, entryScreen,
+                    session, onPickupReset = meetingRepository::reset,
                 )
             }
         }

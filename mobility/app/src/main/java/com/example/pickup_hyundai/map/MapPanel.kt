@@ -69,7 +69,7 @@ fun BoxScope.MapPanel(scene: MapScene, followVehicle: Boolean = false) {
         MapRoundButton(onClick = { camera.recenter(vehicle ?: scene.vehicleFallback ?: scene.center) }) { LocateIcon() }
     }
     if (scene.showLegend) MapLegend(Modifier.align(Alignment.BottomEnd).padding(20.dp))
-    if (scene.containsDemoData || LocalDemoLocationMode.current) {
+    if (com.example.pickup_hyundai.ui.components.DataBadges.SHOW && (scene.containsDemoData || LocalDemoLocationMode.current)) {
         Text(
             "시연 데이터",
             color = WayMeColors.OnAccent, fontSize = 14.sp, fontWeight = FontWeight.Bold,

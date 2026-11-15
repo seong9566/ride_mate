@@ -1,5 +1,6 @@
 package com.example.pickup_hyundai.data.repository
 
+import com.example.pickup_hyundai.domain.model.AcademyInput
 import com.example.pickup_hyundai.domain.model.AcademySchedule
 import com.example.pickup_hyundai.domain.model.ChildInfoInput
 import com.example.pickup_hyundai.domain.model.HomeAddress
@@ -40,6 +41,9 @@ interface SetupRepository {
     suspend fun saveChild(child: ChildInfoInput): Result<Unit>
     suspend fun getSchedules(): Result<List<AcademySchedule>>
     suspend fun setPickupEnabled(id: String, enabled: Boolean): Result<Unit>
+    /** 학원 추가(요일마다 시간표 항목 생성, 픽업 켜짐). 서버 시간표 저장 API 연결 전에는 차량 내 저장 */
+    /** @return 저장은 됐지만 알려야 할 안내 문구(없으면 null) */
+    suspend fun addAcademy(input: AcademyInput): Result<String?>
     suspend fun getNaviHome(): Result<HomeAddress?>
     suspend fun saveHome(home: HomeAddress): Result<Unit>
     suspend fun getSummary(): Result<SetupSummary>

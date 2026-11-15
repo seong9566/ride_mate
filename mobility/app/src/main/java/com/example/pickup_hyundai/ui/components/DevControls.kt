@@ -24,7 +24,8 @@ import com.example.pickup_hyundai.ui.theme.WayMeColors
  */
 @Composable
 fun BoxScope.DevAdvanceChip(label: String, onClick: () -> Unit) {
-    if (!BuildConfig.DEBUG) return
+    // 기본은 숨김(2026-11-15). local.properties RIDEMATE_DEV_BUTTONS=true + debug 빌드에서만 보인다
+    if (!BuildConfig.DEBUG || !BuildConfig.RIDEMATE_DEV_BUTTONS) return
     Text(
         "DEV · $label",
         color = WayMeColors.TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold,

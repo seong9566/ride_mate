@@ -31,6 +31,12 @@ import androidx.compose.ui.unit.sp
 import com.example.pickup_hyundai.R
 import com.example.pickup_hyundai.ui.theme.WayMeColors
 
+/**
+ * MOCK·시연 데이터 배지 표시 여부. 2026-11-15: 화면에서 숨김(사용자 결정).
+ * 주의: 배지만 숨긴 것이며, 서버 API가 없는 값은 여전히 예시 데이터다(claude/WAYME_API_연동현황.md).
+ */
+object DataBadges { const val SHOW = false }
+
 val PanelShape = RoundedCornerShape(28.dp)
 
 /**
@@ -115,6 +121,7 @@ fun PanelHeader(screenName: String, isMock: Boolean = false, onBack: (() -> Unit
 /** Mock 데이터 표시(08_USER_FLOW §4-10: 실데이터와 혼동 금지) */
 @Composable
 fun MockBadge() {
+    if (!DataBadges.SHOW) return
     Text(
         "MOCK",
         color = WayMeColors.OnAccent,
