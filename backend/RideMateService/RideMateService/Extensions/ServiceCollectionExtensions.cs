@@ -262,6 +262,9 @@ public static class InfrastructureExtensions
         var phoneVerificationOptions = phoneVerification.Get<PhoneVerificationOptions>() ?? new PhoneVerificationOptions();
         if (phoneVerificationOptions.CleanupIntervalMin < 1)
             throw new InvalidOperationException("PhoneVerification:CleanupIntervalMin 설정은 1 이상이어야 합니다.");
+        if (!string.IsNullOrEmpty(phoneVerificationOptions.FixedCode)
+            && (phoneVerificationOptions.FixedCode.Length != 6 || !phoneVerificationOptions.FixedCode.All(char.IsAsciiDigit)))
+            throw new InvalidOperationException("PhoneVerification:FixedCode 설정은 숫자 6자리여야 합니다.");
         services.Configure<PhoneVerificationOptions>(phoneVerification);
         services.AddSingleton<IHashService, HashService>();
         services.AddSingleton<IPhoneCryptoService, PhoneCryptoService>();
