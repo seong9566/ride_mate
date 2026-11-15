@@ -124,7 +124,9 @@ ride_mate/
 
 ## APK
 
-(작성 예정 — APK 파일 위치 또는 GitHub Release 링크)
+[RideMate APK 다운로드](./RideMate.apk)
+
+다운로드한 APK를 Pleos Connect 에뮬레이터에 설치해 실행하세요.
 
 ## 팀 구성
 
