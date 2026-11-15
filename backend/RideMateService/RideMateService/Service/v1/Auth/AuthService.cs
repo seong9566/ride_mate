@@ -48,6 +48,7 @@ public partial class AuthService : IAuthService
     private readonly IHashService _hashService;
     private readonly IPhoneCryptoService _phoneCryptoService;
     private readonly QrLoginOptions _qrLoginOptions;
+    private readonly PhoneVerificationOptions _phoneVerificationOptions;
     private readonly ISmsSender _smsSender;
     private readonly ITokenService _tokenService;
 
@@ -58,6 +59,7 @@ public partial class AuthService : IAuthService
         IHashService hashService,
         IPhoneCryptoService phoneCryptoService,
         IOptions<QrLoginOptions> qrLoginOptions,
+        IOptions<PhoneVerificationOptions> phoneVerificationOptions,
         ISmsSender smsSender,
         ITokenService tokenService)
     {
@@ -68,6 +70,7 @@ public partial class AuthService : IAuthService
         this._hashService = hashService;
         this._phoneCryptoService = phoneCryptoService;
         this._qrLoginOptions = qrLoginOptions.Value;
+        this._phoneVerificationOptions = phoneVerificationOptions.Value;
         this._smsSender = smsSender;
         this._tokenService = tokenService;
     }
@@ -204,7 +207,9 @@ public partial class AuthService : IAuthService
         string phoneHash, string purpose, Func<string, string> createSmsMessage, CancellationToken cancellationToken)
     {
         DateTime thisTime = NowToSecond(); // DB DATETIME은 초 단위로 반올림해 저장하므로 기준 시각도 초 단위로 맞춘다
-        var code = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
+        var fixedCode = _phoneVerificationOptions.FixedCode;
+        var useFixedCode = !string.IsNullOrEmpty(fixedCode);
+        var code = useFixedCode ? fixedCode! : RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
         var codeHash = CreateCodeHash(phoneDigits, code);
 
         // 2) 최근 발송 잠금 — 용도와 관계없이 같은 번호의 마지막 행을 기준으로 제한한다
@@ -276,10 +281,14 @@ public partial class AuthService : IAuthService
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
-        // 7) DB 반영 뒤 문자 발송 — 커밋한 뒤에는 요청이 끊겨도 보낸다(행만 남고 1분 동안 다시 받지 못하는 일을 막는다)
-        var smsResult = await _smsSender.SendAsync(phoneDigits, createSmsMessage(code), CancellationToken.None).ConfigureAwait(false);
-        if (!smsResult.Success)
-            _logService.LogMessage($"SMS send failed: {smsResult.ResultCode}");
+        // 7) DB 반영 뒤 문자 발송 — 커밋한 뒤에는 요청이 끊겨도 보낸다(행만 남고 1분 동안 다시 받지 못하는 일을 막는다).
+        //    고정 인증번호(MVP 테스트)면 보내지 않는다
+        if (!useFixedCode)
+        {
+            var smsResult = await _smsSender.SendAsync(phoneDigits, createSmsMessage(code), CancellationToken.None).ConfigureAwait(false);
+            if (!smsResult.Success)
+                _logService.LogMessage($"SMS send failed: {smsResult.ResultCode}");
+        }
 
         // 8) 응답
         return new ResponseModel<PhoneVerificationResultDto>
