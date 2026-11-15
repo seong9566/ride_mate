@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 알림 상태바 아이콘(단색). 로고의 R 형태를 단순화 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M6,3h7a5,5 0,0 1,1.8 9.66L19,21h-3.4l-3.7,-8H9.2v8H6zM9.2,6v4h3.6a2,2 0,0 0,0 -4z"/>
+</vector>
