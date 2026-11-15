@@ -86,17 +86,6 @@ ride_mate/
 | API 문서(Swagger) | https://hsmac.tail94e53b.ts.net:10000/swagger |
 | 아이용 웹 | https://ride-mate-child-web.vercel.app |
 
-직접 띄우려면 Docker와 .NET 10 SDK가 필요합니다. `backend/`에서 로컬 MySQL을 띄우고 스키마를 적용한 뒤 서버를 실행합니다. 전체 절차는 [`backend/README.md`](backend/README.md)에 있습니다.
-
-```bash
-cd backend
-cp .env.example .env              # DB 비밀번호를 채웁니다
-docker compose up -d --wait       # MySQL 8.4 (포트는 .env의 MYSQL_PORT)
-# backend/README.md "4. 스키마 적용", "5. 로컬 설정"을 따른 뒤
-cd RideMateService
-dotnet run --project RideMateService --launch-profile http   # http://localhost:5167/swagger
-```
-
 ## 테스트 환경 및 필요한 설정
 
 ### 테스트 환경
