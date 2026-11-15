@@ -202,6 +202,8 @@ builder.Services.AddRateLimitPolicies();
 var app = builder.Build();
 
 // 외부 API 키가 비어 있어도 기동은 하므로 사용 여부만 남기고 키 값은 남기지 않는다
+app.Logger.LogInformation("Fixed phone verification code: {State}",
+    string.IsNullOrEmpty(app.Services.GetRequiredService<IOptions<PhoneVerificationOptions>>().Value.FixedCode) ? "OFF" : "ON");
 app.Logger.LogInformation("Kakao walk route: {State}",
     string.IsNullOrWhiteSpace(app.Services.GetRequiredService<IOptions<KakaoOptions>>().Value.RestApiKey) ? "OFF" : "ON");
 app.Logger.LogInformation("Parking realtime: {State}",
