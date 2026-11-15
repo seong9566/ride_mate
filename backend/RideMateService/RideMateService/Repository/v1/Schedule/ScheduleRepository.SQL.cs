@@ -281,7 +281,7 @@ public partial class ScheduleRepository
     /// 학원가 안에서 좌표에 가까운 사용 중인 픽업 지점을 거리순으로 돌려준다. maxDistanceM 이내, 최대 limit개.
     /// </summary>
     public async Task<List<NearbyPickupSpotRow>> GetNearbyPickupSpotsAsync(int areaId, decimal lat, decimal lng,
-        int maxDistanceM, int limit, IDbTransaction? transaction = null, CancellationToken cancellationToken = default)
+        int maxDistanceM, int limit, IDbTransaction transaction, CancellationToken cancellationToken = default)
     {
         try
         {

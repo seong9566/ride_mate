@@ -407,9 +407,9 @@ USER_INFO ──< CHILD ──< TIMETABLE ──< TIMETABLE_DAY ──< TIMETABL
 | `WALK_MIN` | TINYINT | N | 학원에서 지점까지 아이 도보 시간(분) |
 | `WALK_PATH` | LINESTRING SRID 4326 | Y | 도보 경로 선 |
 | `PRIORITY` | TINYINT | N | 배정 우선순위. 1이 가장 먼저 |
-| `NOTE` | VARCHAR(100) | Y | 학원 기준 지점 한 줄 안내(예: 길 건너야 해요). 운영팀이 넣는다 |
+| `NOTE` | VARCHAR(100) | Y | 학원 기준 지점 한 줄 안내(예: 길 건너야 해요). 운영팀이 넣고, 자동 연결한 행은 1순위에만 "학원에서 가장 가까워요"를 넣는다 |
 
-- 학원 행을 새로 만들 때 같은 `AREA`의 지점 중 가까운 순으로 최대 3곳의 행을 함께 만든다. `PRIORITY`는 가까운 순으로 1부터 붙인다. 도보 시간과 경로는 보행자 경로 API로 구하고, 실패하면 직선 거리를 설정값인 도보 속도로 나눠 올림하고 `WALK_PATH`는 비운다.
+- 시간표 등록·수정으로 학원 행을 새로 만들 때, 학원이 `AREA` 안이고 좌표가 있으면 같은 `AREA`의 사용 중(`USE_YN`)·살아 있는 지점 중 직선 1km 이내 가까운 순으로 최대 3곳의 행을 같은 트랜잭션에서 함께 만든다. `PRIORITY`는 가까운 순으로 1부터 붙인다. 도보 시간은 직선 거리 × `DepartureGuide:RoadFactor` ÷ `DepartureGuide:ChildWalkKmh`를 올림(1~60분)하고 `WALK_PATH`는 비운다. 기존 학원을 재사용하거나 좌표가 없던 기존 학원에 좌표를 채울 때는 만들지 않는다. 이 INSERT는 FK로 `PICKUP_SPOT` 행에 공유 잠금을 건다.
 - 학원과 지점은 같은 `AREA`여야 한다. 제약으로는 걸 수 없어, 운영팀이 넣을 때는 SQL에서, 학원을 추가할 때는 Service에서 확인한다.
 - 살아 있는 행 UNIQUE: `(ACADEMY_ID, PICKUP_SPOT_ID, ACTIVE_FLAG)`
 - 인덱스: `(ACADEMY_ID, PRIORITY)`

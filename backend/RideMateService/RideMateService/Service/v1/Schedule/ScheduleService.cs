@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Security.Claims;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Options;
 using MySql.Data.MySqlClient;
 using RideMateService.Comm;
 using RideMateService.Comm.Dto.v1.Schedule.Request;
@@ -11,6 +12,7 @@ using RideMateService.Comm.Logger;
 using RideMateService.Commons.DBModels;
 using RideMateService.Commons.Repository;
 using RideMateService.Repository.v1.Schedule;
+using RideMateService.Service.v1.Pickup;
 
 namespace RideMateService.Service.v1.Schedule;
 
@@ -28,8 +30,7 @@ public class ScheduleService : IScheduleService
     // 새 학원에 자동으로 연결할 픽업 지점 — 같은 학원가, 직선 1km 이내, 가까운 3곳
     private const int AutoLinkMaxDistanceM = 1000;
     private const int AutoLinkMaxSpots = 3;
-    private const double AutoLinkRoadFactor = 1.3; // 직선 거리를 걷는 거리로 바꾸는 보정 계수
-    private const double ChildWalkMPerMin = 4000 / 60.0; // 아이 걷는 속도 4km/h
+    private const int AutoLinkMaxWalkMin = 60; // WALK_MIN(TINYINT) 상한
     private const string AutoLinkNearestNote = "학원에서 가장 가까워요";
 
     private static readonly TimeSpan EndTimeMin = new(14, 0, 0);
@@ -39,13 +40,16 @@ public class ScheduleService : IScheduleService
     private readonly ILogService _logService;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly RideMateContext _context; // 트랜잭션 시작·완료에만 쓴다
+    private readonly DepartureGuideOptions _departureGuideOptions; // 자동 연결 도보 시간 추정(아이 걷는 속도·도로 보정 계수)
 
     public ScheduleService(IScheduleRepository scheduleRepository,
         ILogService logService,
         IHttpContextAccessor httpContextAccessor,
-        RideMateContext context)
+        RideMateContext context,
+        IOptions<DepartureGuideOptions> departureGuideOptions)
     {
         this._scheduleRepository = scheduleRepository;
+        this._departureGuideOptions = departureGuideOptions.Value;
         this._logService = logService;
         this._httpContextAccessor = httpContextAccessor;
         this._context = context;
@@ -956,7 +960,10 @@ public class ScheduleService : IScheduleService
             if (!await _scheduleRepository.AddAcademyAsync(newAcademy, cancellationToken).ConfigureAwait(false))
                 return null;
 
-            await LinkNearbyPickupSpotsAsync(newAcademy, transaction, thisTime, cancellationToken).ConfigureAwait(false);
+            if (!await LinkNearbyPickupSpotsAsync(newAcademy, transaction, thisTime, cancellationToken)
+                    .ConfigureAwait(false))
+                return null;
+
             return newAcademy.AcademyId;
         }
 
@@ -970,23 +977,25 @@ public class ScheduleService : IScheduleService
         return academy.AcademyId;
     }
 
-    // 새 학원이 학원가 안이면 같은 학원가의 가까운 픽업 지점을 후보로 연결한다. 도보 시간은 직선 거리로 추정한다
-    private async Task LinkNearbyPickupSpotsAsync(Academy academy, IDbTransaction transaction, DateTime thisTime,
+    // 새 학원이 학원가 안이면 같은 학원가의 가까운 픽업 지점을 후보로 연결한다.
+    // 도보 시간은 직선 거리 × 도로 보정 계수 ÷ 아이 걷는 속도로 추정한다(DepartureGuide 설정). 저장에 실패하면 false다
+    private async Task<bool> LinkNearbyPickupSpotsAsync(Academy academy, IDbTransaction transaction, DateTime thisTime,
         CancellationToken cancellationToken)
     {
         if (academy.AreaId is not { } areaId || academy.Lat is not { } lat || academy.Lng is not { } lng)
-            return;
+            return true;
 
         var spots = await _scheduleRepository.GetNearbyPickupSpotsAsync(areaId, lat, lng, AutoLinkMaxDistanceM,
             AutoLinkMaxSpots, transaction, cancellationToken).ConfigureAwait(false);
         if (spots.Count == 0)
-            return;
+            return true;
 
         var models = spots.Select((s, i) => new AcademyPickupSpot
         {
             AcademyId = academy.AcademyId,
             PickupSpotId = s.PickupSpotId,
-            WalkMin = (sbyte)Math.Clamp((int)Math.Ceiling(s.DistanceM * AutoLinkRoadFactor / ChildWalkMPerMin), 1, 60),
+            WalkMin = (sbyte)Math.Min(AutoLinkMaxWalkMin, DepartureGuideCalculator.EstimateMinutes(s.DistanceM,
+                this._departureGuideOptions.ChildWalkKmh, this._departureGuideOptions.RoadFactor)),
             Priority = (sbyte)(i + 1),
             Note = i == 0 ? AutoLinkNearestNote : null,
             CreateDt = thisTime,
@@ -995,7 +1004,7 @@ public class ScheduleService : IScheduleService
             UpdateUser = AuditUser,
             DeleteYn = false
         });
-        await _scheduleRepository.AddAcademyPickupSpotsAsync(models, cancellationToken).ConfigureAwait(false);
+        return await _scheduleRepository.AddAcademyPickupSpotsAsync(models, cancellationToken).ConfigureAwait(false);
     }
 
     private static ResponseModel<AddScheduleResultDto> Fail(int code, string message)
