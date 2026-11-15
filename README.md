@@ -112,7 +112,7 @@ ride_mate/
 
 - 차량 로그인은 휴대폰 인증번호로 받은 계정에 QR로 들어가는 방식입니다. 인증번호는 실제 문자로 발송됩니다.
 - 따라서 앱을 끝까지 확인하려면 인증번호를 받고 QR을 찍을 휴대폰이 필요합니다.
-- API만 확인할 때는 Swagger의 `POST /api/v1/Auth/M/DevToken`(개발 전용, 계정 ID로 토큰 발급)으로 받은 `access_token`을 Authorize에 넣으면 됩니다.
+- API만 확인할 때는 Swagger의 `POST /api/v1/Auth/M/DevToken`(개발 전용, 계정 ID로 토큰 발급)으로 받은 `access_token`을 Authorize에 넣으면 됩니다. 심사용 계정은 `9`이며, 요청 본문은 `{"userId": 9}`입니다.
 - DevToken은 심사 편의를 위해 공모전 기간에만 열어 두며, 기간이 끝나면 닫습니다.
 
 ## Pleos Connect 에뮬레이터 버전과 화면 규격
