@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="WAY:ME gps_demo (DEMO)" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk><name>출발지(선릉역 인근) → 픽업 장소</name><trkseg>
+    <trkpt lat="37.504550" lon="127.049050"></trkpt>
+    <trkpt lat="37.496300" lon="127.052900"></trkpt>
+    <trkpt lat="37.494600" lon="127.062000"></trkpt>
+  </trkseg></trk>
+</gpx>
