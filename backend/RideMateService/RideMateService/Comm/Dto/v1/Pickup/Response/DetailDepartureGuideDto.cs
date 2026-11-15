@@ -36,7 +36,7 @@ public class DetailDepartureGuideDto
     public DepartureGuideDriveRouteDto? driveRoute { get; set; }
 
     /// <summary>
-    /// 추천 출발 시각. 하원 시각보다 기본 10분 먼저 픽업 장소에 닿도록 구한다. pickup이 null이면 null
+    /// 추천 출발 시각. 하원 시각 + 아이 도보 시간보다 기본 10분 먼저 픽업 장소에 닿도록 구한다. pickup이 null이면 null
     /// </summary>
     public DateTime? departureDt { get; set; }
 
