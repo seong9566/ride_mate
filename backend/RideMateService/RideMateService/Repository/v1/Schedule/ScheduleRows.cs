@@ -13,6 +13,15 @@ public class ScheduleHomeRow
 }
 
 /// <summary>
+/// 학원 좌표에서 가까운 픽업 지점 한 건과 직선 거리(m)
+/// </summary>
+public class NearbyPickupSpotRow
+{
+    public int PickupSpotId { get; set; }
+    public double DistanceM { get; set; }
+}
+
+/// <summary>
 /// 살아 있는 시간표의 살아 있는 요일 한 건과 그 시간표의 하원 시각
 /// </summary>
 public class LiveScheduleTimeRow

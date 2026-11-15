@@ -18,6 +18,12 @@ public interface IScheduleRepository
         string updateUser, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 학원별 픽업 지점 후보를 한 번에 등록한다.
+    /// </summary>
+    Task<bool> AddAcademyPickupSpotsAsync(IEnumerable<AcademyPickupSpot> models,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 시간표와 그 요일 행을 한 번에 등록한다. 저장 뒤 model의 시간표 ID가 채워진다.
     /// </summary>
     Task<bool> AddTimetableAsync(Timetable model, IEnumerable<TimetableDay> days,
@@ -58,6 +64,11 @@ public interface IScheduleRepository
         DateTime updateDt, string updateUser, CancellationToken cancellationToken = default);
 
     // ====== Dapper
+    /// <summary>
+    /// 학원가 안에서 좌표에 가까운 사용 중인 픽업 지점을 거리순으로 돌려준다. maxDistanceM 이내, 최대 limit개.
+    /// </summary>
+    Task<List<NearbyPickupSpotRow>> GetNearbyPickupSpotsAsync(int areaId, decimal lat, decimal lng, int maxDistanceM,
+        int limit, IDbTransaction transaction, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 살아 있는 운전자 계정 ID를 돌려준다. 없으면 null이다. 잠그지 않는 조회라 목록처럼 읽기만 하는 곳에 쓴다.
