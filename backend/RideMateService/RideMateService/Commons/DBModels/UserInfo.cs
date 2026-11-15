@@ -4,14 +4,14 @@ using System.Collections.Generic;
 namespace RideMateService.Commons.DBModels;
 
 /// <summary>
-/// 부모 계정
+/// 운전자 계정
 /// </summary>
-public partial class Parent
+public partial class UserInfo
 {
     /// <summary>
-    /// 부모 계정 ID
+    /// 운전자 계정 ID
     /// </summary>
-    public int ParentId { get; set; }
+    public int UserId { get; set; }
 
     /// <summary>
     /// 암호화한 휴대폰 번호
@@ -24,9 +24,9 @@ public partial class Parent
     public string PhoneHash { get; set; } = null!;
 
     /// <summary>
-    /// 아이에게 보이는 보호자 호칭
+    /// 운전자 이름
     /// </summary>
-    public string? CallName { get; set; }
+    public string UserName { get; set; } = null!;
 
     /// <summary>
     /// 차종
@@ -74,6 +74,11 @@ public partial class Parent
     public sbyte WakeBeforeMin { get; set; }
 
     /// <summary>
+    /// 초기 설정 완료 시각
+    /// </summary>
+    public DateTime? SetupDoneDt { get; set; }
+
+    /// <summary>
     /// 생성 일시
     /// </summary>
     public DateTime CreateDt { get; set; }
@@ -110,6 +115,8 @@ public partial class Parent
     public virtual ICollection<LoginSession> LoginSessions { get; set; } = new List<LoginSession>();
 
     public virtual ICollection<PickupPlan> PickupPlans { get; set; } = new List<PickupPlan>();
+
+    public virtual ICollection<PickupRecord> PickupRecords { get; set; } = new List<PickupRecord>();
 
     public virtual ICollection<QrLogin> QrLogins { get; set; } = new List<QrLogin>();
 }

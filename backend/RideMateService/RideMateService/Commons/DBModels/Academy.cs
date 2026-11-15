@@ -16,7 +16,7 @@ public partial class Academy
     /// <summary>
     /// 학원가 ID
     /// </summary>
-    public int AreaId { get; set; }
+    public int? AreaId { get; set; }
 
     /// <summary>
     /// 학원 이름
@@ -26,17 +26,17 @@ public partial class Academy
     /// <summary>
     /// 학원 주소
     /// </summary>
-    public string? Address { get; set; }
+    public string Address { get; set; } = null!;
 
     /// <summary>
     /// 학원 위도
     /// </summary>
-    public decimal Lat { get; set; }
+    public decimal? Lat { get; set; }
 
     /// <summary>
     /// 학원 경도
     /// </summary>
-    public decimal Lng { get; set; }
+    public decimal? Lng { get; set; }
 
     /// <summary>
     /// 데이터 출처 유형 (TEAM, NEIS, PLACE)
@@ -90,9 +90,11 @@ public partial class Academy
 
     public virtual ICollection<AcademyPickupSpot> AcademyPickupSpots { get; set; } = new List<AcademyPickupSpot>();
 
-    public virtual Area Area { get; set; } = null!;
+    public virtual Area? Area { get; set; }
 
     public virtual ICollection<PickupPlan> PickupPlans { get; set; } = new List<PickupPlan>();
+
+    public virtual ICollection<PickupSpotRequest> PickupSpotRequests { get; set; } = new List<PickupSpotRequest>();
 
     public virtual ICollection<Timetable> Timetables { get; set; } = new List<Timetable>();
 }

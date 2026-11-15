@@ -14,9 +14,19 @@ public partial class QrLogin
     public int QrLoginId { get; set; }
 
     /// <summary>
-    /// QR 토큰 HMAC
+    /// 차량이 보관하는 device_code HMAC
     /// </summary>
-    public string QrTokenHash { get; set; } = null!;
+    public string DeviceCodeHash { get; set; } = null!;
+
+    /// <summary>
+    /// QR에 담긴 user_code HMAC
+    /// </summary>
+    public string UserCodeHash { get; set; } = null!;
+
+    /// <summary>
+    /// 차·휴대폰에 함께 보이는 숫자 4자리
+    /// </summary>
+    public string MatchCode { get; set; } = null!;
 
     /// <summary>
     /// 차량 앱 설치 번호
@@ -24,19 +34,29 @@ public partial class QrLogin
     public string DeviceId { get; set; } = null!;
 
     /// <summary>
-    /// QR 로그인 상태 (PENDING, APPROVED, USED)
+    /// QR 로그인 상태 (PENDING, SCANNED, VERIFIED, APPROVED, USED, CANCELED)
     /// </summary>
     public string Status { get; set; } = null!;
 
     /// <summary>
-    /// 인증된 부모 계정 ID
+    /// 취소 사유 (USER, DRIVING, PHONE)
     /// </summary>
-    public int? ParentId { get; set; }
+    public string? CancelReason { get; set; }
+
+    /// <summary>
+    /// 인증한 운전자 계정 ID
+    /// </summary>
+    public int? UserId { get; set; }
 
     /// <summary>
     /// QR 로그인 만료 일시
     /// </summary>
     public DateTime ExpireDt { get; set; }
+
+    /// <summary>
+    /// 차량이 마지막으로 결과를 물은 일시
+    /// </summary>
+    public DateTime? LastPollDt { get; set; }
 
     /// <summary>
     /// 생성 일시
@@ -63,5 +83,5 @@ public partial class QrLogin
     /// </summary>
     public bool DeleteYn { get; set; }
 
-    public virtual Parent? Parent { get; set; }
+    public virtual UserInfo? User { get; set; }
 }

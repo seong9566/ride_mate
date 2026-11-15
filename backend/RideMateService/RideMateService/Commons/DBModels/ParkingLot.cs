@@ -89,9 +89,14 @@ public partial class ParkingLot
     public int? AddFee { get; set; }
 
     /// <summary>
-    /// 1일 주차권 요금(원)
+    /// 1일 주차권 요금(원). 1일 최대 요금은 DAY_MAX_FEE
     /// </summary>
     public int? DayPassFee { get; set; }
+
+    /// <summary>
+    /// 1일 최대 요금(원). 누적 요금의 상한
+    /// </summary>
+    public int? DayMaxFee { get; set; }
 
     /// <summary>
     /// 전체 주차 면수
@@ -117,6 +122,21 @@ public partial class ParkingLot
     /// 표준데이터 주차장 관리번호
     /// </summary>
     public string? SourceRef { get; set; }
+
+    /// <summary>
+    /// 요금·운영 시간을 고른 출처 (STANDARD, SEOUL)
+    /// </summary>
+    public string? FeeSource { get; set; }
+
+    /// <summary>
+    /// 고른 출처의 기준일
+    /// </summary>
+    public DateTime? FeeBaseDate { get; set; }
+
+    /// <summary>
+    /// 서울시 공영주차장 코드(PKLT_CD). 연결 안 되면 NULL
+    /// </summary>
+    public string? SeoulRef { get; set; }
 
     /// <summary>
     /// 생성 일시

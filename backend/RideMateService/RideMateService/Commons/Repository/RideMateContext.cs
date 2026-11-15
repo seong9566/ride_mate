@@ -28,8 +28,6 @@ public partial class RideMateContext : DbContext
 
     public virtual DbSet<LoopRoute> LoopRoutes { get; set; }
 
-    public virtual DbSet<Parent> Parents { get; set; }
-
     public virtual DbSet<ParkingLot> ParkingLots { get; set; }
 
     public virtual DbSet<PhoneVerification> PhoneVerifications { get; set; }
@@ -38,11 +36,15 @@ public partial class RideMateContext : DbContext
 
     public virtual DbSet<PickupPlan> PickupPlans { get; set; }
 
+    public virtual DbSet<PickupRecord> PickupRecords { get; set; }
+
     public virtual DbSet<PickupSession> PickupSessions { get; set; }
 
     public virtual DbSet<PickupSpot> PickupSpots { get; set; }
 
     public virtual DbSet<PickupSpotBlock> PickupSpotBlocks { get; set; }
+
+    public virtual DbSet<PickupSpotRequest> PickupSpotRequests { get; set; }
 
     public virtual DbSet<QrLogin> QrLogins { get; set; }
 
@@ -53,6 +55,18 @@ public partial class RideMateContext : DbContext
     public virtual DbSet<TimetableDay> TimetableDays { get; set; }
 
     public virtual DbSet<TimetableException> TimetableExceptions { get; set; }
+
+    public virtual DbSet<TrafficCollectRun> TrafficCollectRuns { get; set; }
+
+    public virtual DbSet<TrafficHourlySpeed> TrafficHourlySpeeds { get; set; }
+
+    public virtual DbSet<TrafficLink> TrafficLinks { get; set; }
+
+    public virtual DbSet<TrafficProfile> TrafficProfiles { get; set; }
+
+    public virtual DbSet<TrafficSpeed> TrafficSpeeds { get; set; }
+
+    public virtual DbSet<UserInfo> UserInfos { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -131,7 +145,6 @@ public partial class RideMateContext : DbContext
 
             entity.HasOne(d => d.Area).WithMany(p => p.Academies)
                 .HasForeignKey(d => d.AreaId)
-                .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_ACADEMY_01");
         });
 
@@ -167,6 +180,10 @@ public partial class RideMateContext : DbContext
             entity.Property(e => e.DeleteYn)
                 .HasComment("삭제 여부")
                 .HasColumnName("DELETE_YN");
+            entity.Property(e => e.Note)
+                .HasMaxLength(100)
+                .HasComment("학원 기준 지점 한 줄 안내")
+                .HasColumnName("NOTE");
             entity.Property(e => e.PickupSpotId)
                 .HasComment("픽업 지점 ID")
                 .HasColumnName("PICKUP_SPOT_ID");
@@ -205,6 +222,10 @@ public partial class RideMateContext : DbContext
             entity.Property(e => e.AreaId)
                 .HasComment("학원가(서비스 지역) ID")
                 .HasColumnName("AREA_ID");
+            entity.Property(e => e.AreaCode)
+                .HasMaxLength(20)
+                .HasComment("학원가 코드 (DAECHI, PYEONGCHON)")
+                .HasColumnName("AREA_CODE");
             entity.Property(e => e.AreaName)
                 .HasMaxLength(50)
                 .HasComment("학원가 이름")
@@ -236,11 +257,20 @@ public partial class RideMateContext : DbContext
 
             entity.ToTable("CHILD", tb => tb.HasComment("아이"));
 
-            entity.HasIndex(e => e.ParentId, "IX_CHILD_01");
+            entity.HasIndex(e => e.UserId, "IX_CHILD_01");
+
+            entity.HasIndex(e => new { e.PhoneHash, e.ActiveFlag }, "UK_CHILD_01").IsUnique();
 
             entity.Property(e => e.ChildId)
                 .HasComment("아이 ID")
                 .HasColumnName("CHILD_ID");
+            entity.Property(e => e.ActiveFlag)
+                .HasComment("살아 있는 행 표시 (UNIQUE용)")
+                .HasColumnName("ACTIVE_FLAG");
+            entity.Property(e => e.BirthDate)
+                .HasComment("생년월일. NULL은 이 칸을 넣기 전에 만든 행이다")
+                .HasColumnType("date")
+                .HasColumnName("BIRTH_DATE");
             entity.Property(e => e.ChildName)
                 .HasMaxLength(50)
                 .HasComment("아이 이름")
@@ -256,13 +286,15 @@ public partial class RideMateContext : DbContext
             entity.Property(e => e.DeleteYn)
                 .HasComment("삭제 여부")
                 .HasColumnName("DELETE_YN");
-            entity.Property(e => e.ParentId)
-                .HasComment("부모 계정 ID")
-                .HasColumnName("PARENT_ID");
             entity.Property(e => e.PhoneEnc)
                 .HasMaxLength(255)
                 .HasComment("암호화한 휴대폰 번호")
                 .HasColumnName("PHONE_ENC");
+            entity.Property(e => e.PhoneHash)
+                .HasMaxLength(64)
+                .IsFixedLength()
+                .HasComment("휴대폰 번호의 HMAC")
+                .HasColumnName("PHONE_HASH");
             entity.Property(e => e.SendChannel)
                 .HasMaxLength(20)
                 .HasComment("발송 채널 (SMS, ALIMTALK)")
@@ -275,9 +307,12 @@ public partial class RideMateContext : DbContext
                 .HasMaxLength(50)
                 .HasComment("수정자")
                 .HasColumnName("UPDATE_USER");
+            entity.Property(e => e.UserId)
+                .HasComment("운전자 계정 ID")
+                .HasColumnName("USER_ID");
 
-            entity.HasOne(d => d.Parent).WithMany(p => p.Children)
-                .HasForeignKey(d => d.ParentId)
+            entity.HasOne(d => d.User).WithMany(p => p.Children)
+                .HasForeignKey(d => d.UserId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_CHILD_01");
         });
@@ -288,7 +323,7 @@ public partial class RideMateContext : DbContext
 
             entity.ToTable("CONSENT", tb => tb.HasComment("동의 기록"));
 
-            entity.HasIndex(e => new { e.ParentId, e.ConsentType, e.ConsentId }, "IX_CONSENT_01");
+            entity.HasIndex(e => new { e.UserId, e.ConsentType, e.ConsentId }, "IX_CONSENT_01");
 
             entity.HasIndex(e => e.PhoneVerificationId, "IX_CONSENT_02");
 
@@ -304,7 +339,7 @@ public partial class RideMateContext : DbContext
                 .HasColumnName("CONSENT_DT");
             entity.Property(e => e.ConsentType)
                 .HasMaxLength(20)
-                .HasComment("동의 종류 (GUARDIAN, CHILD_INFO, ARRIVAL_LOG)")
+                .HasComment("동의 종류 (TERMS, PRIVACY, GUARDIAN, CHILD_INFO, ARRIVAL_LOG)")
                 .HasColumnName("CONSENT_TYPE");
             entity.Property(e => e.CreateDt)
                 .HasComment("생성 일시")
@@ -317,9 +352,6 @@ public partial class RideMateContext : DbContext
             entity.Property(e => e.DeleteYn)
                 .HasComment("삭제 여부")
                 .HasColumnName("DELETE_YN");
-            entity.Property(e => e.ParentId)
-                .HasComment("부모 계정 ID")
-                .HasColumnName("PARENT_ID");
             entity.Property(e => e.PhoneVerificationId)
                 .HasComment("휴대폰 인증번호 ID")
                 .HasColumnName("PHONE_VERIFICATION_ID");
@@ -335,19 +367,22 @@ public partial class RideMateContext : DbContext
                 .HasMaxLength(50)
                 .HasComment("수정자")
                 .HasColumnName("UPDATE_USER");
+            entity.Property(e => e.UserId)
+                .HasComment("운전자 계정 ID")
+                .HasColumnName("USER_ID");
             entity.Property(e => e.VerifyMethod)
                 .HasMaxLength(20)
                 .HasComment("확인 방법 (PHONE_OTP, CHECK)")
                 .HasColumnName("VERIFY_METHOD");
 
-            entity.HasOne(d => d.Parent).WithMany(p => p.Consents)
-                .HasForeignKey(d => d.ParentId)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK_CONSENT_01");
-
             entity.HasOne(d => d.PhoneVerification).WithMany(p => p.Consents)
                 .HasForeignKey(d => d.PhoneVerificationId)
                 .HasConstraintName("FK_CONSENT_02");
+
+            entity.HasOne(d => d.User).WithMany(p => p.Consents)
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_CONSENT_01");
         });
 
         modelBuilder.Entity<Holiday>(entity =>
@@ -397,9 +432,13 @@ public partial class RideMateContext : DbContext
         {
             entity.HasKey(e => e.LoginSessionId).HasName("PRIMARY");
 
-            entity.ToTable("LOGIN_SESSION", tb => tb.HasComment("차량 로그인"));
+            entity.ToTable("LOGIN_SESSION", tb => tb.HasComment("로그인 세션"));
 
-            entity.HasIndex(e => new { e.ParentId, e.DeviceId }, "IX_LOGIN_SESSION_01");
+            entity.HasIndex(e => new { e.UserId, e.DeviceId }, "IX_LOGIN_SESSION_01");
+
+            entity.HasIndex(e => e.PrevTokenHash, "IX_LOGIN_SESSION_02");
+
+            entity.HasIndex(e => new { e.DeviceId, e.SessionType }, "IX_LOGIN_SESSION_03");
 
             entity.HasIndex(e => e.TokenHash, "UK_LOGIN_SESSION_01").IsUnique();
 
@@ -429,9 +468,19 @@ public partial class RideMateContext : DbContext
                 .HasComment("마지막 사용 일시")
                 .HasColumnType("datetime")
                 .HasColumnName("LAST_USED_DT");
-            entity.Property(e => e.ParentId)
-                .HasComment("부모 계정 ID")
-                .HasColumnName("PARENT_ID");
+            entity.Property(e => e.PrevTokenHash)
+                .HasMaxLength(64)
+                .IsFixedLength()
+                .HasComment("교체 직전 로그인 토큰 HMAC")
+                .HasColumnName("PREV_TOKEN_HASH");
+            entity.Property(e => e.RotateDt)
+                .HasComment("토큰 교체 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("ROTATE_DT");
+            entity.Property(e => e.SessionType)
+                .HasMaxLength(20)
+                .HasComment("세션 종류 (CAR, WEB)")
+                .HasColumnName("SESSION_TYPE");
             entity.Property(e => e.TokenHash)
                 .HasMaxLength(64)
                 .IsFixedLength()
@@ -445,9 +494,12 @@ public partial class RideMateContext : DbContext
                 .HasMaxLength(50)
                 .HasComment("수정자")
                 .HasColumnName("UPDATE_USER");
+            entity.Property(e => e.UserId)
+                .HasComment("운전자 계정 ID")
+                .HasColumnName("USER_ID");
 
-            entity.HasOne(d => d.Parent).WithMany(p => p.LoginSessions)
-                .HasForeignKey(d => d.ParentId)
+            entity.HasOne(d => d.User).WithMany(p => p.LoginSessions)
+                .HasForeignKey(d => d.UserId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_LOGIN_SESSION_01");
         });
@@ -501,88 +553,6 @@ public partial class RideMateContext : DbContext
                 .HasConstraintName("FK_LOOP_ROUTE_01");
         });
 
-        modelBuilder.Entity<Parent>(entity =>
-        {
-            entity.HasKey(e => e.ParentId).HasName("PRIMARY");
-
-            entity.ToTable("PARENT", tb => tb.HasComment("부모 계정"));
-
-            entity.HasIndex(e => new { e.PhoneHash, e.ActiveFlag }, "UK_PARENT_01").IsUnique();
-
-            entity.Property(e => e.ParentId)
-                .HasComment("부모 계정 ID")
-                .HasColumnName("PARENT_ID");
-            entity.Property(e => e.ActiveFlag)
-                .HasComment("살아 있는 행 표시 (UNIQUE용)")
-                .HasColumnName("ACTIVE_FLAG");
-            entity.Property(e => e.ArrivalLogYn)
-                .HasComment("차량 도착 기록 사용 여부")
-                .HasColumnName("ARRIVAL_LOG_YN");
-            entity.Property(e => e.AutoSendYn)
-                .HasComment("링크 자동 발송 여부")
-                .HasColumnName("AUTO_SEND_YN");
-            entity.Property(e => e.CallName)
-                .HasMaxLength(20)
-                .HasComment("아이에게 보이는 보호자 호칭")
-                .HasColumnName("CALL_NAME");
-            entity.Property(e => e.CarColor)
-                .HasMaxLength(20)
-                .HasComment("차 색")
-                .HasColumnName("CAR_COLOR");
-            entity.Property(e => e.CarModel)
-                .HasMaxLength(50)
-                .HasComment("차종")
-                .HasColumnName("CAR_MODEL");
-            entity.Property(e => e.CarNoLast4)
-                .HasMaxLength(4)
-                .IsFixedLength()
-                .HasComment("차량 번호 뒷자리")
-                .HasColumnName("CAR_NO_LAST4");
-            entity.Property(e => e.CreateDt)
-                .HasComment("생성 일시")
-                .HasColumnType("datetime")
-                .HasColumnName("CREATE_DT");
-            entity.Property(e => e.CreateUser)
-                .HasMaxLength(50)
-                .HasComment("생성자")
-                .HasColumnName("CREATE_USER");
-            entity.Property(e => e.DeleteYn)
-                .HasComment("삭제 여부")
-                .HasColumnName("DELETE_YN");
-            entity.Property(e => e.DestAddress)
-                .HasMaxLength(200)
-                .HasComment("픽업 후 목적지 주소")
-                .HasColumnName("DEST_ADDRESS");
-            entity.Property(e => e.DestLat)
-                .HasPrecision(10, 7)
-                .HasComment("픽업 후 목적지 위도")
-                .HasColumnName("DEST_LAT");
-            entity.Property(e => e.DestLng)
-                .HasPrecision(10, 7)
-                .HasComment("픽업 후 목적지 경도")
-                .HasColumnName("DEST_LNG");
-            entity.Property(e => e.PhoneEnc)
-                .HasMaxLength(255)
-                .HasComment("암호화한 휴대폰 번호")
-                .HasColumnName("PHONE_ENC");
-            entity.Property(e => e.PhoneHash)
-                .HasMaxLength(64)
-                .IsFixedLength()
-                .HasComment("휴대폰 번호 HMAC")
-                .HasColumnName("PHONE_HASH");
-            entity.Property(e => e.UpdateDt)
-                .HasComment("수정 일시")
-                .HasColumnType("datetime")
-                .HasColumnName("UPDATE_DT");
-            entity.Property(e => e.UpdateUser)
-                .HasMaxLength(50)
-                .HasComment("수정자")
-                .HasColumnName("UPDATE_USER");
-            entity.Property(e => e.WakeBeforeMin)
-                .HasComment("출발 전 깨우는 시간(분)")
-                .HasColumnName("WAKE_BEFORE_MIN");
-        });
-
         modelBuilder.Entity<ParkingLot>(entity =>
         {
             entity.HasKey(e => e.ParkingLotId).HasName("PRIMARY");
@@ -633,12 +603,23 @@ public partial class RideMateContext : DbContext
                 .HasMaxLength(50)
                 .HasComment("생성자")
                 .HasColumnName("CREATE_USER");
+            entity.Property(e => e.DayMaxFee)
+                .HasComment("1일 최대 요금(원). 누적 요금의 상한")
+                .HasColumnName("DAY_MAX_FEE");
             entity.Property(e => e.DayPassFee)
-                .HasComment("1일 주차권 요금(원)")
+                .HasComment("1일 주차권 요금(원). 1일 최대 요금은 DAY_MAX_FEE")
                 .HasColumnName("DAY_PASS_FEE");
             entity.Property(e => e.DeleteYn)
                 .HasComment("삭제 여부")
                 .HasColumnName("DELETE_YN");
+            entity.Property(e => e.FeeBaseDate)
+                .HasComment("고른 출처의 기준일")
+                .HasColumnType("date")
+                .HasColumnName("FEE_BASE_DATE");
+            entity.Property(e => e.FeeSource)
+                .HasMaxLength(20)
+                .HasComment("요금·운영 시간을 고른 출처 (STANDARD, SEOUL)")
+                .HasColumnName("FEE_SOURCE");
             entity.Property(e => e.HolidayCloseTime)
                 .HasComment("일요일·공휴일 운영 종료 시각")
                 .HasColumnType("time")
@@ -671,6 +652,10 @@ public partial class RideMateContext : DbContext
                 .HasComment("토요일 운영 시작 시각")
                 .HasColumnType("time")
                 .HasColumnName("SAT_OPEN_TIME");
+            entity.Property(e => e.SeoulRef)
+                .HasMaxLength(20)
+                .HasComment("서울시 공영주차장 코드(PKLT_CD). 연결 안 되면 NULL")
+                .HasColumnName("SEOUL_REF");
             entity.Property(e => e.SourceRef)
                 .HasMaxLength(100)
                 .HasComment("표준데이터 주차장 관리번호")
@@ -797,7 +782,7 @@ public partial class RideMateContext : DbContext
                 .HasColumnName("EVENT_DT");
             entity.Property(e => e.EventType)
                 .HasMaxLength(20)
-                .HasComment("이벤트 유형 (PLANNED, STARTED, WAIT_STARTED, END_TIME_CHANGED, REASSIGNED, LINK_SENT, LINK_OPENED, CHILD_LEAVING, STOPPED, WRONG_STOP, REMIND_SENT, LOOP_STARTED, BOARDED, EXPIRED, CANCELED)")
+                .HasComment("이벤트 유형 (PLANNED, STARTED, WAIT_STARTED, END_TIME_CHANGED, REASSIGNED, LINK_SENT, LINK_RESENT, LINK_OPENED, CHILD_LEAVING, LEAVE_SCHEDULED, LEAVE_CANCELED, STOPPED, WRONG_STOP, REMIND_SENT, LOOP_STARTED, BOARDED, EXPIRED, CANCELED)")
                 .HasColumnName("EVENT_TYPE");
             entity.Property(e => e.PickupPlanId)
                 .HasComment("오늘 계획 ID")
@@ -823,9 +808,11 @@ public partial class RideMateContext : DbContext
 
             entity.ToTable("PICKUP_PLAN", tb => tb.HasComment("오늘 계획"));
 
+            entity.HasIndex(e => e.PrevPickupSpotId, "FK_PICKUP_PLAN_08");
+
             entity.HasIndex(e => new { e.PickupSpotId, e.SlotDt }, "IX_PICKUP_PLAN_01");
 
-            entity.HasIndex(e => new { e.ParentId, e.PickupDate }, "IX_PICKUP_PLAN_02");
+            entity.HasIndex(e => new { e.UserId, e.PickupDate }, "IX_PICKUP_PLAN_02");
 
             entity.HasIndex(e => e.ChildId, "IX_PICKUP_PLAN_03");
 
@@ -865,6 +852,18 @@ public partial class RideMateContext : DbContext
                 .HasMaxLength(50)
                 .HasComment("생성자")
                 .HasColumnName("CREATE_USER");
+            entity.Property(e => e.CustomLat)
+                .HasPrecision(10, 7)
+                .HasComment("부모가 고른 픽업 위도")
+                .HasColumnName("CUSTOM_LAT");
+            entity.Property(e => e.CustomLng)
+                .HasPrecision(10, 7)
+                .HasComment("부모가 고른 픽업 경도")
+                .HasColumnName("CUSTOM_LNG");
+            entity.Property(e => e.CustomName)
+                .HasMaxLength(100)
+                .HasComment("부모가 고른 픽업 장소 이름")
+                .HasColumnName("CUSTOM_NAME");
             entity.Property(e => e.DeleteYn)
                 .HasComment("삭제 여부")
                 .HasColumnName("DELETE_YN");
@@ -876,9 +875,6 @@ public partial class RideMateContext : DbContext
                 .HasComment("계획 만료 일시")
                 .HasColumnType("datetime")
                 .HasColumnName("EXPIRE_DT");
-            entity.Property(e => e.ParentId)
-                .HasComment("부모 계정 ID")
-                .HasColumnName("PARENT_ID");
             entity.Property(e => e.ParkingLotId)
                 .HasComment("대기 장소 ID")
                 .HasColumnName("PARKING_LOT_ID");
@@ -889,6 +885,21 @@ public partial class RideMateContext : DbContext
             entity.Property(e => e.PickupSpotId)
                 .HasComment("배정 픽업 지점 ID")
                 .HasColumnName("PICKUP_SPOT_ID");
+            entity.Property(e => e.PrevCustomLat)
+                .HasPrecision(10, 7)
+                .HasComment("직전 장소가 부모가 고른 임의 좌표면 그 위도")
+                .HasColumnName("PREV_CUSTOM_LAT");
+            entity.Property(e => e.PrevCustomLng)
+                .HasPrecision(10, 7)
+                .HasComment("직전 장소가 부모가 고른 임의 좌표면 그 경도")
+                .HasColumnName("PREV_CUSTOM_LNG");
+            entity.Property(e => e.PrevCustomName)
+                .HasMaxLength(100)
+                .HasComment("직전 임의 좌표의 장소 이름")
+                .HasColumnName("PREV_CUSTOM_NAME");
+            entity.Property(e => e.PrevPickupSpotId)
+                .HasComment("장소를 바꾸기 직전 장소가 기본 지점이면 그 지점")
+                .HasColumnName("PREV_PICKUP_SPOT_ID");
             entity.Property(e => e.SlotDt)
                 .HasComment("배정 도착 일시")
                 .HasColumnType("datetime")
@@ -916,6 +927,9 @@ public partial class RideMateContext : DbContext
                 .HasMaxLength(50)
                 .HasComment("수정자")
                 .HasColumnName("UPDATE_USER");
+            entity.Property(e => e.UserId)
+                .HasComment("운전자 계정 ID")
+                .HasColumnName("USER_ID");
             entity.Property(e => e.WaitStartDt)
                 .HasComment("대기 장소 도착 일시")
                 .HasColumnType("datetime")
@@ -937,21 +951,123 @@ public partial class RideMateContext : DbContext
                 .HasForeignKey(d => d.ChildId)
                 .HasConstraintName("FK_PICKUP_PLAN_02");
 
-            entity.HasOne(d => d.Parent).WithMany(p => p.PickupPlans)
-                .HasForeignKey(d => d.ParentId)
-                .HasConstraintName("FK_PICKUP_PLAN_01");
-
             entity.HasOne(d => d.ParkingLot).WithMany(p => p.PickupPlans)
                 .HasForeignKey(d => d.ParkingLotId)
                 .HasConstraintName("FK_PICKUP_PLAN_07");
 
-            entity.HasOne(d => d.PickupSpot).WithMany(p => p.PickupPlans)
+            entity.HasOne(d => d.PickupSpot).WithMany(p => p.PickupPlanPickupSpots)
                 .HasForeignKey(d => d.PickupSpotId)
                 .HasConstraintName("FK_PICKUP_PLAN_06");
+
+            entity.HasOne(d => d.PrevPickupSpot).WithMany(p => p.PickupPlanPrevPickupSpots)
+                .HasForeignKey(d => d.PrevPickupSpotId)
+                .HasConstraintName("FK_PICKUP_PLAN_08");
 
             entity.HasOne(d => d.TimetableDay).WithMany(p => p.PickupPlans)
                 .HasForeignKey(d => d.TimetableDayId)
                 .HasConstraintName("FK_PICKUP_PLAN_03");
+
+            entity.HasOne(d => d.User).WithMany(p => p.PickupPlans)
+                .HasForeignKey(d => d.UserId)
+                .HasConstraintName("FK_PICKUP_PLAN_01");
+        });
+
+        modelBuilder.Entity<PickupRecord>(entity =>
+        {
+            entity.HasKey(e => e.PickupRecordId).HasName("PRIMARY");
+
+            entity.ToTable("PICKUP_RECORD", tb => tb.HasComment("픽업 완료 기록"));
+
+            entity.HasIndex(e => e.UserId, "IX_PICKUP_RECORD_01");
+
+            entity.HasIndex(e => new { e.TimetableDayId, e.ActiveFlag }, "UK_PICKUP_RECORD_01").IsUnique();
+
+            entity.Property(e => e.PickupRecordId)
+                .HasComment("픽업 완료 기록 ID")
+                .HasColumnName("PICKUP_RECORD_ID");
+            entity.Property(e => e.ActiveFlag)
+                .HasComment("살아 있는 행 표시 (UNIQUE용)")
+                .HasColumnName("ACTIVE_FLAG");
+            entity.Property(e => e.ArriveDt)
+                .HasComment("집 도착 시각")
+                .HasColumnType("datetime")
+                .HasColumnName("ARRIVE_DT");
+            entity.Property(e => e.AutoSaveYn)
+                .HasComment("다음부터 묻지 않고 저장 여부")
+                .HasColumnName("AUTO_SAVE_YN");
+            entity.Property(e => e.BoardDt)
+                .HasComment("탑승 시각")
+                .HasColumnType("datetime")
+                .HasColumnName("BOARD_DT");
+            entity.Property(e => e.BoardLat)
+                .HasPrecision(10, 7)
+                .HasComment("탑승 장소 위도. 지우면 NULL")
+                .HasColumnName("BOARD_LAT");
+            entity.Property(e => e.BoardLng)
+                .HasPrecision(10, 7)
+                .HasComment("탑승 장소 경도. 지우면 NULL")
+                .HasColumnName("BOARD_LNG");
+            entity.Property(e => e.BoardName)
+                .HasMaxLength(100)
+                .HasComment("탑승 장소 이름. 지우면 빈 문자열")
+                .HasColumnName("BOARD_NAME");
+            entity.Property(e => e.CreateDt)
+                .HasComment("생성 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("CREATE_DT");
+            entity.Property(e => e.CreateUser)
+                .HasMaxLength(50)
+                .HasComment("생성자")
+                .HasColumnName("CREATE_USER");
+            entity.Property(e => e.DeleteYn)
+                .HasComment("삭제 여부")
+                .HasColumnName("DELETE_YN");
+            entity.Property(e => e.DepartDt)
+                .HasComment("출발 시각")
+                .HasColumnType("datetime")
+                .HasColumnName("DEPART_DT");
+            entity.Property(e => e.DepartLat)
+                .HasPrecision(10, 7)
+                .HasComment("출발 장소 위도. 지우면 NULL")
+                .HasColumnName("DEPART_LAT");
+            entity.Property(e => e.DepartLng)
+                .HasPrecision(10, 7)
+                .HasComment("출발 장소 경도. 지우면 NULL")
+                .HasColumnName("DEPART_LNG");
+            entity.Property(e => e.DepartName)
+                .HasMaxLength(100)
+                .HasComment("출발 장소 이름. 지우면 빈 문자열")
+                .HasColumnName("DEPART_NAME");
+            entity.Property(e => e.TimetableDayId)
+                .HasComment("시간표 요일 ID")
+                .HasColumnName("TIMETABLE_DAY_ID");
+            entity.Property(e => e.TotalMin)
+                .HasComment("총 소요 분")
+                .HasColumnName("TOTAL_MIN");
+            entity.Property(e => e.UpdateDt)
+                .HasComment("수정 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("UPDATE_DT");
+            entity.Property(e => e.UpdateUser)
+                .HasMaxLength(50)
+                .HasComment("수정자")
+                .HasColumnName("UPDATE_USER");
+            entity.Property(e => e.UserId)
+                .HasComment("계정 ID")
+                .HasColumnName("USER_ID");
+            entity.Property(e => e.WaitMin)
+                .HasComment("대기 분")
+                .HasColumnName("WAIT_MIN");
+
+            entity.HasOne(d => d.TimetableDay).WithMany(p => p.PickupRecords)
+                .HasForeignKey(d => d.TimetableDayId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_PICKUP_RECORD_02");
+
+            entity.HasOne(d => d.User).WithMany(p => p.PickupRecords)
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_PICKUP_RECORD_01");
         });
 
         modelBuilder.Entity<PickupSession>(entity =>
@@ -1140,19 +1256,25 @@ public partial class RideMateContext : DbContext
                 .HasConstraintName("FK_PICKUP_SPOT_BLOCK_01");
         });
 
-        modelBuilder.Entity<QrLogin>(entity =>
+        modelBuilder.Entity<PickupSpotRequest>(entity =>
         {
-            entity.HasKey(e => e.QrLoginId).HasName("PRIMARY");
+            entity.HasKey(e => e.PickupSpotRequestId).HasName("PRIMARY");
 
-            entity.ToTable("QR_LOGIN", tb => tb.HasComment("QR 로그인 요청"));
+            entity.ToTable("PICKUP_SPOT_REQUEST", tb => tb.HasComment("픽업 장소 추가 요청"));
 
-            entity.HasIndex(e => e.ParentId, "IX_QR_LOGIN_01");
+            entity.HasIndex(e => e.AcademyId, "IX_PICKUP_SPOT_REQUEST_01");
 
-            entity.HasIndex(e => e.QrTokenHash, "UK_QR_LOGIN_01").IsUnique();
+            entity.HasIndex(e => e.AreaId, "IX_PICKUP_SPOT_REQUEST_02");
 
-            entity.Property(e => e.QrLoginId)
-                .HasComment("QR 로그인 요청 ID")
-                .HasColumnName("QR_LOGIN_ID");
+            entity.Property(e => e.PickupSpotRequestId)
+                .HasComment("픽업 장소 추가 요청 ID")
+                .HasColumnName("PICKUP_SPOT_REQUEST_ID");
+            entity.Property(e => e.AcademyId)
+                .HasComment("학원 ID")
+                .HasColumnName("ACADEMY_ID");
+            entity.Property(e => e.AreaId)
+                .HasComment("학원가 ID. 학원에 좌표가 없으면 NULL")
+                .HasColumnName("AREA_ID");
             entity.Property(e => e.CreateDt)
                 .HasComment("생성 일시")
                 .HasColumnType("datetime")
@@ -1164,25 +1286,25 @@ public partial class RideMateContext : DbContext
             entity.Property(e => e.DeleteYn)
                 .HasComment("삭제 여부")
                 .HasColumnName("DELETE_YN");
-            entity.Property(e => e.DeviceId)
+            entity.Property(e => e.Lat)
+                .HasPrecision(10, 7)
+                .HasComment("원하는 위치 위도")
+                .HasColumnName("LAT");
+            entity.Property(e => e.Lng)
+                .HasPrecision(10, 7)
+                .HasComment("원하는 위치 경도")
+                .HasColumnName("LNG");
+            entity.Property(e => e.Memo)
+                .HasMaxLength(200)
+                .HasComment("요청 메모")
+                .HasColumnName("MEMO");
+            entity.Property(e => e.PlaceName)
                 .HasMaxLength(100)
-                .HasComment("차량 앱 설치 번호")
-                .HasColumnName("DEVICE_ID");
-            entity.Property(e => e.ExpireDt)
-                .HasComment("QR 로그인 만료 일시")
-                .HasColumnType("datetime")
-                .HasColumnName("EXPIRE_DT");
-            entity.Property(e => e.ParentId)
-                .HasComment("인증된 부모 계정 ID")
-                .HasColumnName("PARENT_ID");
-            entity.Property(e => e.QrTokenHash)
-                .HasMaxLength(64)
-                .IsFixedLength()
-                .HasComment("QR 토큰 HMAC")
-                .HasColumnName("QR_TOKEN_HASH");
+                .HasComment("원하는 장소 이름")
+                .HasColumnName("PLACE_NAME");
             entity.Property(e => e.Status)
                 .HasMaxLength(20)
-                .HasComment("QR 로그인 상태 (PENDING, APPROVED, USED)")
+                .HasComment("처리 상태 (REQUESTED, ACCEPTED, REJECTED)")
                 .HasColumnName("STATUS");
             entity.Property(e => e.UpdateDt)
                 .HasComment("수정 일시")
@@ -1193,8 +1315,91 @@ public partial class RideMateContext : DbContext
                 .HasComment("수정자")
                 .HasColumnName("UPDATE_USER");
 
-            entity.HasOne(d => d.Parent).WithMany(p => p.QrLogins)
-                .HasForeignKey(d => d.ParentId)
+            entity.HasOne(d => d.Academy).WithMany(p => p.PickupSpotRequests)
+                .HasForeignKey(d => d.AcademyId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_PICKUP_SPOT_REQUEST_01");
+
+            entity.HasOne(d => d.Area).WithMany(p => p.PickupSpotRequests)
+                .HasForeignKey(d => d.AreaId)
+                .HasConstraintName("FK_PICKUP_SPOT_REQUEST_02");
+        });
+
+        modelBuilder.Entity<QrLogin>(entity =>
+        {
+            entity.HasKey(e => e.QrLoginId).HasName("PRIMARY");
+
+            entity.ToTable("QR_LOGIN", tb => tb.HasComment("QR 로그인 요청"));
+
+            entity.HasIndex(e => e.UserId, "IX_QR_LOGIN_01");
+
+            entity.HasIndex(e => e.DeviceCodeHash, "UK_QR_LOGIN_01").IsUnique();
+
+            entity.HasIndex(e => e.UserCodeHash, "UK_QR_LOGIN_02").IsUnique();
+
+            entity.Property(e => e.QrLoginId)
+                .HasComment("QR 로그인 요청 ID")
+                .HasColumnName("QR_LOGIN_ID");
+            entity.Property(e => e.CancelReason)
+                .HasMaxLength(20)
+                .HasComment("취소 사유 (USER, DRIVING, PHONE)")
+                .HasColumnName("CANCEL_REASON");
+            entity.Property(e => e.CreateDt)
+                .HasComment("생성 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("CREATE_DT");
+            entity.Property(e => e.CreateUser)
+                .HasMaxLength(50)
+                .HasComment("생성자")
+                .HasColumnName("CREATE_USER");
+            entity.Property(e => e.DeleteYn)
+                .HasComment("삭제 여부")
+                .HasColumnName("DELETE_YN");
+            entity.Property(e => e.DeviceCodeHash)
+                .HasMaxLength(64)
+                .IsFixedLength()
+                .HasComment("차량이 보관하는 device_code HMAC")
+                .HasColumnName("DEVICE_CODE_HASH");
+            entity.Property(e => e.DeviceId)
+                .HasMaxLength(100)
+                .HasComment("차량 앱 설치 번호")
+                .HasColumnName("DEVICE_ID");
+            entity.Property(e => e.ExpireDt)
+                .HasComment("QR 로그인 만료 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("EXPIRE_DT");
+            entity.Property(e => e.LastPollDt)
+                .HasComment("차량이 마지막으로 결과를 물은 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("LAST_POLL_DT");
+            entity.Property(e => e.MatchCode)
+                .HasMaxLength(4)
+                .IsFixedLength()
+                .HasComment("차·휴대폰에 함께 보이는 숫자 4자리")
+                .HasColumnName("MATCH_CODE");
+            entity.Property(e => e.Status)
+                .HasMaxLength(20)
+                .HasComment("QR 로그인 상태 (PENDING, SCANNED, VERIFIED, APPROVED, USED, CANCELED)")
+                .HasColumnName("STATUS");
+            entity.Property(e => e.UpdateDt)
+                .HasComment("수정 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("UPDATE_DT");
+            entity.Property(e => e.UpdateUser)
+                .HasMaxLength(50)
+                .HasComment("수정자")
+                .HasColumnName("UPDATE_USER");
+            entity.Property(e => e.UserCodeHash)
+                .HasMaxLength(64)
+                .IsFixedLength()
+                .HasComment("QR에 담긴 user_code HMAC")
+                .HasColumnName("USER_CODE_HASH");
+            entity.Property(e => e.UserId)
+                .HasComment("인증한 운전자 계정 ID")
+                .HasColumnName("USER_ID");
+
+            entity.HasOne(d => d.User).WithMany(p => p.QrLogins)
+                .HasForeignKey(d => d.UserId)
                 .HasConstraintName("FK_QR_LOGIN_01");
         });
 
@@ -1285,6 +1490,8 @@ public partial class RideMateContext : DbContext
 
             entity.HasIndex(e => e.AcademyId, "IX_TIMETABLE_02");
 
+            entity.HasIndex(e => e.PickupSpotId, "IX_TIMETABLE_03");
+
             entity.Property(e => e.TimetableId)
                 .HasComment("시간표 ID")
                 .HasColumnName("TIMETABLE_ID");
@@ -1313,6 +1520,9 @@ public partial class RideMateContext : DbContext
                 .HasComment("하원 시각")
                 .HasColumnType("time")
                 .HasColumnName("END_TIME");
+            entity.Property(e => e.PickupSpotId)
+                .HasComment("우리 픽업 장소(부모가 고른 기본 픽업 지점 ID)")
+                .HasColumnName("PICKUP_SPOT_ID");
             entity.Property(e => e.UpdateDt)
                 .HasComment("수정 일시")
                 .HasColumnType("datetime")
@@ -1331,6 +1541,10 @@ public partial class RideMateContext : DbContext
                 .HasForeignKey(d => d.ChildId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_TIMETABLE_01");
+
+            entity.HasOne(d => d.PickupSpot).WithMany(p => p.Timetables)
+                .HasForeignKey(d => d.PickupSpotId)
+                .HasConstraintName("FK_TIMETABLE_03");
         });
 
         modelBuilder.Entity<TimetableDay>(entity =>
@@ -1439,6 +1653,391 @@ public partial class RideMateContext : DbContext
                 .HasForeignKey(d => d.TimetableDayId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK_TIMETABLE_EXCEPTION_01");
+        });
+
+        modelBuilder.Entity<TrafficCollectRun>(entity =>
+        {
+            entity.HasKey(e => e.CollectRunId).HasName("PRIMARY");
+
+            entity.ToTable("TRAFFIC_COLLECT_RUN", tb => tb.HasComment("수집 회차"));
+
+            entity.HasIndex(e => new { e.Source, e.RunDt }, "UK_TRAFFIC_COLLECT_RUN_01").IsUnique();
+
+            entity.Property(e => e.CollectRunId)
+                .HasComment("수집 회차 ID")
+                .HasColumnName("COLLECT_RUN_ID");
+            entity.Property(e => e.CreateDt)
+                .HasComment("생성 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("CREATE_DT");
+            entity.Property(e => e.CreateUser)
+                .HasMaxLength(50)
+                .HasComment("생성자")
+                .HasColumnName("CREATE_USER");
+            entity.Property(e => e.DeleteYn)
+                .HasComment("삭제 여부")
+                .HasColumnName("DELETE_YN");
+            entity.Property(e => e.ErrorMessage)
+                .HasMaxLength(500)
+                .HasComment("실패 요약 (키·URL 제외)")
+                .HasColumnName("ERROR_MESSAGE");
+            entity.Property(e => e.LinkCount)
+                .HasComment("대상 링크 수")
+                .HasColumnName("LINK_COUNT");
+            entity.Property(e => e.RunDt)
+                .HasComment("회차 시각(KST, 5분 경계)")
+                .HasColumnType("datetime")
+                .HasColumnName("RUN_DT");
+            entity.Property(e => e.SavedCount)
+                .HasComment("저장한 행 수")
+                .HasColumnName("SAVED_COUNT");
+            entity.Property(e => e.Source)
+                .HasMaxLength(20)
+                .HasComment("소스 (TOPIS, GITS)")
+                .HasColumnName("SOURCE");
+            entity.Property(e => e.Status)
+                .HasMaxLength(20)
+                .HasComment("수집 상태 (OK, PARTIAL, NO_KEY, FAILED)")
+                .HasColumnName("STATUS");
+            entity.Property(e => e.UpdateDt)
+                .HasComment("수정 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("UPDATE_DT");
+            entity.Property(e => e.UpdateUser)
+                .HasMaxLength(50)
+                .HasComment("수정자")
+                .HasColumnName("UPDATE_USER");
+        });
+
+        modelBuilder.Entity<TrafficHourlySpeed>(entity =>
+        {
+            entity.HasKey(e => e.TrafficHourlySpeedId).HasName("PRIMARY");
+
+            entity.ToTable("TRAFFIC_HOURLY_SPEED", tb => tb.HasComment("TOPIS 월별 시간 속도"));
+
+            entity.HasIndex(e => new { e.TrafficLinkId, e.SpeedDate, e.HourNo }, "UK_TRAFFIC_HOURLY_SPEED_01").IsUnique();
+
+            entity.Property(e => e.TrafficHourlySpeedId)
+                .HasComment("월별 시간 속도 ID")
+                .HasColumnName("TRAFFIC_HOURLY_SPEED_ID");
+            entity.Property(e => e.CreateDt)
+                .HasComment("생성 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("CREATE_DT");
+            entity.Property(e => e.CreateUser)
+                .HasMaxLength(50)
+                .HasComment("생성자")
+                .HasColumnName("CREATE_USER");
+            entity.Property(e => e.DeleteYn)
+                .HasComment("삭제 여부")
+                .HasColumnName("DELETE_YN");
+            entity.Property(e => e.HourNo)
+                .HasComment("시간 번호 (파일 열 ~HH시의 HH, 1~24)")
+                .HasColumnName("HOUR_NO");
+            entity.Property(e => e.SpeedDate)
+                .HasComment("속도 일자 (파일의 일자)")
+                .HasColumnType("date")
+                .HasColumnName("SPEED_DATE");
+            entity.Property(e => e.SpeedKmh)
+                .HasPrecision(5, 1)
+                .HasComment("속도(km/h)")
+                .HasColumnName("SPEED_KMH");
+            entity.Property(e => e.TrafficLinkId)
+                .HasComment("수집 대상 링크 ID")
+                .HasColumnName("TRAFFIC_LINK_ID");
+            entity.Property(e => e.UpdateDt)
+                .HasComment("수정 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("UPDATE_DT");
+            entity.Property(e => e.UpdateUser)
+                .HasMaxLength(50)
+                .HasComment("수정자")
+                .HasColumnName("UPDATE_USER");
+
+            entity.HasOne(d => d.TrafficLink).WithMany(p => p.TrafficHourlySpeeds)
+                .HasForeignKey(d => d.TrafficLinkId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_TRAFFIC_HOURLY_SPEED_01");
+        });
+
+        modelBuilder.Entity<TrafficLink>(entity =>
+        {
+            entity.HasKey(e => e.TrafficLinkId).HasName("PRIMARY");
+
+            entity.ToTable("TRAFFIC_LINK", tb => tb.HasComment("수집 대상 링크"));
+
+            entity.HasIndex(e => new { e.Source, e.AreaCode }, "IX_TRAFFIC_LINK_01");
+
+            entity.HasIndex(e => new { e.Source, e.LinkId, e.ActiveFlag }, "UK_TRAFFIC_LINK_01").IsUnique();
+
+            entity.Property(e => e.TrafficLinkId)
+                .HasComment("수집 대상 링크 ID")
+                .HasColumnName("TRAFFIC_LINK_ID");
+            entity.Property(e => e.ActiveFlag)
+                .HasComment("살아 있는 행 표시 (UNIQUE용)")
+                .HasColumnName("ACTIVE_FLAG");
+            entity.Property(e => e.AreaCode)
+                .HasMaxLength(20)
+                .HasComment("학원가 (DAECHI, PYEONGCHON)")
+                .HasColumnName("AREA_CODE");
+            entity.Property(e => e.AxisDir)
+                .HasMaxLength(20)
+                .HasComment("방향 (TOPIS axis_dir, GITS routeWay)")
+                .HasColumnName("AXIS_DIR");
+            entity.Property(e => e.CenterDistM)
+                .HasComment("학원가 중심에서 링크까지 최단 거리(m, TOPIS만 저장)")
+                .HasColumnName("CENTER_DIST_M");
+            entity.Property(e => e.CreateDt)
+                .HasComment("생성 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("CREATE_DT");
+            entity.Property(e => e.CreateUser)
+                .HasMaxLength(50)
+                .HasComment("생성자")
+                .HasColumnName("CREATE_USER");
+            entity.Property(e => e.DeleteYn)
+                .HasComment("삭제 여부")
+                .HasColumnName("DELETE_YN");
+            entity.Property(e => e.DistanceM)
+                .HasComment("링크 길이(m)")
+                .HasColumnName("DISTANCE_M");
+            entity.Property(e => e.EdNodeName)
+                .HasMaxLength(100)
+                .HasComment("끝 지점명")
+                .HasColumnName("ED_NODE_NAME");
+            entity.Property(e => e.LinkId)
+                .HasMaxLength(20)
+                .HasComment("소스의 링크 ID (TOPIS와 GITS는 체계가 다름)")
+                .HasColumnName("LINK_ID");
+            entity.Property(e => e.RoadName)
+                .HasMaxLength(100)
+                .HasComment("도로명")
+                .HasColumnName("ROAD_NAME");
+            entity.Property(e => e.RouteId)
+                .HasMaxLength(20)
+                .HasComment("GITS 도로 ID (도로 단위 수집용, TOPIS는 NULL)")
+                .HasColumnName("ROUTE_ID");
+            entity.Property(e => e.Source)
+                .HasMaxLength(20)
+                .HasComment("소스 (TOPIS, GITS)")
+                .HasColumnName("SOURCE");
+            entity.Property(e => e.StNodeName)
+                .HasMaxLength(100)
+                .HasComment("시작 지점명")
+                .HasColumnName("ST_NODE_NAME");
+            entity.Property(e => e.UpdateDt)
+                .HasComment("수정 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("UPDATE_DT");
+            entity.Property(e => e.UpdateUser)
+                .HasMaxLength(50)
+                .HasComment("수정자")
+                .HasColumnName("UPDATE_USER");
+        });
+
+        modelBuilder.Entity<TrafficProfile>(entity =>
+        {
+            entity.HasKey(e => e.TrafficProfileId).HasName("PRIMARY");
+
+            entity.ToTable("TRAFFIC_PROFILE", tb => tb.HasComment("학원가 요일·시간대 혼잡 집계"));
+
+            entity.HasIndex(e => new { e.AreaCode, e.DayOfWeek, e.SlotMin, e.Source }, "UK_TRAFFIC_PROFILE_01").IsUnique();
+
+            entity.Property(e => e.TrafficProfileId)
+                .HasComment("혼잡 집계 ID")
+                .HasColumnName("TRAFFIC_PROFILE_ID");
+            entity.Property(e => e.AreaCode)
+                .HasMaxLength(20)
+                .HasComment("학원가 코드 (DAECHI, PYEONGCHON)")
+                .HasColumnName("AREA_CODE");
+            entity.Property(e => e.CreateDt)
+                .HasComment("생성 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("CREATE_DT");
+            entity.Property(e => e.CreateUser)
+                .HasMaxLength(50)
+                .HasComment("생성자")
+                .HasColumnName("CREATE_USER");
+            entity.Property(e => e.DayOfWeek)
+                .HasComment("요일 번호 (월 1~일 7)")
+                .HasColumnName("DAY_OF_WEEK");
+            entity.Property(e => e.DeleteYn)
+                .HasComment("삭제 여부")
+                .HasColumnName("DELETE_YN");
+            entity.Property(e => e.SampleDays)
+                .HasComment("집계 표본 일수. 근거가 없으면 0")
+                .HasColumnName("SAMPLE_DAYS");
+            entity.Property(e => e.SlotMin)
+                .HasComment("자정부터 지난 분 (0~1435, 5분 단위)")
+                .HasColumnName("SLOT_MIN");
+            entity.Property(e => e.Source)
+                .HasMaxLength(20)
+                .HasComment("집계 소스 (COLLECTED, MONTHLY)")
+                .HasColumnName("SOURCE");
+            entity.Property(e => e.SpeedKmh)
+                .HasPrecision(5, 1)
+                .HasComment("집계 속도(km/h)")
+                .HasColumnName("SPEED_KMH");
+            entity.Property(e => e.UpdateDt)
+                .HasComment("수정 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("UPDATE_DT");
+            entity.Property(e => e.UpdateUser)
+                .HasMaxLength(50)
+                .HasComment("수정자")
+                .HasColumnName("UPDATE_USER");
+        });
+
+        modelBuilder.Entity<TrafficSpeed>(entity =>
+        {
+            entity.HasKey(e => e.TrafficSpeedId).HasName("PRIMARY");
+
+            entity.ToTable("TRAFFIC_SPEED", tb => tb.HasComment("5분 소통 이력"));
+
+            entity.HasIndex(e => e.CollectRunId, "IX_TRAFFIC_SPEED_01");
+
+            entity.HasIndex(e => e.CollectedDt, "IX_TRAFFIC_SPEED_02");
+
+            entity.HasIndex(e => new { e.TrafficLinkId, e.CollectedDt }, "UK_TRAFFIC_SPEED_01").IsUnique();
+
+            entity.Property(e => e.TrafficSpeedId)
+                .HasComment("5분 소통 이력 ID")
+                .HasColumnName("TRAFFIC_SPEED_ID");
+            entity.Property(e => e.CollectRunId)
+                .HasComment("수집 회차 ID")
+                .HasColumnName("COLLECT_RUN_ID");
+            entity.Property(e => e.CollectedDt)
+                .HasComment("회차 시각(5분 경계, 한 회차의 행은 모두 같은 값)")
+                .HasColumnType("datetime")
+                .HasColumnName("COLLECTED_DT");
+            entity.Property(e => e.CreateDt)
+                .HasComment("생성 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("CREATE_DT");
+            entity.Property(e => e.CreateUser)
+                .HasMaxLength(50)
+                .HasComment("생성자")
+                .HasColumnName("CREATE_USER");
+            entity.Property(e => e.DeleteYn)
+                .HasComment("삭제 여부")
+                .HasColumnName("DELETE_YN");
+            entity.Property(e => e.SourceCollectedDt)
+                .HasComment("소스가 준 수집 시각 (GITS collDate, TOPIS는 NULL)")
+                .HasColumnType("datetime")
+                .HasColumnName("SOURCE_COLLECTED_DT");
+            entity.Property(e => e.SpeedKmh)
+                .HasComment("속도 (TOPIS prcs_spd, GITS spd)")
+                .HasColumnName("SPEED_KMH");
+            entity.Property(e => e.TrafficLinkId)
+                .HasComment("수집 대상 링크 ID")
+                .HasColumnName("TRAFFIC_LINK_ID");
+            entity.Property(e => e.TravelSec)
+                .HasComment("여행시간 초 (TOPIS prcs_trv_time, GITS trvlTime)")
+                .HasColumnName("TRAVEL_SEC");
+            entity.Property(e => e.UpdateDt)
+                .HasComment("수정 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("UPDATE_DT");
+            entity.Property(e => e.UpdateUser)
+                .HasMaxLength(50)
+                .HasComment("수정자")
+                .HasColumnName("UPDATE_USER");
+
+            entity.HasOne(d => d.CollectRun).WithMany(p => p.TrafficSpeeds)
+                .HasForeignKey(d => d.CollectRunId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_TRAFFIC_SPEED_02");
+
+            entity.HasOne(d => d.TrafficLink).WithMany(p => p.TrafficSpeeds)
+                .HasForeignKey(d => d.TrafficLinkId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_TRAFFIC_SPEED_01");
+        });
+
+        modelBuilder.Entity<UserInfo>(entity =>
+        {
+            entity.HasKey(e => e.UserId).HasName("PRIMARY");
+
+            entity.ToTable("USER_INFO", tb => tb.HasComment("운전자 계정"));
+
+            entity.HasIndex(e => new { e.PhoneHash, e.ActiveFlag }, "UK_USER_INFO_01").IsUnique();
+
+            entity.Property(e => e.UserId)
+                .HasComment("운전자 계정 ID")
+                .HasColumnName("USER_ID");
+            entity.Property(e => e.ActiveFlag)
+                .HasComment("살아 있는 행 표시 (UNIQUE용)")
+                .HasColumnName("ACTIVE_FLAG");
+            entity.Property(e => e.ArrivalLogYn)
+                .HasComment("차량 도착 기록 사용 여부")
+                .HasColumnName("ARRIVAL_LOG_YN");
+            entity.Property(e => e.AutoSendYn)
+                .HasComment("링크 자동 발송 여부")
+                .HasColumnName("AUTO_SEND_YN");
+            entity.Property(e => e.CarColor)
+                .HasMaxLength(20)
+                .HasComment("차 색")
+                .HasColumnName("CAR_COLOR");
+            entity.Property(e => e.CarModel)
+                .HasMaxLength(50)
+                .HasComment("차종")
+                .HasColumnName("CAR_MODEL");
+            entity.Property(e => e.CarNoLast4)
+                .HasMaxLength(4)
+                .IsFixedLength()
+                .HasComment("차량 번호 뒷자리")
+                .HasColumnName("CAR_NO_LAST4");
+            entity.Property(e => e.CreateDt)
+                .HasComment("생성 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("CREATE_DT");
+            entity.Property(e => e.CreateUser)
+                .HasMaxLength(50)
+                .HasComment("생성자")
+                .HasColumnName("CREATE_USER");
+            entity.Property(e => e.DeleteYn)
+                .HasComment("삭제 여부")
+                .HasColumnName("DELETE_YN");
+            entity.Property(e => e.DestAddress)
+                .HasMaxLength(200)
+                .HasComment("픽업 후 목적지 주소")
+                .HasColumnName("DEST_ADDRESS");
+            entity.Property(e => e.DestLat)
+                .HasPrecision(10, 7)
+                .HasComment("픽업 후 목적지 위도")
+                .HasColumnName("DEST_LAT");
+            entity.Property(e => e.DestLng)
+                .HasPrecision(10, 7)
+                .HasComment("픽업 후 목적지 경도")
+                .HasColumnName("DEST_LNG");
+            entity.Property(e => e.PhoneEnc)
+                .HasMaxLength(255)
+                .HasComment("암호화한 휴대폰 번호")
+                .HasColumnName("PHONE_ENC");
+            entity.Property(e => e.PhoneHash)
+                .HasMaxLength(64)
+                .IsFixedLength()
+                .HasComment("휴대폰 번호 HMAC")
+                .HasColumnName("PHONE_HASH");
+            entity.Property(e => e.SetupDoneDt)
+                .HasComment("초기 설정 완료 시각")
+                .HasColumnType("datetime")
+                .HasColumnName("SETUP_DONE_DT");
+            entity.Property(e => e.UpdateDt)
+                .HasComment("수정 일시")
+                .HasColumnType("datetime")
+                .HasColumnName("UPDATE_DT");
+            entity.Property(e => e.UpdateUser)
+                .HasMaxLength(50)
+                .HasComment("수정자")
+                .HasColumnName("UPDATE_USER");
+            entity.Property(e => e.UserName)
+                .HasMaxLength(50)
+                .HasComment("운전자 이름")
+                .HasColumnName("USER_NAME");
+            entity.Property(e => e.WakeBeforeMin)
+                .HasComment("출발 전 깨우는 시간(분)")
+                .HasColumnName("WAKE_BEFORE_MIN");
         });
 
         OnModelCreatingPartial(modelBuilder);

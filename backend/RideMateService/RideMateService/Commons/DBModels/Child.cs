@@ -14,9 +14,9 @@ public partial class Child
     public int ChildId { get; set; }
 
     /// <summary>
-    /// 부모 계정 ID
+    /// 운전자 계정 ID
     /// </summary>
-    public int ParentId { get; set; }
+    public int UserId { get; set; }
 
     /// <summary>
     /// 아이 이름
@@ -29,9 +29,19 @@ public partial class Child
     public byte[] PhoneEnc { get; set; } = null!;
 
     /// <summary>
+    /// 휴대폰 번호의 HMAC
+    /// </summary>
+    public string? PhoneHash { get; set; }
+
+    /// <summary>
     /// 발송 채널 (SMS, ALIMTALK)
     /// </summary>
     public string SendChannel { get; set; } = null!;
+
+    /// <summary>
+    /// 생년월일. NULL은 이 칸을 넣기 전에 만든 행이다
+    /// </summary>
+    public DateTime? BirthDate { get; set; }
 
     /// <summary>
     /// 생성 일시
@@ -58,9 +68,14 @@ public partial class Child
     /// </summary>
     public bool DeleteYn { get; set; }
 
-    public virtual Parent Parent { get; set; } = null!;
+    /// <summary>
+    /// 살아 있는 행 표시 (UNIQUE용)
+    /// </summary>
+    public sbyte? ActiveFlag { get; set; }
 
     public virtual ICollection<PickupPlan> PickupPlans { get; set; } = new List<PickupPlan>();
 
     public virtual ICollection<Timetable> Timetables { get; set; } = new List<Timetable>();
+
+    public virtual UserInfo User { get; set; } = null!;
 }

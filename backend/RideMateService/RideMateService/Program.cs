@@ -2,12 +2,22 @@ using System.Data;
 using System.IO.Compression;
 using System.Text.RegularExpressions;
 using Dapper;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
+using Newtonsoft.Json;
 using RideMateService.Comm;
-using RideMateService.Comm.Logger;
+using RideMateService.Comm.Map;
+using RideMateService.Comm.Parking;
+using RideMateService.Comm.Security;
 using RideMateService.Commons.Repository;
+using RideMateService.Extensions;
+using RideMateService.Service.v1.Auth;
+using RideMateService.Service.v1.Pickup;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -52,29 +62,93 @@ builder.Services.AddSwaggerGen(c =>
     c.MapType<IFormFile>(() => new OpenApiSchema { Type = JsonSchemaType.String, Format = "binary" });
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
-        Description = @"입력양식 - 'Bearer' [space] and then your token.
-        예: 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'",
-        Name = "Authorization",
-        In = ParameterLocation.Header,
-        Type = SecuritySchemeType.ApiKey,
-        Scheme = "Bearer",
+        Description = @"access 토큰만 입력한다. 'Bearer ' 접두는 Swagger가 붙인다.
+        예: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
         BearerFormat = "JWT"
     });
-    c.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+    c.AddSecurityDefinition(WebSessionAuthenticationHandler.AuthenticationScheme, new OpenApiSecurityScheme
     {
-        [new OpenApiSecuritySchemeReference("Bearer", document, null)] = new List<string>()
+        Description = "휴대폰 웹 세션 쿠키",
+        Type = SecuritySchemeType.ApiKey,
+        In = ParameterLocation.Cookie,
+        Name = WebSessionAuthenticationHandler.CookieName
     });
+    c.OperationFilter<SignRouteOperationFilter>();
 });
+#endregion
+
+#region 도메인 DI
+
+builder.Services.AddDomainModules();
+#endregion
+
+#region 백그라운드 워커
+
+builder.Services.AddHostedService<PickupPlanExpiryWorker>();
+builder.Services.AddHostedService<PhoneVerificationCleanupWorker>();
 #endregion
 
 #region 공용 서비스
 
-builder.Services.AddTransient<ILogService, LogService>();
+builder.Services.AddCommonInfrastructure();
+builder.Services.AddMapInfrastructure(builder.Configuration);
+builder.Services.AddSmsInfrastructure(builder.Configuration, builder.Environment);
 #endregion
 
 #region Dapper 타입 핸들러
 
 SqlMapper.AddTypeHandler(typeof(DateOnly), new DateOnlyHandler());
+#endregion
+
+#region 인증
+
+builder.Services.AddAuthInfrastructure(builder.Configuration);
+
+// 설정값은 AddAuthInfrastructure에서 이미 검증되었다
+var jwtOptions = builder.Configuration.GetSection("Jwt").Get<JwtOptions>()!;
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwtOptions.Issuer,
+            ValidateAudience = true,
+            ValidAudience = jwtOptions.Audience,
+            ValidateLifetime = true,
+            RequireExpirationTime = true,
+            RequireSignedTokens = true,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Convert.FromBase64String(jwtOptions.SigningKey)),
+            ValidAlgorithms = new[] { SecurityAlgorithms.HmacSha256 },
+            ClockSkew = TimeSpan.Zero
+        };
+        options.Events = new JwtBearerEvents
+        {
+            OnChallenge = async context =>
+            {
+                // 기본 응답을 막고 항상 같은 401 본문을 쓴다
+                if (context.Response.HasStarted)
+                    return;
+
+                context.HandleResponse();
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                context.Response.ContentType = "application/json; charset=utf-8";
+                var body = JsonConvert.SerializeObject(new ResponseModel<object>
+                {
+                    message = "잘못된 요청입니다.",
+                    data = null,
+                    code = 401
+                });
+                await context.Response.WriteAsync(body).ConfigureAwait(false);
+            }
+        };
+    })
+    .AddScheme<AuthenticationSchemeOptions, WebSessionAuthenticationHandler>(
+        WebSessionAuthenticationHandler.AuthenticationScheme, null);
 #endregion
 
 #region DbContext
@@ -98,6 +172,20 @@ builder.Services.AddTransient<IDbConnection>(sp =>
     sp.GetRequiredService<RideMateContext>().Database.GetDbConnection());
 #endregion
 
+#region CORS
+// 아이 휴대폰 웹은 링크 토큰을 X-Pickup-Token 헤더로 보내고 쿠키를 쓰지 않으므로 credentials는 허용하지 않는다.
+// 웹이 429의 Retry-After를 읽으므로 노출한다
+var childWebOrigins = builder.Configuration.GetSection("Cors:ChildWebOrigins").Get<string[]>();
+if (childWebOrigins is not { Length: > 0 } || childWebOrigins.Any(string.IsNullOrWhiteSpace))
+    throw new InvalidOperationException("Cors:ChildWebOrigins 설정이 비어 있습니다.");
+
+builder.Services.AddCors(options => options.AddPolicy(ChildWebCors.PolicyName, policy => policy
+    .WithOrigins(childWebOrigins)
+    .WithMethods("GET", "POST", "DELETE")
+    .WithHeaders("Accept", "Content-Type", "X-Pickup-Token")
+    .WithExposedHeaders("Retry-After")));
+#endregion
+
 builder.Services.AddControllers(options =>
     {
         options.Filters.Add<RunActionFilter>();
@@ -106,7 +194,20 @@ builder.Services.AddControllers(options =>
 
 builder.Services.AddAuthorization();
 
+#region RateLimiter
+// 차 계정 목록 API의 클라이언트별 요청 빈도 제한. 파티션 키는 클라이언트 IP라 프록시 뒤에서는 ForwardedHeaders가 먼저 있어야 한다
+builder.Services.AddRateLimitPolicies();
+#endregion
+
 var app = builder.Build();
+
+// 외부 API 키가 비어 있어도 기동은 하므로 사용 여부만 남기고 키 값은 남기지 않는다
+app.Logger.LogInformation("Fixed phone verification code: {State}",
+    string.IsNullOrEmpty(app.Services.GetRequiredService<IOptions<PhoneVerificationOptions>>().Value.FixedCode) ? "OFF" : "ON");
+app.Logger.LogInformation("Kakao walk route: {State}",
+    string.IsNullOrWhiteSpace(app.Services.GetRequiredService<IOptions<KakaoOptions>>().Value.RestApiKey) ? "OFF" : "ON");
+app.Logger.LogInformation("Parking realtime: {State}",
+    string.IsNullOrWhiteSpace(app.Services.GetRequiredService<IOptions<PublicDataOptions>>().Value.ServiceKey) ? "OFF" : "ON");
 
 app.UseResponseCompression();
 
@@ -119,13 +220,20 @@ app.UseSwaggerUI(c =>
 {
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "RideMate v1");
     c.RoutePrefix = "swagger";
+    if (app.Environment.IsDevelopment())
+        c.EnablePersistAuthorization(); // 개발 중 Authorize에 넣은 토큰을 새로고침해도 유지한다
+
 });
 #endregion
 
+app.UseCors(); // 정책은 [EnableCors]로 엔드포인트에 붙인다. preflight는 빈도 제한 전에 여기서 끝난다
+
+app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter(); // UseRouting 뒤여야 엔드포인트별 정책([EnableRateLimiting])이 붙는다
 
 app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
-app.MapControllers();
+app.MapControllers().RequireAuthForSignRoutes();
 
 app.Run();
 

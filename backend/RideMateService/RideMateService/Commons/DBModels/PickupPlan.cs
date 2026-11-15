@@ -14,9 +14,9 @@ public partial class PickupPlan
     public int PickupPlanId { get; set; }
 
     /// <summary>
-    /// 부모 계정 ID
+    /// 운전자 계정 ID
     /// </summary>
-    public int? ParentId { get; set; }
+    public int? UserId { get; set; }
 
     /// <summary>
     /// 아이 ID
@@ -62,6 +62,41 @@ public partial class PickupPlan
     /// 아이 도보 시간(분)
     /// </summary>
     public sbyte? WalkMin { get; set; }
+
+    /// <summary>
+    /// 부모가 고른 픽업 위도
+    /// </summary>
+    public decimal? CustomLat { get; set; }
+
+    /// <summary>
+    /// 부모가 고른 픽업 경도
+    /// </summary>
+    public decimal? CustomLng { get; set; }
+
+    /// <summary>
+    /// 부모가 고른 픽업 장소 이름
+    /// </summary>
+    public string? CustomName { get; set; }
+
+    /// <summary>
+    /// 장소를 바꾸기 직전 장소가 기본 지점이면 그 지점
+    /// </summary>
+    public int? PrevPickupSpotId { get; set; }
+
+    /// <summary>
+    /// 직전 장소가 부모가 고른 임의 좌표면 그 위도
+    /// </summary>
+    public decimal? PrevCustomLat { get; set; }
+
+    /// <summary>
+    /// 직전 장소가 부모가 고른 임의 좌표면 그 경도
+    /// </summary>
+    public decimal? PrevCustomLng { get; set; }
+
+    /// <summary>
+    /// 직전 임의 좌표의 장소 이름
+    /// </summary>
+    public string? PrevCustomName { get; set; }
 
     /// <summary>
     /// 계획 만료 일시
@@ -134,8 +169,6 @@ public partial class PickupPlan
 
     public virtual Child? Child { get; set; }
 
-    public virtual Parent? Parent { get; set; }
-
     public virtual ParkingLot? ParkingLot { get; set; }
 
     public virtual ICollection<PickupEvent> PickupEvents { get; set; } = new List<PickupEvent>();
@@ -144,5 +177,9 @@ public partial class PickupPlan
 
     public virtual PickupSpot? PickupSpot { get; set; }
 
+    public virtual PickupSpot? PrevPickupSpot { get; set; }
+
     public virtual TimetableDay? TimetableDay { get; set; }
+
+    public virtual UserInfo? User { get; set; }
 }

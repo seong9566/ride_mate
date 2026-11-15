@@ -19,6 +19,11 @@ public partial class Area
     public string AreaName { get; set; } = null!;
 
     /// <summary>
+    /// 학원가 코드 (DAECHI, PYEONGCHON)
+    /// </summary>
+    public string? AreaCode { get; set; }
+
+    /// <summary>
     /// 생성 일시
     /// </summary>
     public DateTime CreateDt { get; set; }
@@ -48,6 +53,8 @@ public partial class Area
     public virtual ICollection<ParkingLot> ParkingLots { get; set; } = new List<ParkingLot>();
 
     public virtual ICollection<PickupPlan> PickupPlans { get; set; } = new List<PickupPlan>();
+
+    public virtual ICollection<PickupSpotRequest> PickupSpotRequests { get; set; } = new List<PickupSpotRequest>();
 
     public virtual ICollection<PickupSpot> PickupSpots { get; set; } = new List<PickupSpot>();
 

@@ -34,6 +34,11 @@ public partial class AcademyPickupSpot
     public sbyte Priority { get; set; }
 
     /// <summary>
+    /// 학원 기준 지점 한 줄 안내
+    /// </summary>
+    public string? Note { get; set; }
+
+    /// <summary>
     /// 생성 일시
     /// </summary>
     public DateTime CreateDt { get; set; }

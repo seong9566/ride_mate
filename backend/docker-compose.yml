@@ -2,6 +2,7 @@ services:
   mysql:
     image: mysql:8.4
     container_name: ridemate-mysql
+    restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ridemate
@@ -19,5 +20,63 @@ services:
       interval: 5s
       timeout: 5s
       retries: 24
+
+  n8n:
+    image: n8nio/n8n:2.47.3
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports: ["127.0.0.1:5678:5678"]
+    volumes:
+      - n8n-data:/home/node/.n8n
+    environment:
+      TZ: Asia/Seoul
+      GENERIC_TIMEZONE: Asia/Seoul
+      DATA_GO_KR_API_KEY: "${DATA_GO_KR_API_KEY:-}"
+      TOPIS_API_KEY: "${TOPIS_API_KEY:-}"
+      GITS_API_KEY: "${GITS_API_KEY:-}"
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      EXECUTIONS_DATA_SAVE_ON_SUCCESS: none
+      EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS: "false"
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: "168"
+      N8N_DIAGNOSTICS_ENABLED: "false"
+
+  # 배포용 API 서버. 개발 중에는 dotnet run을 쓰므로 --profile deploy를 줄 때만 뜬다
+  api:
+    profiles: ["deploy"]
+    build: ./RideMateService/RideMateService
+    container_name: ridemate-api
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${API_PORT:-8080}:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      TZ: Asia/Seoul
+      ConnectionStrings__DefaultConnection: "Server=mysql;Port=3306;Database=ridemate;User=ridemate;Password=${MYSQL_PASSWORD};CharSet=utf8mb4;"
+      Jwt__Issuer: "${JWT_ISSUER:-}"
+      Jwt__Audience: "${JWT_AUDIENCE:-}"
+      Jwt__SigningKey: "${JWT_SIGNING_KEY:-}"
+      Crypto__PhoneEncKey: "${CRYPTO_PHONE_ENC_KEY:-}"
+      Crypto__HashKey: "${CRYPTO_HASH_KEY:-}"
+      PublicData__ServiceKey: "${DATA_GO_KR_API_KEY:-}"
+      Kakao__RestApiKey: "${KAKAO_REST_API_KEY:-}"
+      Sms__Provider: "${SMS_PROVIDER:-Dev}"
+      Sms__Solapi__ApiKey: "${SOLAPI_API_KEY:-}"
+      Sms__Solapi__ApiSecret: "${SOLAPI_API_SECRET:-}"
+      Sms__Solapi__Sender: "${SOLAPI_SENDER:-}"
+      PhoneVerification__FixedCode: "${PHONE_VERIFICATION_FIXED_CODE:-}"
+      QrLogin__VerificationUri: "${PUBLIC_BASE_URL:-http://localhost:3000}/qr"
+      # 아이 휴대폰 웹은 API와 다른 도메인(vercel)에 있다. 링크는 BaseUrl + "/" + 토큰이고, 같은 값을 CORS 허용 오리진으로도 넘긴다
+      PickupLink__BaseUrl: "${CHILD_WEB_BASE_URL:-https://ride-mate-child-web.vercel.app}"
+      Cors__ChildWebOrigins__0: "${CHILD_WEB_BASE_URL:-https://ride-mate-child-web.vercel.app}"
 volumes:
   ridemate-mysql-data:
+  n8n-data:

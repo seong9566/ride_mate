@@ -1,0 +1,385 @@
+{
+  "id": "gitsCollect00001",
+  "name": "GITS 5분 수집",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/5 14-23 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "5분마다 실행",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [-1520, 160]
+    },
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "수동 실행",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-1520, 360]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const now = $now.setZone('Asia/Seoul');\nconst runDt = now.minus({ minutes: now.minute % 5 }).set({ second: 0, millisecond: 0 });\nconst hasKey = String($env.GITS_API_KEY ?? '').trim().length > 0;\n\nreturn [{\n  json: {\n    runDt: runDt.toFormat('yyyy-LL-dd HH:mm:ss'),\n    hasKey: hasKey ? 1 : 0,\n  },\n}];"
+      },
+      "id": "calculate-run-time",
+      "name": "회차 시각 계산",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1280, 260]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO TRAFFIC_COLLECT_RUN (SOURCE, RUN_DT, STATUS, LINK_COUNT, SAVED_COUNT, ERROR_MESSAGE, CREATE_DT, CREATE_USER, UPDATE_DT, UPDATE_USER)\nVALUES ('GITS', $1, 'FAILED', 0, 0, NULL, NOW(), 'SYSTEM', NOW(), 'SYSTEM')\nON DUPLICATE KEY UPDATE UPDATE_DT = NOW(), UPDATE_USER = 'SYSTEM'",
+        "options": {
+          "queryReplacement": "={{ [$json.runDt] }}"
+        }
+      },
+      "id": "upsert-collect-run",
+      "name": "회차 행 넣기",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [-1040, 260],
+      "credentials": {
+        "mySql": {
+          "id": "rmMysqlCred00001",
+          "name": "ridemate-mysql"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COLLECT_RUN_ID, RUN_DT, $1 AS HAS_KEY\nFROM TRAFFIC_COLLECT_RUN\nWHERE SOURCE = 'GITS' AND RUN_DT = $2",
+        "options": {
+          "queryReplacement": "={{ [$('회차 시각 계산').first().json.hasKey, $('회차 시각 계산').first().json.runDt] }}"
+        }
+      },
+      "id": "select-collect-run",
+      "name": "회차 행 조회",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [-800, 260],
+      "credentials": {
+        "mySql": {
+          "id": "rmMysqlCred00001",
+          "name": "ridemate-mysql"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "has-gits-key",
+              "leftValue": "={{ Number($json.HAS_KEY) }}",
+              "rightValue": 1,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-api-key",
+      "name": "API 키 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [-560, 260]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE TRAFFIC_COLLECT_RUN\nSET STATUS = 'NO_KEY', LINK_COUNT = 0, SAVED_COUNT = 0, ERROR_MESSAGE = NULL, UPDATE_DT = NOW(), UPDATE_USER = 'SYSTEM'\nWHERE COLLECT_RUN_ID = $1",
+        "options": {
+          "queryReplacement": "={{ [$json.COLLECT_RUN_ID] }}"
+        }
+      },
+      "id": "mark-no-key",
+      "name": "키 없음 기록",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [-320, 480],
+      "credentials": {
+        "mySql": {
+          "id": "rmMysqlCred00001",
+          "name": "ridemate-mysql"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT TRAFFIC_LINK_ID, LINK_ID, ROUTE_ID\nFROM TRAFFIC_LINK\nWHERE SOURCE = 'GITS' AND DELETE_YN = 0\nORDER BY TRAFFIC_LINK_ID",
+        "options": {}
+      },
+      "id": "select-links",
+      "name": "GITS 링크 조회",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [-320, 160],
+      "credentials": {
+        "mySql": {
+          "id": "rmMysqlCred00001",
+          "name": "ridemate-mysql"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const links = $input.all()\n  .map((item) => item.json)\n  .filter((row) => row.TRAFFIC_LINK_ID != null && row.LINK_ID != null && row.ROUTE_ID != null)\n  .map((row) => ({\n    trafficLinkId: Number(row.TRAFFIC_LINK_ID),\n    linkId: String(row.LINK_ID),\n    routeId: String(row.ROUTE_ID),\n  }));\nconst collectRunId = Number($('회차 행 조회').first().json.COLLECT_RUN_ID);\n\nreturn [{\n  json: {\n    collectRunId,\n    runDt: $('회차 시각 계산').first().json.runDt,\n    hasLinks: links.length > 0,\n    linkCount: links.length,\n    links,\n    errorMessage: '링크 목록 비어 있음 — 링크 목록 만들기를 먼저 실행',\n  },\n}];"
+      },
+      "id": "prepare-links",
+      "name": "링크 목록 준비",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-80, 160]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "has-gits-links",
+              "leftValue": "={{ $json.hasLinks }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-links",
+      "name": "링크 목록 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [160, 160]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE TRAFFIC_COLLECT_RUN\nSET STATUS = 'FAILED', LINK_COUNT = 0, SAVED_COUNT = 0, ERROR_MESSAGE = $1, UPDATE_DT = NOW(), UPDATE_USER = 'SYSTEM'\nWHERE COLLECT_RUN_ID = $2",
+        "options": {
+          "queryReplacement": "={{ [$json.errorMessage, $json.collectRunId] }}"
+        }
+      },
+      "id": "mark-empty-links",
+      "name": "빈 링크 목록 기록",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [400, 360],
+      "credentials": {
+        "mySql": {
+          "id": "rmMysqlCred00001",
+          "name": "ridemate-mysql"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const context = $input.first().json;\nconst byRoute = new Map();\n\nfor (const link of context.links) {\n  if (!byRoute.has(link.routeId)) byRoute.set(link.routeId, []);\n  byRoute.get(link.routeId).push(link);\n}\n\nreturn [...byRoute.entries()].map(([routeId, links]) => ({\n  json: { routeId, links },\n}));"
+      },
+      "id": "expand-routes",
+      "name": "도로별 호출 행 만들기",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 80]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://openapigits.gg.go.kr/api/rest/getRoadLinkTrafficInfoList?serviceKey=' + $env.GITS_API_KEY + '&routeId=' + encodeURIComponent($json.routeId) }}",
+        "authentication": "none",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 250
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text",
+              "outputPropertyName": "body"
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "request-gits",
+      "name": "GITS 도로 소통 호출",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [640, 160],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "merge-response",
+      "name": "호출 정보 합치기",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [880, 80]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "function decodeXml(value) {\n  return value\n    .replace(/&lt;/g, '<')\n    .replace(/&gt;/g, '>')\n    .replace(/&quot;/g, String.fromCharCode(34))\n    .replace(/&apos;/g, String.fromCharCode(39))\n    .replace(/&#(\\d+);/g, (_, code) => String.fromCodePoint(Number(code)))\n    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)))\n    .replace(/&amp;/g, '&');\n}\n\nfunction tagValue(xml, tagName) {\n  const match = xml.match(new RegExp(`<${tagName}(?:\\\\s[^>]*)?>([\\\\s\\\\S]*?)<\\\\/${tagName}>`, 'i'));\n  return match ? decodeXml(match[1].replace(/^\\s*<!\\[CDATA\\[/, '').replace(/\\]\\]>\\s*$/, '').trim()) : null;\n}\n\nfunction findJsonValue(value, key) {\n  if (Array.isArray(value)) {\n    for (const child of value) {\n      const found = findJsonValue(child, key);\n      if (found != null) return found;\n    }\n    return null;\n  }\n  if (!value || typeof value !== 'object') return null;\n  if (Object.prototype.hasOwnProperty.call(value, key) && value[key] != null) return value[key];\n  for (const child of Object.values(value)) {\n    const found = findJsonValue(child, key);\n    if (found != null) return found;\n  }\n  return null;\n}\n\nfunction jsonRecords(value, anchor) {\n  const records = [];\n  function visit(node) {\n    if (Array.isArray(node)) {\n      for (const child of node) visit(child);\n      return;\n    }\n    if (!node || typeof node !== 'object') return;\n    let childHasRecord = false;\n    for (const child of Object.values(node)) {\n      const before = records.length;\n      visit(child);\n      if (records.length > before) childHasRecord = true;\n    }\n    if (!childHasRecord && Object.prototype.hasOwnProperty.call(node, anchor)) records.push(node);\n  }\n  visit(value);\n  return records;\n}\n\nfunction xmlRecords(xml, anchor, fields) {\n  const root = { children: [] };\n  const stack = [root];\n  const pattern = /<\\/?([A-Za-z_][\\w:.-]*)(?:\\s[^>]*)?\\s*\\/?\\s*>/g;\n  let match;\n  while ((match = pattern.exec(xml)) !== null) {\n    const token = match[0];\n    const name = match[1].split(':').pop();\n    if (token.startsWith('</')) {\n      for (let index = stack.length - 1; index > 0; index -= 1) {\n        if (stack[index].name === name) {\n          const node = stack[index];\n          node.inner = xml.slice(node.contentStart, match.index);\n          stack.length = index;\n          break;\n        }\n      }\n    } else if (!token.endsWith('/>')) {\n      const node = { name, contentStart: pattern.lastIndex, inner: '', children: [] };\n      stack[stack.length - 1].children.push(node);\n      stack.push(node);\n    }\n  }\n  function qualifies(node) {\n    if (!node.inner || tagValue(node.inner, anchor) == null) return false;\n    return fields.some((field) => field !== anchor && tagValue(node.inner, field) != null);\n  }\n  const records = [];\n  function collect(node) {\n    const qualifiedChildren = node.children.filter(qualifies);\n    if (qualifies(node) && qualifiedChildren.length === 0) {\n      records.push(node.inner);\n      return;\n    }\n    for (const child of node.children) collect(child);\n  }\n  for (const child of root.children) collect(child);\n  return records;\n}\n\nfunction nonNegativeRounded(value) {\n  const text = value == null ? null : String(value).trim();\n  if (text == null || !/^\\d+(\\.\\d+)?$/.test(text)) return null;\n  const parsed = Math.round(Number(text));\n  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;\n}\n\nfunction parseCollDate(value) {\n  const text = value == null ? '' : String(value).trim();\n  let match = text.match(/^(\\d{4})(\\d{2})(\\d{2})(\\d{2})(\\d{2})(\\d{2})$/);\n  if (match) return `${match[1]}-${match[2]}-${match[3]} ${match[4]}:${match[5]}:${match[6]}`;\n  // 실제 응답은 '2026-11-11 16:05:00.0'처럼 소수 초가 붙는다.\n  match = text.match(/^(\\d{4}-\\d{2}-\\d{2}) (\\d{2}):(\\d{2})(?::(\\d{2})(?:\\.\\d+)?)?$/);\n  return match ? `${match[1]} ${match[2]}:${match[3]}:${match[4] || '00'}` : null;\n}\n\nconst results = [];\nconst rows = [];\nfor (const item of $input.all()) {\n  const response = item.json;\n  const status = Number(response.statusCode);\n  const body = typeof response.body === 'string' ? response.body : '';\n  let parsedJson = null;\n  try { parsedJson = JSON.parse(body); } catch {}\n  const headerCdRaw = parsedJson == null ? tagValue(body, 'headerCd') : findJsonValue(parsedJson, 'headerCd');\n  const headerCd = headerCdRaw == null ? null : String(headerCdRaw).trim();\n\n  if (status !== 200 || headerCd !== '0') {\n    const reason = status !== 200\n      ? (Number.isInteger(status) ? `HTTP_${status}` : 'HTTP_ERROR')\n      : headerCd && /^[A-Za-z0-9_-]{1,50}$/.test(headerCd) ? `GITS_${headerCd}` : 'INVALID_DATA';\n    for (const link of response.links || []) results.push({ trafficLinkId: link.trafficLinkId, ok: false, reason });\n    continue;\n  }\n\n  const records = parsedJson == null\n    ? xmlRecords(body, 'linkId', ['linkId', 'spd', 'trvlTime', 'collDate'])\n    : jsonRecords(parsedJson, 'linkId');\n  const byLinkId = new Map();\n  for (const record of records) {\n    const get = (field) => typeof record === 'string' ? tagValue(record, field) : findJsonValue(record, field);\n    const linkId = get('linkId');\n    if (linkId != null && !byLinkId.has(String(linkId))) byLinkId.set(String(linkId), { get });\n  }\n\n  for (const link of response.links || []) {\n    const record = byLinkId.get(link.linkId);\n    if (!record) {\n      results.push({ trafficLinkId: link.trafficLinkId, ok: false, reason: 'LINK_NOT_IN_RESPONSE' });\n      continue;\n    }\n    const roundedSpeed = nonNegativeRounded(record.get('spd'));\n    // 0~300km/h 밖은 비정상 값으로 본다(SPEED_KMH는 SMALLINT).\n    const speed = roundedSpeed !== null && roundedSpeed <= 300 ? roundedSpeed : null;\n    const travelSec = nonNegativeRounded(record.get('trvlTime'));\n    if (speed == null || travelSec == null) {\n      results.push({ trafficLinkId: link.trafficLinkId, ok: false, reason: 'INVALID_DATA' });\n      continue;\n    }\n    rows.push({\n      trafficLinkId: link.trafficLinkId,\n      sourceCollectedDt: parseCollDate(record.get('collDate')),\n      speed,\n      travelSec,\n    });\n    results.push({ trafficLinkId: link.trafficLinkId, ok: true, reason: null });\n  }\n}\n\nreturn [{ json: { rows, results } }];"
+      },
+      "id": "judge-response",
+      "name": "응답 판정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 80],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO TRAFFIC_SPEED (TRAFFIC_LINK_ID, COLLECT_RUN_ID, COLLECTED_DT, SOURCE_COLLECTED_DT, SPEED_KMH, TRAVEL_SEC, CREATE_DT, CREATE_USER, UPDATE_DT, UPDATE_USER)\nSELECT j.TRAFFIC_LINK_ID, $1, $2, j.SOURCE_COLLECTED_DT, j.SPEED_KMH, j.TRAVEL_SEC, NOW(), 'SYSTEM', NOW(), 'SYSTEM'\nFROM JSON_TABLE($3, \"$[*]\" COLUMNS (\n  TRAFFIC_LINK_ID INT PATH \"$.trafficLinkId\",\n  SOURCE_COLLECTED_DT DATETIME PATH \"$.sourceCollectedDt\" NULL ON EMPTY NULL ON ERROR,\n  SPEED_KMH INT PATH \"$.speed\",\n  TRAVEL_SEC INT PATH \"$.travelSec\"\n)) j\nON DUPLICATE KEY UPDATE TRAFFIC_SPEED_ID = TRAFFIC_SPEED_ID",
+        "options": {
+          "queryReplacement": "={{ [$('링크 목록 준비').first().json.collectRunId, $('링크 목록 준비').first().json.runDt, JSON.stringify($json.rows)] }}"
+        }
+      },
+      "id": "insert-speed",
+      "name": "정상 소통 저장",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [1360, 80],
+      "credentials": {
+        "mySql": {
+          "id": "rmMysqlCred00001",
+          "name": "ridemate-mysql"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const results = $('응답 판정').first().json.results || [];\nconst reasonCounts = {};\n\nfor (const result of results) {\n  if (result.ok) continue;\n  const reason = result.reason || 'UNKNOWN';\n  reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;\n}\n\nconst dbFailed = $input.all().some((item) => item.json.error != null);\nif (dbFailed) reasonCounts.DB_INSERT_FAILED = (reasonCounts.DB_INSERT_FAILED || 0) + 1;\n\nconst errorSummary = Object.entries(reasonCounts)\n  .sort(([left], [right]) => left.localeCompare(right))\n  .map(([reason, count]) => `${reason}: ${count}`)\n  .join('; ')\n  .slice(0, 500);\n\nreturn [{\n  json: {\n    collectRunId: $('링크 목록 준비').first().json.collectRunId,\n    linkCount: $('링크 목록 준비').first().json.linkCount,\n    errorMessageParam: errorSummary || '__NULL__',\n  },\n}];"
+      },
+      "id": "summarize-results",
+      "name": "실패 사유 집계",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1600, 80]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COUNT(*) AS SAVED_COUNT\nFROM TRAFFIC_SPEED\nWHERE COLLECT_RUN_ID = $1",
+        "options": {
+          "queryReplacement": "={{ [$json.collectRunId] }}"
+        }
+      },
+      "id": "count-saved-rows",
+      "name": "저장 행 수 조회",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [1840, 80],
+      "credentials": {
+        "mySql": {
+          "id": "rmMysqlCred00001",
+          "name": "ridemate-mysql"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE TRAFFIC_COLLECT_RUN\nSET LINK_COUNT = $1,\n    SAVED_COUNT = $2,\n    STATUS = CASE\n      WHEN SAVED_COUNT = LINK_COUNT THEN 'OK'\n      WHEN SAVED_COUNT = 0 THEN 'FAILED'\n      ELSE 'PARTIAL'\n    END,\n    ERROR_MESSAGE = NULLIF($3, '__NULL__'),\n    UPDATE_DT = NOW(),\n    UPDATE_USER = 'SYSTEM'\nWHERE COLLECT_RUN_ID = $4",
+        "options": {
+          "queryReplacement": "={{ [$('실패 사유 집계').first().json.linkCount, $json.SAVED_COUNT, $('실패 사유 집계').first().json.errorMessageParam, $('실패 사유 집계').first().json.collectRunId] }}"
+        }
+      },
+      "id": "update-collect-run",
+      "name": "회차 결과 갱신",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [2080, 80],
+      "credentials": {
+        "mySql": {
+          "id": "rmMysqlCred00001",
+          "name": "ridemate-mysql"
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "5분마다 실행": {"main": [[{"node": "회차 시각 계산", "type": "main", "index": 0}]]},
+    "수동 실행": {"main": [[{"node": "회차 시각 계산", "type": "main", "index": 0}]]},
+    "회차 시각 계산": {"main": [[{"node": "회차 행 넣기", "type": "main", "index": 0}]]},
+    "회차 행 넣기": {"main": [[{"node": "회차 행 조회", "type": "main", "index": 0}]]},
+    "회차 행 조회": {"main": [[{"node": "API 키 확인", "type": "main", "index": 0}]]},
+    "API 키 확인": {"main": [[{"node": "GITS 링크 조회", "type": "main", "index": 0}], [{"node": "키 없음 기록", "type": "main", "index": 0}]]},
+    "GITS 링크 조회": {"main": [[{"node": "링크 목록 준비", "type": "main", "index": 0}]]},
+    "링크 목록 준비": {"main": [[{"node": "링크 목록 확인", "type": "main", "index": 0}]]},
+    "링크 목록 확인": {"main": [[{"node": "도로별 호출 행 만들기", "type": "main", "index": 0}], [{"node": "빈 링크 목록 기록", "type": "main", "index": 0}]]},
+    "도로별 호출 행 만들기": {"main": [[{"node": "GITS 도로 소통 호출", "type": "main", "index": 0}, {"node": "호출 정보 합치기", "type": "main", "index": 0}]]},
+    "GITS 도로 소통 호출": {"main": [[{"node": "호출 정보 합치기", "type": "main", "index": 1}]]},
+    "호출 정보 합치기": {"main": [[{"node": "응답 판정", "type": "main", "index": 0}]]},
+    "응답 판정": {"main": [[{"node": "정상 소통 저장", "type": "main", "index": 0}]]},
+    "정상 소통 저장": {"main": [[{"node": "실패 사유 집계", "type": "main", "index": 0}]]},
+    "실패 사유 집계": {"main": [[{"node": "저장 행 수 조회", "type": "main", "index": 0}]]},
+    "저장 행 수 조회": {"main": [[{"node": "회차 결과 갱신", "type": "main", "index": 0}]]}
+  },
+  "settings": {
+    "timezone": "Asia/Seoul",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false,
+    "executionOrder": "v1"
+  },
+  "active": false
+}
