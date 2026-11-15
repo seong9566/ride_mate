@@ -137,7 +137,7 @@ dotnet run --project RideMateService --launch-profile http   # http://localhost:
 | 항목 | 값 |
 |---|---|
 | 에뮬레이터 버전 | (작성 예정) |
-| 화면 규격 | (작성 예정) |
+| 화면 규격 | 2560 × 1440, 160dpi |
 
 ## APK
 
