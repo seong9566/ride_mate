@@ -27,6 +27,28 @@ public partial class ScheduleRepository
     }
 
     /// <summary>
+    /// 학원별 픽업 지점 후보를 한 번에 등록한다.
+    /// </summary>
+    public async Task<bool> AddAcademyPickupSpotsAsync(IEnumerable<AcademyPickupSpot> models,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _context.AcademyPickupSpots.AddRangeAsync(models, cancellationToken).ConfigureAwait(false);
+
+            return await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false) > 0;
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw; // Service가 500으로 바꾼다
+        }
+    }
+
+    /// <summary>
     /// 좌표가 없는 살아 있는 학원에 학원가·좌표를 채운다. 이미 좌표가 있으면 바꾸지 않고 false를 돌려준다.
     /// </summary>
     public async Task<bool> UpdateAcademyLocationAsync(int academyId, int areaId, decimal lat, decimal lng,

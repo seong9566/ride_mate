@@ -278,6 +278,51 @@ public partial class ScheduleRepository
     }
 
     /// <summary>
+    /// 학원가 안에서 좌표에 가까운 사용 중인 픽업 지점을 거리순으로 돌려준다. maxDistanceM 이내, 최대 limit개.
+    /// </summary>
+    public async Task<List<NearbyPickupSpotRow>> GetNearbyPickupSpotsAsync(int areaId, decimal lat, decimal lng,
+        int maxDistanceM, int limit, IDbTransaction transaction, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var dp = new DynamicParameters();
+            dp.Add("areaId", areaId);
+            dp.Add("lat", lat);
+            dp.Add("lng", lng);
+            dp.Add("maxDistanceM", maxDistanceM);
+            dp.Add("limit", limit);
+
+            // ST_Distance_Sphere는 POINT(경도, 위도) 순서다
+            var sql = @"
+                SELECT d.PickupSpotId,
+                       d.DistanceM
+                FROM (
+                    SELECT s.PICKUP_SPOT_ID AS PickupSpotId,
+                           ST_Distance_Sphere(POINT(s.LNG, s.LAT), POINT(@lng, @lat)) AS DistanceM
+                    FROM PICKUP_SPOT AS s
+                    WHERE s.AREA_ID = @areaId
+                      AND s.USE_YN = TRUE
+                      AND s.DELETE_YN = FALSE
+                ) AS d
+                WHERE d.DistanceM <= @maxDistanceM
+                ORDER BY d.DistanceM, d.PickupSpotId
+                LIMIT @limit";
+
+            var rows = await _dapper.QueryAsync<NearbyPickupSpotRow>(
+                new CommandDefinition(sql, dp, transaction, cancellationToken: cancellationToken)).ConfigureAwait(false);
+            return rows.ToList();
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested) // 요청 취소는 로그 없이 올려보낸다
+        {
+            _logService.LogMessage(ex.ToString());
+#if DEBUG
+            _logService.ConsoleWarning(ex.ToString());
+#endif
+            throw;
+        }
+    }
+
+    /// <summary>
     /// 이름·주소가 같은 살아 있는 학원을 돌려준다. 없으면 null이고, 여럿이면 ID가 작은 것이다.
     /// 학원 ID·학원가 ID·이름·주소·좌표만 채워진다.
     /// </summary>
