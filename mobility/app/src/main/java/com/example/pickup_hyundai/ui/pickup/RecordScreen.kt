@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.pickup_hyundai.core.time.KstFormat
 import com.example.pickup_hyundai.domain.model.PickupRecord
+import com.example.pickup_hyundai.domain.route.GeoPoint
 import com.example.pickup_hyundai.ui.components.MapPlaceholder
 import com.example.pickup_hyundai.ui.components.PanelHeader
 import com.example.pickup_hyundai.ui.components.PrimaryPanelButton
@@ -45,13 +46,14 @@ import com.example.pickup_hyundai.ui.theme.WayMeExtraColors
 @Composable
 fun RecordScreen(
     state: RecordUiState,
+    route: List<GeoPoint>,
     onAutoSaveChange: (Boolean) -> Unit,
     onSave: () -> Unit,
     onSkip: () -> Unit,
     onRetry: () -> Unit,
 ) {
     WayMeScaffold(
-        map = { MapPanel(MapScenes.toHome()) },
+        map = { MapPanel(MapScenes.toHome(route)) },
         panel = {
             // 기록 요약은 아직 Mock(탑승·도착 시각을 주는 API 미정) → MOCK 표시
             PanelHeader("픽업 완료", isMock = state.load is LoadState.Content)

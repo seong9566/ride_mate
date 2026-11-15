@@ -60,26 +60,30 @@ class RearDoorMonitor(context: Context) {
     fun start() {
         if (started) return
         started = true
-        vehicle.initialize()
-        val doorApi = vehicle.getDoor()
+        try {
+            vehicle.initialize()
+            val doorApi = vehicle.getDoor()
 
-        doorApi.checkDoorPositionCapabilities(
-            { _: CapabilityConfig, bounds: Map<DoorArea, AreaBounds<Int>> ->
-                RearDoor.entries.forEach { door ->
-                    val b = bounds[DoorArea(door.value)]
-                    updateDoor(door) { it.copy(supported = b != null, closedValue = b?.minValue) }
-                }
-            },
-            { e: Exception -> onError("capability", e) },
-        )
-        RearDoor.entries.forEach { door ->
-            val area = DoorArea(door.value)
-            doorApi.getCurrentDoorPosition(
-                area = area,
-                onComplete = { pos: Int? -> applyPosition(door, pos) },
-                onFailed = { e: Exception -> onError("get ${door.name}", e) },
+            doorApi.checkDoorPositionCapabilities(
+                { _: CapabilityConfig, bounds: Map<DoorArea, AreaBounds<Int>> ->
+                    RearDoor.entries.forEach { door ->
+                        val b = bounds[DoorArea(door.value)]
+                        updateDoor(door) { it.copy(supported = b != null, closedValue = b?.minValue) }
+                    }
+                },
+                { e: Exception -> onError("capability", e) },
             )
-            doorApi.registerDoorPosition(area, listeners.getValue(door))
+            RearDoor.entries.forEach { door ->
+                val area = DoorArea(door.value)
+                doorApi.getCurrentDoorPosition(
+                    area = area,
+                    onComplete = { pos: Int? -> applyPosition(door, pos) },
+                    onFailed = { e: Exception -> onError("get ${door.name}", e) },
+                )
+                doorApi.registerDoorPosition(area, listeners.getValue(door))
+            }
+        } catch (e: Exception) {
+            onError("start", e)
         }
     }
 

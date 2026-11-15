@@ -21,6 +21,7 @@ import ai.pleos.playground.navi.helper.listener.NaviHelperEventListener
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.os.SystemClock
 import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -45,6 +46,7 @@ data class NaviUiState(
     val routing: Boolean = false,
     /** DrivingInfo.destination.duration — 목적지까지 남은 시간(초) */
     val remainSec: Int? = null,
+    val remainChangedAtMs: Long? = null,
     /** DrivingInfo.destination.distance — SDK 문서상 "출발점부터의 거리(m)". 남은 거리인지 에뮬레이터 검증 필요 */
     val destinationDistanceM: Int? = null,
     /** TripInfo(requestTrip 응답): 거리(m)/ETA(초) */
@@ -107,9 +109,12 @@ class NaviController(context: Context) {
             }
 
         override fun onDrivingInfo(drivingInfo: DrivingInfo) {
+            val seconds = drivingInfo.destination.duration
+            val receivedAt = SystemClock.elapsedRealtime()
             _state.update {
                 it.copy(
-                    remainSec = drivingInfo.destination.duration,
+                    remainSec = seconds,
+                    remainChangedAtMs = if (it.remainSec != seconds) receivedAt else it.remainChangedAtMs,
                     destinationDistanceM = drivingInfo.destination.distance,
                 )
             }
@@ -161,7 +166,9 @@ class NaviController(context: Context) {
     /** 기본 내비에 목적지 전달. 성공 여부는 onRouteStarted/onRoutingCompleted/onError로 확인한다. */
     fun requestRoute(place: NaviPlace) {
         // 이전 목적지의 도착 이벤트가 새 목적지 도착으로 오인되지 않도록 초기화
-        _state.update { it.copy(destination = place, arrived = null) }
+        _state.update {
+            it.copy(destination = place, routing = false, arrived = null, remainSec = null, remainChangedAtMs = null, destinationDistanceM = null)
+        }
         guarded("requestRoute") { naviHelper.requestRoute(place.toRouteInfo()) }
     }
 

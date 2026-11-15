@@ -38,13 +38,17 @@ class GearMonitor(context: Context) {
     fun start() {
         if (started) return
         started = true
-        vehicle.initialize()
-        val api = vehicle.getGear()
-        api.getCurrentGearSelectionState(
-            onComplete = { g: VehicleGear? -> _gear.value = g },
-            onFailed = { e: Exception -> Log.e(TAG, "gear get failed", e) },
-        )
-        api.registerGearSelection(listener)
+        try {
+            vehicle.initialize()
+            val api = vehicle.getGear()
+            api.getCurrentGearSelectionState(
+                onComplete = { g: VehicleGear? -> _gear.value = g },
+                onFailed = { e: Exception -> Log.e(TAG, "gear get failed", e) },
+            )
+            api.registerGearSelection(listener)
+        } catch (e: Exception) {
+            Log.e(TAG, "gear start failed (permissions or service missing)", e)
+        }
     }
 
     fun stop() {
