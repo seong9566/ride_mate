@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Security.Claims;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Options;
 using MySql.Data.MySqlClient;
 using RideMateService.Comm;
 using RideMateService.Comm.Dto.v1.Schedule.Request;
@@ -11,6 +12,7 @@ using RideMateService.Comm.Logger;
 using RideMateService.Commons.DBModels;
 using RideMateService.Commons.Repository;
 using RideMateService.Repository.v1.Schedule;
+using RideMateService.Service.v1.Pickup;
 
 namespace RideMateService.Service.v1.Schedule;
 
@@ -25,6 +27,11 @@ public class ScheduleService : IScheduleService
     private const int OverlapMaxMinutes = 40; // 이 값 이하로 가까우면 겹침으로 본다
     private const int DeadlockMaxAttempts = 3;
     private const string ReasonInvalidPickupSpot = "INVALID_PICKUP_SPOT";
+    // 새 학원에 자동으로 연결할 픽업 지점 — 같은 학원가, 직선 1km 이내, 가까운 3곳
+    private const int AutoLinkMaxDistanceM = 1000;
+    private const int AutoLinkMaxSpots = 3;
+    private const int AutoLinkMaxWalkMin = 60; // WALK_MIN(TINYINT) 상한
+    private const string AutoLinkNearestNote = "학원에서 가장 가까워요";
 
     private static readonly TimeSpan EndTimeMin = new(14, 0, 0);
     private static readonly TimeSpan EndTimeMax = new(23, 30, 0);
@@ -33,13 +40,16 @@ public class ScheduleService : IScheduleService
     private readonly ILogService _logService;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly RideMateContext _context; // 트랜잭션 시작·완료에만 쓴다
+    private readonly DepartureGuideOptions _departureGuideOptions; // 자동 연결 도보 시간 추정(아이 걷는 속도·도로 보정 계수)
 
     public ScheduleService(IScheduleRepository scheduleRepository,
         ILogService logService,
         IHttpContextAccessor httpContextAccessor,
-        RideMateContext context)
+        RideMateContext context,
+        IOptions<DepartureGuideOptions> departureGuideOptions)
     {
         this._scheduleRepository = scheduleRepository;
+        this._departureGuideOptions = departureGuideOptions.Value;
         this._logService = logService;
         this._httpContextAccessor = httpContextAccessor;
         this._context = context;
@@ -136,7 +146,7 @@ public class ScheduleService : IScheduleService
             // 8) 학원 — 정규화한 이름·주소가 같은 살아 있는 행을 쓰고, 없으면 새로 만든다
             var academy = await _scheduleRepository.FindAcademyAsync(input.AcademyName, input.Address, dbTransaction,
                 cancellationToken).ConfigureAwait(false);
-            var savedAcademyId = await SaveAcademyAsync(academy, input, areaId, thisTime, cancellationToken)
+            var savedAcademyId = await SaveAcademyAsync(academy, input, areaId, dbTransaction, thisTime, cancellationToken)
                 .ConfigureAwait(false);
             if (savedAcademyId is null)
             {
@@ -761,7 +771,7 @@ public class ScheduleService : IScheduleService
             }
 
             // 12) 학원 — 등록과 같이 찾은 행을 쓰고, 없으면 새로 만들고, 좌표가 없던 행이면 채운다
-            var academyId = await SaveAcademyAsync(academy, input, inputAreaId, thisTime, cancellationToken)
+            var academyId = await SaveAcademyAsync(academy, input, inputAreaId, dbTransaction, thisTime, cancellationToken)
                 .ConfigureAwait(false);
             if (academyId is null)
             {
@@ -927,8 +937,8 @@ public class ScheduleService : IScheduleService
 
     // 학원 — 정규화한 이름·주소로 찾은 행(academy)을 쓰고, 없으면 새로 만든다. 찾은 행에 좌표가 없고 이번 요청에 좌표가 있으면 학원가·좌표를 채운다.
     // 쓸 학원 ID를 돌려주고, 새 행 저장에 실패하면 null이다
-    private async Task<int?> SaveAcademyAsync(Academy? academy, ValidInput input, int? areaId, DateTime thisTime,
-        CancellationToken cancellationToken)
+    private async Task<int?> SaveAcademyAsync(Academy? academy, ValidInput input, int? areaId,
+        IDbTransaction transaction, DateTime thisTime, CancellationToken cancellationToken)
     {
         if (academy is null)
         {
@@ -950,6 +960,10 @@ public class ScheduleService : IScheduleService
             if (!await _scheduleRepository.AddAcademyAsync(newAcademy, cancellationToken).ConfigureAwait(false))
                 return null;
 
+            if (!await LinkNearbyPickupSpotsAsync(newAcademy, transaction, thisTime, cancellationToken)
+                    .ConfigureAwait(false))
+                return null;
+
             return newAcademy.AcademyId;
         }
 
@@ -961,6 +975,36 @@ public class ScheduleService : IScheduleService
         }
 
         return academy.AcademyId;
+    }
+
+    // 새 학원이 학원가 안이면 같은 학원가의 가까운 픽업 지점을 후보로 연결한다.
+    // 도보 시간은 직선 거리 × 도로 보정 계수 ÷ 아이 걷는 속도로 추정한다(DepartureGuide 설정). 저장에 실패하면 false다
+    private async Task<bool> LinkNearbyPickupSpotsAsync(Academy academy, IDbTransaction transaction, DateTime thisTime,
+        CancellationToken cancellationToken)
+    {
+        if (academy.AreaId is not { } areaId || academy.Lat is not { } lat || academy.Lng is not { } lng)
+            return true;
+
+        var spots = await _scheduleRepository.GetNearbyPickupSpotsAsync(areaId, lat, lng, AutoLinkMaxDistanceM,
+            AutoLinkMaxSpots, transaction, cancellationToken).ConfigureAwait(false);
+        if (spots.Count == 0)
+            return true;
+
+        var models = spots.Select((s, i) => new AcademyPickupSpot
+        {
+            AcademyId = academy.AcademyId,
+            PickupSpotId = s.PickupSpotId,
+            WalkMin = (sbyte)Math.Min(AutoLinkMaxWalkMin, DepartureGuideCalculator.EstimateMinutes(s.DistanceM,
+                this._departureGuideOptions.ChildWalkKmh, this._departureGuideOptions.RoadFactor)),
+            Priority = (sbyte)(i + 1),
+            Note = i == 0 ? AutoLinkNearestNote : null,
+            CreateDt = thisTime,
+            CreateUser = AuditUser,
+            UpdateDt = thisTime,
+            UpdateUser = AuditUser,
+            DeleteYn = false
+        });
+        return await _scheduleRepository.AddAcademyPickupSpotsAsync(models, cancellationToken).ConfigureAwait(false);
     }
 
     private static ResponseModel<AddScheduleResultDto> Fail(int code, string message)
