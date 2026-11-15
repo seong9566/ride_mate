@@ -123,16 +123,6 @@ dotnet run --project RideMateService --launch-profile http   # http://localhost:
 - API만 확인할 때는 Swagger의 `POST /api/v1/Auth/M/DevToken`(개발 전용, 계정 ID로 토큰 발급)으로 받은 `access_token`을 Authorize에 넣으면 됩니다.
 - DevToken은 심사 편의를 위해 공모전 기간에만 열어 두며, 기간이 끝나면 닫습니다.
 
-### 픽업 링크 화면 확인
-
-진행 중인 픽업 계획이 있으면 Swagger의 `POST /api/v1/Pickup/M/sign/DevPickupLink`(개발 전용)로 문자를 보내지 않고 아이용 링크를 받아 브라우저에서 열 수 있습니다.
-
-### 알아 둘 점
-
-- 출발 시각 계산은 카카오 길찾기를 쓰고, 실패하면 직선거리 추정으로 계산합니다.
-- 도로 소통은 14~23시에만 수집합니다. 그 밖의 시간에는 혼잡 보정 없이 계산합니다.
-- Pleos SDK(차량 상태·내비·위치)는 에뮬레이터와 권한에 따라 동작 범위가 다를 수 있습니다.
-
 ## Pleos Connect 에뮬레이터 버전과 화면 규격
 
 | 항목 | 값 |
